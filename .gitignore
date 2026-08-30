@@ -1,4 +1,6 @@
 /dispatcher
+/dispatcherctl
+/dist/
 .env
 *.log
 *.duckdb

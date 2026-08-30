@@ -133,6 +133,16 @@ func collectTemplateSnapshots(db *gorm.DB) error {
 		log.Printf("template snapshots: workspace %s has no templates", workspaceID)
 		return nil
 	}
+	publishedIDs := make([]string, 0, len(templates))
+	for _, t := range templates {
+		if t.Status == "PUBLISHED" {
+			publishedIDs = append(publishedIDs, t.ID)
+		}
+	}
+	metricsByTemplate, err := getTemplateMetrics(ctx, token, publishedIDs)
+	if err != nil {
+		return fmt.Errorf("load template metrics: %w", err)
+	}
 
 	sampledAt := time.Now().UTC()
 	previous := make(map[string]TemplateSnapshot, len(templates))
@@ -149,37 +159,55 @@ func collectTemplateSnapshots(db *gorm.DB) error {
 	}
 	snapshots := make([]TemplateSnapshot, 0, len(templates))
 	for _, t := range templates {
-		snapshot := TemplateSnapshot{
-			SampledAt:      sampledAt,
-			TemplateID:     t.ID,
-			Name:           t.Name,
-			Code:           t.Code,
-			Status:         t.Status,
-			Health:         t.Health,
-			Projects:       t.Projects,
-			RecentProjects: t.RecentProjects,
-			ActiveProjects: t.ActiveProjects,
-			TotalPayout:    t.TotalPayout,
+		var metrics *templateMetrics
+		if value, ok := metricsByTemplate[t.ID]; ok {
+			metrics = &value
 		}
-		if sh := t.SupportHealth; sh != nil {
-			snapshot.SupportSolved = sh.Solved
-			snapshot.SupportCsat = sh.Csat
-			snapshot.SupportHealth = sh.AggregateHealth
-		}
-		snapshots = append(snapshots, snapshot)
+		snapshots = append(snapshots, templateSnapshotAt(sampledAt, t, metrics))
 	}
 	if err := gorm.G[TemplateSnapshot](db).CreateInBatches(ctx, &snapshots, 100); err != nil {
 		return err
 	}
 	for _, snapshot := range snapshots {
 		prev, ok := previous[snapshot.TemplateID]
-		if !ok || !crossedHealthThreshold(prev.Health, snapshot.Health) {
+		if !ok || !crossedHealthThreshold(prev.TemplateHealth, snapshot.TemplateHealth) {
 			continue
 		}
-		go notifyAll(db, healthDropEvent(snapshot, *prev.Health))
+		go notifyAll(db, healthDropEvent(snapshot, *prev.TemplateHealth))
 	}
 	log.Printf("template snapshots: stored %d templates", len(snapshots))
 	return nil
+}
+
+func templateSnapshotAt(sampledAt time.Time, template workspaceTemplate, metrics *templateMetrics) TemplateSnapshot {
+	snapshot := TemplateSnapshot{
+		SampledAt:  sampledAt,
+		TemplateID: template.ID,
+		Name:       template.Name,
+		Code:       template.Code,
+		Status:     template.Status,
+	}
+	if metrics == nil {
+		return snapshot
+	}
+
+	snapshot.TotalDeployments = pointerTo(metrics.TotalDeployments)
+	snapshot.ActiveDeployments = pointerTo(metrics.ActiveDeployments)
+	snapshot.DeploymentsLast90Days = pointerTo(metrics.DeploymentsLast90Days)
+	snapshot.TotalEarnings = pointerTo(metrics.TotalEarnings)
+	snapshot.EarningsLast90Days = pointerTo(metrics.EarningsLast90Days)
+	snapshot.EarningsLast30Days = pointerTo(metrics.EarningsLast30Days)
+	snapshot.TemplateHealth = pointerTo(metrics.TemplateHealth)
+	snapshot.SupportHealth = pointerTo(metrics.SupportHealth)
+	snapshot.EligibleForSupportBonus = pointerTo(metrics.EligibleForSupportBonus)
+
+	// Keep legacy columns accurate for existing database consumers.
+	snapshot.Health = snapshot.TemplateHealth
+	snapshot.Projects = metrics.TotalDeployments
+	snapshot.RecentProjects = metrics.DeploymentsLast90Days
+	snapshot.ActiveProjects = metrics.ActiveDeployments
+	snapshot.TotalPayout = metrics.TotalEarnings
+	return snapshot
 }
 
 // autoWithdrawMu keeps runs from overlapping: the cron chain only serializes

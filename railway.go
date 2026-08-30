@@ -223,30 +223,11 @@ func getProjectWorkspaceID(ctx context.Context, accessToken string) (string, err
 	return data.Project.WorkspaceID, nil
 }
 
-// supportHealthMetrics grades a template's community support threads: solved
-// and csat are 0-100 percentages, aggregateHealth averages them (or is just
-// solved when csat is missing). Railway returns null when the template has no
-// threads to grade — that means all okay, not unhealthy. aggregateHealth >= 80
-// qualifies the template for the support bonus (an extra 10% kickback).
-// SupportHealthMetrics is a custom JSON scalar in Railway's schema, so the
-// query selects it bare (no subfields) and this struct decodes the blob.
-type supportHealthMetrics struct {
-	Solved          *float64 `json:"solved"`
-	Csat            *float64 `json:"csat"`
-	AggregateHealth *float64 `json:"aggregateHealth"`
-}
-
 type workspaceTemplate struct {
-	ID             string                `json:"id"`
-	Name           string                `json:"name"`
-	Code           string                `json:"code"`
-	Status         string                `json:"status"`
-	Health         *float64              `json:"health"`
-	SupportHealth  *supportHealthMetrics `json:"supportHealthMetrics"`
-	Projects       int64                 `json:"projects"`
-	RecentProjects int64                 `json:"recentProjects"`
-	ActiveProjects int64                 `json:"activeProjects"`
-	TotalPayout    float64               `json:"totalPayout"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Code   string `json:"code"`
+	Status string `json:"status"`
 }
 
 const workspaceTemplatesQuery = `query ($workspaceId: String!) {
@@ -257,12 +238,6 @@ const workspaceTemplatesQuery = `query ($workspaceId: String!) {
         name
         code
         status
-        health
-        supportHealthMetrics
-        projects
-        recentProjects
-        activeProjects
-        totalPayout
       }
     }
   }
@@ -285,6 +260,55 @@ func getWorkspaceTemplates(ctx context.Context, accessToken, workspaceID string)
 		templates = append(templates, edge.Node)
 	}
 	return templates, nil
+}
+
+// templateMetrics is the complete TemplateMetrics response currently used by
+// Railway's dashboard. Keep every field here even when the Dispatcher UI does
+// not consume it; snapshots persist the whole response for future reporting.
+type templateMetrics struct {
+	TotalDeployments        int64   `json:"totalDeployments"`
+	ActiveDeployments       int64   `json:"activeDeployments"`
+	DeploymentsLast90Days   int64   `json:"deploymentsLast90Days"`
+	TotalEarnings           float64 `json:"totalEarnings"`
+	EarningsLast90Days      float64 `json:"earningsLast90Days"`
+	EarningsLast30Days      float64 `json:"earningsLast30Days"`
+	TemplateHealth          float64 `json:"templateHealth"`
+	SupportHealth           float64 `json:"supportHealth"`
+	EligibleForSupportBonus bool    `json:"eligibleForSupportBonus"`
+}
+
+const templateMetricsQuery = `query templateMetrics($id: String!) {
+  templateMetrics(id: $id) {
+      totalDeployments
+      activeDeployments
+      deploymentsLast90Days
+      totalEarnings
+      earningsLast90Days
+      earningsLast30Days
+      templateHealth
+      supportHealth
+      eligibleForSupportBonus
+  }
+}`
+
+// getTemplateMetrics loads the complete metrics payload for each published
+// template. Railway exposes only templateMetrics(id: String!), not a list/ids
+// resolver, and rejects unpublished templates, so callers pass only IDs whose
+// fresh workspaceTemplates status is PUBLISHED.
+func getTemplateMetrics(ctx context.Context, accessToken string, templateIDs []string) (map[string]templateMetrics, error) {
+	metricsByTemplate := make(map[string]templateMetrics, len(templateIDs))
+	endpoint := railwayGraphQLInternalURL + "?q=templateMetrics"
+	for _, templateID := range templateIDs {
+		var data struct {
+			Metrics templateMetrics `json:"templateMetrics"`
+		}
+		if err := graphqlRequest(ctx, endpoint, accessToken, templateMetricsQuery,
+			map[string]any{"id": templateID}, &data); err != nil {
+			return nil, fmt.Errorf("template metrics for %s: %w", templateID, err)
+		}
+		metricsByTemplate[templateID] = data.Metrics
+	}
+	return metricsByTemplate, nil
 }
 
 // withdrawMinimumCents is Railway's floor for a cash withdrawal ($100). The

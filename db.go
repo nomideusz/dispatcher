@@ -29,17 +29,33 @@ type TemplateSnapshot struct {
 	Name       string    `json:"name"`
 	Code       string    `json:"code"`
 	Status     string    `json:"status"`
-	Health     *float64  `json:"health"`
-	// Support-thread metrics (see supportHealthMetrics in railway.go);
-	// SupportHealth holds aggregateHealth. All nil when Railway reports no
-	// threads to grade — which counts as healthy.
+
+	// Complete response from Railway's templateMetrics query. Pointers keep
+	// unpublished templates (for which Railway exposes no metrics) distinct
+	// from genuine zero values, and distinguish new snapshots from legacy rows.
+	TotalDeployments        *int64   `json:"totalDeployments"`
+	ActiveDeployments       *int64   `json:"activeDeployments"`
+	DeploymentsLast90Days   *int64   `json:"deploymentsLast90Days"`
+	TotalEarnings           *float64 `json:"totalEarnings"`
+	EarningsLast90Days      *float64 `json:"earningsLast90Days"`
+	EarningsLast30Days      *float64 `json:"earningsLast30Days"`
+	TemplateHealth          *float64 `json:"templateHealth"`
+	SupportHealth           *float64 `json:"supportHealth"`
+	EligibleForSupportBonus *bool    `json:"eligibleForSupportBonus"`
+
+	// Legacy columns retained for existing databases and external queries. New
+	// snapshots mirror the authoritative templateMetrics values into them.
+	Health         *float64 `json:"health"`
 	SupportSolved  *float64 `json:"supportSolved"`
 	SupportCsat    *float64 `json:"supportCsat"`
-	SupportHealth  *float64 `json:"supportHealth"`
 	Projects       int64    `json:"projects"`
 	RecentProjects int64    `json:"recentProjects"`
 	ActiveProjects int64    `json:"activeProjects"`
 	TotalPayout    float64  `json:"totalPayout"`
+}
+
+func pointerTo[T any](value T) *T {
+	return &value
 }
 
 // autoWithdrawSettingsID is the fixed primary key of the singleton settings

@@ -1,0 +1,37 @@
+version: 2
+
+project_name: dispatcherctl
+
+builds:
+  - id: dispatcherctl
+    main: ./cmd/dispatcherctl
+    binary: dispatcherctl
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Tag }}
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - ids:
+      - dispatcherctl
+    formats:
+      - tar.gz
+    name_template: dispatcherctl_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"

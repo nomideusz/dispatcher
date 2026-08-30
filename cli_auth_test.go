@@ -92,6 +92,110 @@ func TestCLIAuthStartReturnsRailwayURLWithSignedState(t *testing.T) {
 	}
 }
 
+func TestBrowserAuthRedirectUsesStateCookie(t *testing.T) {
+	db := cliAuthTestDB(t, "browser-redirect.duckdb")
+	t.Setenv("CALLBACK_URL", "https://dispatcher.example/api/auth/callback")
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/redirect", nil)
+	res := httptest.NewRecorder()
+
+	handleAuthRedirect(db).ServeHTTP(res, req)
+
+	if res.Code != http.StatusFound {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+	authorizationURL, err := url.Parse(res.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := authorizationURL.Query().Get("state")
+	if !validCLISecret(state) {
+		t.Fatalf("invalid OAuth state %q", state)
+	}
+	var stateCookie *http.Cookie
+	for _, cookie := range res.Result().Cookies() {
+		if cookie.Name == browserOAuthStateCookie {
+			stateCookie = cookie
+			break
+		}
+	}
+	if stateCookie == nil {
+		t.Fatal("browser OAuth state cookie was not set")
+	}
+	if stateCookie.Value != state || stateCookie.Path != "/api/auth/callback" ||
+		!stateCookie.HttpOnly || !stateCookie.Secure || stateCookie.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("state cookie = %+v", stateCookie)
+	}
+}
+
+func TestBrowserAuthCallbackRejectsInvalidStateBeforeExchange(t *testing.T) {
+	db := cliAuthTestDB(t, "browser-invalid-state.duckdb")
+	oldClient := client
+	requestCount := 0
+	client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requestCount++
+		return testHTTPResponse(req, http.StatusInternalServerError, `{}`), nil
+	})}
+	defer func() { client = oldClient }()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/callback?code=railway-code&state=wrong", nil)
+	req.AddCookie(&http.Cookie{Name: browserOAuthStateCookie, Value: "expected"})
+	res := httptest.NewRecorder()
+
+	handleAuthCallback(db).ServeHTTP(res, req)
+
+	if res.Code != http.StatusBadRequest || !strings.Contains(res.Body.String(), "invalid or expired OAuth state") {
+		t.Fatalf("callback: status = %d, body = %s", res.Code, res.Body.String())
+	}
+	if requestCount != 0 {
+		t.Fatalf("OAuth exchange received %d requests before state validation", requestCount)
+	}
+}
+
+func TestBrowserAuthCallbackUsesSharedRailwayCompletion(t *testing.T) {
+	db := cliAuthTestDB(t, "browser-callback.duckdb")
+	t.Setenv("CALLBACK_URL", "https://dispatcher.example/api/auth/callback")
+	t.Setenv("RAILWAY_PROJECT_ID", "project-1")
+	oldClient := client
+	client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		var body string
+		switch req.URL.String() {
+		case railwayTokenURL:
+			body = `{"access_token":"railway-session","refresh_token":"refresh","expires_in":3600}`
+		case railwayGraphQLURL:
+			body = `{"data":{"project":{"workspaceId":"workspace-1"},"me":{"id":"user-1","workspaces":[{"id":"workspace-1"}]}}}`
+		default:
+			t.Errorf("unexpected request to %s", req.URL)
+			return testHTTPResponse(req, http.StatusNotFound, `{}`), nil
+		}
+		return testHTTPResponse(req, http.StatusOK, body), nil
+	})}
+	defer func() { client = oldClient }()
+
+	state := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{5}, 32))
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/callback?"+url.Values{
+		"code":  {"railway-code"},
+		"state": {state},
+	}.Encode(), nil)
+	req.AddCookie(&http.Cookie{Name: browserOAuthStateCookie, Value: state})
+	res := httptest.NewRecorder()
+
+	handleAuthCallback(db).ServeHTTP(res, req)
+
+	if res.Code != http.StatusFound || res.Header().Get("Location") != "/" {
+		t.Fatalf("callback: status = %d, location = %q, body = %s", res.Code, res.Header().Get("Location"), res.Body.String())
+	}
+	var sessionCookie *http.Cookie
+	for _, cookie := range res.Result().Cookies() {
+		if cookie.Name == authCookieName {
+			sessionCookie = cookie
+			break
+		}
+	}
+	if sessionCookie == nil || sessionCookie.Value != "railway-session" || !sessionCookie.HttpOnly || !sessionCookie.Secure {
+		t.Fatalf("session cookie = %+v", sessionCookie)
+	}
+}
+
 func TestCLIAuthExchangePollsThenConsumesCompletedLogin(t *testing.T) {
 	cliAuthHandoffs = cliAuthHandoffStore{entries: make(map[string]cliAuthHandoff)}
 	verifier := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{3}, 32))

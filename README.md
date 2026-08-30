@@ -46,7 +46,18 @@ Railway directly. Authenticated commands use the same Railway OAuth flow and
 session as the browser app; there are no separate API tokens. The health check
 remains public just like `/api/health`.
 
-Build or install the CLI, point it at the instance, and log in:
+Install the latest CLI release on Linux or macOS:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ThallesP/dispatcher/main/install.sh | sh
+```
+
+The installer verifies the release checksum and installs to `/usr/local/bin`
+when it is writable, otherwise to `~/.local/bin`. Set
+`DISPATCHER_INSTALL_DIR` to choose another directory, or
+`DISPATCHER_VERSION=v0.1.0` to install a specific release.
+
+You can also build or install from source:
 
 ```sh
 make build-cli
@@ -68,11 +79,14 @@ export DISPATCHER_URL="https://dispatcher.example.com"
 During login Dispatcher creates a short-lived pending login and returns a
 Railway authorization URL. The CLI opens that URL (or prints it in a headless
 environment) and polls Dispatcher while the browser completes the existing
-OAuth callback. The result is bound to a verifier held only by the CLI, so the
-browser never receives the Railway session itself. This also works when the CLI
-and browser are on different machines. Sessions are stored with owner-only
-permissions in the operating system's user config directory. Use
-`dispatcherctl logout` to remove the session for an instance.
+OAuth callback. Browser and CLI login share the same Railway authorization URL
+builder, code exchange, workspace-access check, saved credentials, and
+`requireAuth` cookie middleware. The only CLI-specific part is how the completed
+session reaches the terminal. That result is bound to a verifier held only by
+the CLI, so the browser never receives the Railway session itself. This also
+works when the CLI and browser are on different machines. Sessions are stored
+with owner-only permissions in the operating system's user config directory.
+Use `dispatcherctl logout` to remove the session for an instance.
 
 Responses are JSON and are pretty-printed by default. Pass `--compact` before
 the command for machine-friendly JSONL output. `get` makes it possible to query
@@ -92,6 +106,9 @@ To stamp a release version into the binary:
 make build-cli CLI_VERSION=v0.1.0
 ./dispatcherctl version
 ```
+
+Pushing a `v*` tag runs the CLI release workflow and publishes the archives
+used by the installer.
 
 ## Adding things
 

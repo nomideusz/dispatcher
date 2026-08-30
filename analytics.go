@@ -53,9 +53,9 @@ func handlePayoutSeries(db *gorm.DB) http.HandlerFunc {
 
 		rows := []payoutSampleRow{}
 		err := db.WithContext(r.Context()).Raw(`
-			SELECT sampled_at, template_id, name, total_payout
+			SELECT sampled_at, template_id, name, total_earnings AS total_payout
 			FROM template_snapshots
-			WHERE sampled_at >= ?
+			WHERE sampled_at >= ? AND total_earnings IS NOT NULL
 			ORDER BY sampled_at`, since).Scan(&rows).Error
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -230,15 +230,18 @@ func handleTemplateAnalytics(db *gorm.DB) http.HandlerFunc {
 		}
 		templates := []templateAnalytics{}
 		err = db.WithContext(r.Context()).Raw(`
-			SELECT cur.template_id, cur.name, cur.code, cur.status, cur.health,
+			SELECT cur.template_id, cur.name, cur.code, cur.status, cur.template_health AS health,
 			       cur.support_solved, cur.support_csat, cur.support_health,
-			       cur.projects, cur.recent_projects, cur.active_projects, cur.total_payout,
-			       prev.total_payout AS payout_previous
+			       cur.total_deployments AS projects,
+			       cur.deployments_last90_days AS recent_projects,
+			       cur.active_deployments AS active_projects,
+			       cur.total_earnings AS total_payout,
+			       prev.total_earnings AS payout_previous
 			FROM template_snapshots cur
 			LEFT JOIN template_snapshots prev
 			  ON prev.template_id = cur.template_id AND prev.sampled_at = ?
 			WHERE cur.sampled_at = ?
-			ORDER BY cur.total_payout DESC, cur.name`, joinAt, *latest).Scan(&templates).Error
+			ORDER BY cur.total_earnings DESC NULLS LAST, cur.name`, joinAt, *latest).Scan(&templates).Error
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
@@ -261,18 +264,18 @@ func handleTemplateAnalytics(db *gorm.DB) http.HandlerFunc {
 // available so young deployments still get a delta. latest is nil while the
 // snapshots table is empty; previous is nil when latest is the only sample.
 func comparisonTimestamps(ctx context.Context, db *gorm.DB) (latest, previous *time.Time, err error) {
-	latest, err = scanTime(ctx, db, "SELECT max(sampled_at) FROM template_snapshots")
+	latest, err = scanTime(ctx, db, "SELECT max(sampled_at) FROM template_snapshots WHERE total_earnings IS NOT NULL")
 	if err != nil || latest == nil {
 		return nil, nil, err
 	}
 	previous, err = scanTime(ctx, db,
-		"SELECT max(sampled_at) FROM template_snapshots WHERE sampled_at <= ? - INTERVAL 7 DAY", *latest)
+		"SELECT max(sampled_at) FROM template_snapshots WHERE total_earnings IS NOT NULL AND sampled_at <= ? - INTERVAL 7 DAY", *latest)
 	if err != nil {
 		return nil, nil, err
 	}
 	if previous == nil {
 		previous, err = scanTime(ctx, db,
-			"SELECT min(sampled_at) FROM template_snapshots WHERE sampled_at < ?", *latest)
+			"SELECT min(sampled_at) FROM template_snapshots WHERE total_earnings IS NOT NULL AND sampled_at < ?", *latest)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -295,12 +298,12 @@ func scanTime(ctx context.Context, db *gorm.DB, query string, args ...any) (*tim
 func totalsAt(ctx context.Context, db *gorm.DB, at time.Time) (snapshotTotals, error) {
 	var totals snapshotTotals
 	err := db.WithContext(ctx).Raw(`
-		SELECT COALESCE(SUM(total_payout), 0) AS total_payout,
-		       COALESCE(SUM(projects), 0) AS projects,
-		       COALESCE(SUM(recent_projects), 0) AS recent_projects,
-		       COALESCE(SUM(active_projects), 0) AS active_projects
+		SELECT COALESCE(SUM(total_earnings), 0) AS total_payout,
+		       COALESCE(SUM(total_deployments), 0) AS projects,
+		       COALESCE(SUM(deployments_last90_days), 0) AS recent_projects,
+		       COALESCE(SUM(active_deployments), 0) AS active_projects
 		FROM template_snapshots
-		WHERE sampled_at = ?`, at).Scan(&totals).Error
+		WHERE sampled_at = ? AND total_earnings IS NOT NULL`, at).Scan(&totals).Error
 	return totals, err
 }
 

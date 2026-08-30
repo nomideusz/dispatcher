@@ -92,15 +92,15 @@ func TestAggregateWeeklySnapshots(t *testing.T) {
 	healthA := 96.0
 	healthB := 88.0
 	snapshots := []TemplateSnapshot{
-		{ID: 1, SampledAt: from.Add(-48 * time.Hour), TemplateID: "a", Name: "Alpha", Projects: 5, TotalPayout: 10},
-		{ID: 2, SampledAt: from.Add(-time.Hour), TemplateID: "a", Name: "Alpha", Projects: 7, TotalPayout: 14},
-		{ID: 3, SampledAt: from.Add(72 * time.Hour), TemplateID: "a", Name: "Alpha", Projects: 10, TotalPayout: 19},
-		{ID: 4, SampledAt: to, TemplateID: "a", Name: "Alpha", Health: &healthA, Projects: 12, TotalPayout: 22.5},
+		{ID: 1, SampledAt: from.Add(-48 * time.Hour), TemplateID: "a", Name: "Alpha", TotalDeployments: pointerTo(int64(5)), TotalEarnings: pointerTo(10.0)},
+		{ID: 2, SampledAt: from.Add(-time.Hour), TemplateID: "a", Name: "Alpha", TotalDeployments: pointerTo(int64(7)), TotalEarnings: pointerTo(14.0)},
+		{ID: 3, SampledAt: from.Add(72 * time.Hour), TemplateID: "a", Name: "Alpha", TotalDeployments: pointerTo(int64(10)), TotalEarnings: pointerTo(19.0)},
+		{ID: 4, SampledAt: to, TemplateID: "a", Name: "Alpha", TemplateHealth: &healthA, TotalDeployments: pointerTo(int64(12)), TotalEarnings: pointerTo(22.5)},
 		// Beta has no pre-window observation, so its first in-window sample is
 		// the baseline.
-		{ID: 5, SampledAt: from.Add(time.Hour), TemplateID: "b", Name: "Beta", Projects: 2, TotalPayout: 3},
-		{ID: 6, SampledAt: to.Add(-time.Hour), TemplateID: "b", Name: "Beta", Health: &healthB, Projects: 1, TotalPayout: 5.5},
-		{ID: 7, SampledAt: to.Add(time.Hour), TemplateID: "a", Name: "Alpha", Projects: 999, TotalPayout: 999},
+		{ID: 5, SampledAt: from.Add(time.Hour), TemplateID: "b", Name: "Beta", TotalDeployments: pointerTo(int64(2)), TotalEarnings: pointerTo(3.0)},
+		{ID: 6, SampledAt: to.Add(-time.Hour), TemplateID: "b", Name: "Beta", TemplateHealth: &healthB, TotalDeployments: pointerTo(int64(1)), TotalEarnings: pointerTo(5.5)},
+		{ID: 7, SampledAt: to.Add(time.Hour), TemplateID: "a", Name: "Alpha", TotalDeployments: pointerTo(int64(999)), TotalEarnings: pointerTo(999.0)},
 	}
 
 	got, ok := aggregateWeeklySnapshots(snapshots, from, to)
@@ -142,9 +142,9 @@ func TestLoadWeeklySummary(t *testing.T) {
 	}
 	now := time.Date(2026, time.July, 18, 9, 0, 0, 0, time.UTC)
 	rows := []TemplateSnapshot{
-		{SampledAt: now.AddDate(0, 0, -8), TemplateID: "a", Name: "Alpha", Projects: 2, TotalPayout: 4},
-		{SampledAt: now.AddDate(0, 0, -7).Add(-time.Hour), TemplateID: "a", Name: "Alpha", Projects: 3, TotalPayout: 5},
-		{SampledAt: now.Add(-time.Hour), TemplateID: "a", Name: "Alpha", Projects: 8, TotalPayout: 12},
+		{SampledAt: now.AddDate(0, 0, -8), TemplateID: "a", Name: "Alpha", TotalDeployments: pointerTo(int64(2)), TotalEarnings: pointerTo(4.0)},
+		{SampledAt: now.AddDate(0, 0, -7).Add(-time.Hour), TemplateID: "a", Name: "Alpha", TotalDeployments: pointerTo(int64(3)), TotalEarnings: pointerTo(5.0)},
+		{SampledAt: now.Add(-time.Hour), TemplateID: "a", Name: "Alpha", TotalDeployments: pointerTo(int64(8)), TotalEarnings: pointerTo(12.0)},
 	}
 	if err := gorm.G[TemplateSnapshot](db).CreateInBatches(t.Context(), &rows, 100); err != nil {
 		t.Fatal(err)

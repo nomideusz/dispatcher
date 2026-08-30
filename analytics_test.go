@@ -1,8 +1,12 @@
 package main
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
+
+	duckdb "github.com/vogo/duckdb/v2"
+	"gorm.io/gorm"
 )
 
 func TestBuildPayoutSeriesFoldsAndZeroFills(t *testing.T) {
@@ -81,5 +85,37 @@ func TestBuildPayoutSeriesEmpty(t *testing.T) {
 	}
 	if len(got.Series) != 0 || len(got.Points) != 0 {
 		t.Fatalf("want empty response, got %+v", got)
+	}
+}
+
+func TestAnalyticsTotalsUseAuthoritativeTemplateMetrics(t *testing.T) {
+	db, err := gorm.Open(duckdb.Open(filepath.Join(t.TempDir(), "analytics.duckdb")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&TemplateSnapshot{}); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, time.August, 30, 12, 0, 0, 0, time.UTC)
+	rows := []TemplateSnapshot{
+		{
+			SampledAt: at, TemplateID: "current", TotalDeployments: pointerTo(int64(20)),
+			ActiveDeployments: pointerTo(int64(8)), DeploymentsLast90Days: pointerTo(int64(5)),
+			TotalEarnings: pointerTo(125.50),
+		},
+		// A legacy row can contain values from the old, incorrect resolver but
+		// has no authoritative metrics and must not affect current totals.
+		{SampledAt: at, TemplateID: "legacy", Projects: 999, ActiveProjects: 999, RecentProjects: 999, TotalPayout: 999},
+	}
+	if err := gorm.G[TemplateSnapshot](db).CreateInBatches(t.Context(), &rows, 100); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := totalsAt(t.Context(), db, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Projects != 20 || got.ActiveProjects != 8 || got.RecentProjects != 5 || got.TotalPayout != 125.50 {
+		t.Fatalf("totals = %+v", got)
 	}
 }

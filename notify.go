@@ -423,13 +423,13 @@ func healthDropEvent(current TemplateSnapshot, previous float64) NotificationEve
 		Event: "health_drop",
 		Title: "Template health dropped",
 		Message: fmt.Sprintf("%s health dropped from %.0f%% to %.0f%% (below %.0f%%).",
-			current.Name, previous, *current.Health, healthDropThreshold),
+			current.Name, previous, *current.TemplateHealth, healthDropThreshold),
 		OccurredAt: current.SampledAt,
 		Data: HealthDropNotificationData{
 			TemplateID:   current.TemplateID,
 			TemplateName: current.Name,
 			Previous:     previous,
-			Current:      *current.Health,
+			Current:      *current.TemplateHealth,
 			Threshold:    healthDropThreshold,
 		},
 	}
@@ -438,7 +438,7 @@ func healthDropEvent(current TemplateSnapshot, previous float64) NotificationEve
 func aggregateWeeklySnapshots(snapshots []TemplateSnapshot, from, to time.Time) (WeeklySummaryNotificationData, bool) {
 	byTemplate := map[string][]TemplateSnapshot{}
 	for _, snapshot := range snapshots {
-		if snapshot.SampledAt.After(to) {
+		if snapshot.SampledAt.After(to) || snapshot.TotalDeployments == nil || snapshot.TotalEarnings == nil {
 			continue
 		}
 		byTemplate[snapshot.TemplateID] = append(byTemplate[snapshot.TemplateID], snapshot)
@@ -477,11 +477,11 @@ func aggregateWeeklySnapshots(snapshots []TemplateSnapshot, from, to time.Time) 
 		if baseline == nil {
 			continue
 		}
-		health := cloneFloat64(current.Health)
+		health := cloneFloat64(current.TemplateHealth)
 		templateSummary := WeeklyTemplateSummary{
 			Name:           current.Name,
-			NetNewProjects: current.Projects - baseline.Projects,
-			PayoutDelta:    current.TotalPayout - baseline.TotalPayout,
+			NetNewProjects: *current.TotalDeployments - *baseline.TotalDeployments,
+			PayoutDelta:    *current.TotalEarnings - *baseline.TotalEarnings,
 			Health:         health,
 		}
 		data.Templates = append(data.Templates, templateSummary)
@@ -535,14 +535,14 @@ func loadWeeklySummary(db *gorm.DB, now time.Time) (NotificationEvent, bool, err
 	snapshots := []TemplateSnapshot{}
 	err := db.Raw(`
 		SELECT * FROM template_snapshots
-		WHERE sampled_at >= ? AND sampled_at <= ?
+		WHERE total_earnings IS NOT NULL AND sampled_at >= ? AND sampled_at <= ?
 		UNION ALL
 		SELECT baseline.*
 		FROM template_snapshots baseline
 		JOIN (
 			SELECT template_id, MAX(sampled_at) AS sampled_at
 			FROM template_snapshots
-			WHERE sampled_at < ?
+			WHERE total_earnings IS NOT NULL AND sampled_at < ?
 			GROUP BY template_id
 		) previous
 		  ON previous.template_id = baseline.template_id

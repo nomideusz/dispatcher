@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -27,7 +31,9 @@ func handleHealth(db *gorm.DB) http.HandlerFunc {
 func handleAuthCallback(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		if oauthErr := q.Get("error"); oauthErr != "" {
+		stateValue := q.Get("state")
+		isCLI := strings.HasPrefix(stateValue, cliOAuthStatePrefix)
+		if oauthErr := q.Get("error"); oauthErr != "" && !isCLI {
 			writeJSON(w, http.StatusBadRequest, map[string]string{
 				"error":       oauthErr,
 				"description": q.Get("error_description"),
@@ -35,7 +41,7 @@ func handleAuthCallback(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 		code := q.Get("code")
-		if code == "" {
+		if code == "" && q.Get("error") == "" {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing code parameter"})
 			return
 		}
@@ -45,20 +51,62 @@ func handleAuthCallback(db *gorm.DB) http.HandlerFunc {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "no client credentials, start at /api/auth/redirect"})
 			return
 		}
+		var cliState *cliOAuthState
+		if isCLI {
+			state, err := decodeCLIState(creds.ClientSecret, stateValue, time.Now())
+			if err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid or expired CLI auth state"})
+				return
+			}
+			cliState = &state
+		}
+		if oauthErr := q.Get("error"); oauthErr != "" {
+			message := q.Get("error_description")
+			if message == "" {
+				message = "Railway login was cancelled"
+			}
+			completeCLIAuth(*cliState, "", time.Time{}, message)
+			writeCLIAuthPage(w, "CLI login failed", message)
+			return
+		}
 
 		tok, err := exchangeAuthCode(r.Context(), creds, code)
 		if err != nil {
+			if cliState != nil {
+				completeCLIAuth(*cliState, "", time.Time{}, "Railway login failed")
+				writeCLIAuthPage(w, "CLI login failed", "Railway login failed. Return to the terminal and try again.")
+				return
+			}
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
 
 		if _, err := getAuthUser(r.Context(), tok.AccessToken); err != nil {
+			if cliState != nil {
+				completeCLIAuth(*cliState, "", time.Time{}, "the Railway user cannot access this workspace")
+				writeCLIAuthPage(w, "CLI login failed", "This Railway user cannot access the workspace served by Dispatcher.")
+				return
+			}
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
 			return
 		}
 
 		if err := saveToken(r.Context(), db, creds.ID, tok); err != nil {
+			if cliState != nil {
+				completeCLIAuth(*cliState, "", time.Time{}, "Dispatcher could not save the Railway session")
+				writeCLIAuthPage(w, "CLI login failed", "Dispatcher could not save the Railway session.")
+				return
+			}
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if cliState != nil {
+			expiresAt := time.Now().Add(time.Duration(tok.ExpiresIn) * time.Second)
+			if !completeCLIAuth(*cliState, tok.AccessToken, expiresAt, "") {
+				writeCLIAuthPage(w, "CLI login expired", "Return to the terminal and start login again.")
+				return
+			}
+			writeCLIAuthPage(w, "CLI login complete", "You can close this window and return to the terminal.")
 			return
 		}
 
@@ -77,38 +125,51 @@ func handleAuthCallback(db *gorm.DB) http.HandlerFunc {
 
 func handleAuthRedirect(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		creds, err := gorm.G[RailwayCredentials](db).First(r.Context())
-
+		creds, err := loadOrCreateRailwayCredentials(r.Context(), db)
 		if err != nil {
-			creds, err = createRailwayCredentials()
-			if err != nil {
-				writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
-				return
-			}
-			if err := gorm.G[RailwayCredentials](db).Create(r.Context(), &creds); err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-				return
-			}
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+			return
 		}
-
-		u := url.URL{
-			Scheme: "https",
-			Host:   "backboard.railway.com",
-			Path:   "/oauth/auth",
-			RawQuery: url.Values{
-				"response_type": {"code"},
-				"client_id":     {creds.ClientID},
-				"redirect_uri":  {os.Getenv("CALLBACK_URL")},
-				// offline_access + prompt=consent is what yields a refresh
-				// token (docs: both are required — auto-approved logins skip
-				// consent and get none). Without it background collection
-				// dies when the access token expires after an hour.
-				"scope":  {"openid profile email offline_access workspace:admin"},
-				"prompt": {"consent"},
-			}.Encode(),
-		}
-		http.Redirect(w, r, u.String(), http.StatusFound)
+		http.Redirect(w, r, railwayAuthorizationURL(creds, ""), http.StatusFound)
 	}
+}
+
+func loadOrCreateRailwayCredentials(ctx context.Context, db *gorm.DB) (RailwayCredentials, error) {
+	creds, err := gorm.G[RailwayCredentials](db).First(ctx)
+	if err == nil {
+		return creds, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return RailwayCredentials{}, fmt.Errorf("load Railway OAuth credentials: %w", err)
+	}
+	creds, err = createRailwayCredentials()
+	if err != nil {
+		return RailwayCredentials{}, err
+	}
+	if err := gorm.G[RailwayCredentials](db).Create(ctx, &creds); err != nil {
+		return RailwayCredentials{}, fmt.Errorf("save Railway OAuth credentials: %w", err)
+	}
+	return creds, nil
+}
+
+func railwayAuthorizationURL(creds RailwayCredentials, state string) string {
+	values := url.Values{
+		"response_type": {"code"},
+		"client_id":     {creds.ClientID},
+		"redirect_uri":  {os.Getenv("CALLBACK_URL")},
+		// offline_access + prompt=consent is what yields a refresh token.
+		"scope":  {"openid profile email offline_access workspace:admin"},
+		"prompt": {"consent"},
+	}
+	if state != "" {
+		values.Set("state", state)
+	}
+	return (&url.URL{
+		Scheme:   "https",
+		Host:     "backboard.railway.com",
+		Path:     "/oauth/auth",
+		RawQuery: values.Encode(),
+	}).String()
 }
 
 func handleAuthMe(w http.ResponseWriter, r *http.Request) {

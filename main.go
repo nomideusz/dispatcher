@@ -24,6 +24,8 @@ func main() {
 	mux.HandleFunc("GET /api/health", handleHealth(db))
 	mux.HandleFunc("GET /api/auth/redirect", handleAuthRedirect(db))
 	mux.HandleFunc("GET /api/auth/callback", handleAuthCallback(db))
+	mux.HandleFunc("POST /api/auth/cli/start", handleCLIAuthStart(db))
+	mux.HandleFunc("POST /api/auth/cli/exchange", handleCLIAuthExchange)
 	mux.Handle("GET /api/auth/me", requireAuth(http.HandlerFunc(handleAuthMe)))
 	mux.HandleFunc("POST /api/auth/logout", handleAuthLogout)
 	mux.Handle("GET /api/analytics/payout", requireAuth(handlePayoutSeries(db)))

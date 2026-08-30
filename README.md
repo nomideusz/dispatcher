@@ -38,6 +38,61 @@ Notification targets send payout requests, template health drops, and weekly tem
 
 Background collection, auto-withdraw, weekly summaries, and notification delivery assume the app runs as a single process. Running multiple replicas can duplicate cron work and notifications.
 
+## CLI
+
+`dispatcherctl` is a small, standalone HTTP client intended for agents and
+scripts. It queries a running Dispatcher instance, never its DuckDB file or
+Railway directly. Authenticated commands use the same Railway OAuth flow and
+session as the browser app; there are no separate API tokens. The health check
+remains public just like `/api/health`.
+
+Build or install the CLI, point it at the instance, and log in:
+
+```sh
+make build-cli
+# Or: make install-cli
+
+export DISPATCHER_URL="https://dispatcher.example.com"
+
+./dispatcherctl login       # opens Railway OAuth in your browser
+./dispatcherctl whoami
+
+./dispatcherctl summary
+./dispatcherctl templates
+./dispatcherctl payouts --days 90
+./dispatcherctl notifications
+./dispatcherctl withdraw-settings
+./dispatcherctl withdraw-accounts
+```
+
+During login Dispatcher creates a short-lived pending login and returns a
+Railway authorization URL. The CLI opens that URL (or prints it in a headless
+environment) and polls Dispatcher while the browser completes the existing
+OAuth callback. The result is bound to a verifier held only by the CLI, so the
+browser never receives the Railway session itself. This also works when the CLI
+and browser are on different machines. Sessions are stored with owner-only
+permissions in the operating system's user config directory. Use
+`dispatcherctl logout` to remove the session for an instance.
+
+Responses are JSON and are pretty-printed by default. Pass `--compact` before
+the command for machine-friendly JSONL output. `get` makes it possible to query
+new read endpoints without waiting for a CLI release:
+
+```sh
+./dispatcherctl --compact get analytics/templates
+```
+
+Run `dispatcherctl help` for the full command list. A remote Dispatcher URL must
+use HTTPS for login; plain HTTP is accepted only for loopback development. Set
+`DISPATCHER_CONFIG` or pass `--config` to override the credentials-file path.
+
+To stamp a release version into the binary:
+
+```sh
+make build-cli CLI_VERSION=v0.1.0
+./dispatcherctl version
+```
+
 ## Adding things
 
 - **API route**: register another `mux.HandleFunc("GET /api/...")` in `main.go`, implement it in `handlers.go`.

@@ -63,9 +63,7 @@ You can also build or install from source:
 make build-cli
 # Or: make install-cli
 
-export DISPATCHER_URL="https://dispatcher.example.com"
-
-./dispatcherctl login       # opens Railway OAuth in your browser
+./dispatcherctl login       # asks for the Dispatcher URL, then opens Railway OAuth
 ./dispatcherctl whoami
 
 ./dispatcherctl summary
@@ -75,6 +73,11 @@ export DISPATCHER_URL="https://dispatcher.example.com"
 ./dispatcherctl withdraw-settings
 ./dispatcherctl withdraw-accounts
 ```
+
+The first `login` asks for the Dispatcher instance URL and saves it after OAuth
+succeeds. Later commands and logins reuse that URL automatically. `--url` and
+`DISPATCHER_URL` override the saved instance; a successful login through an
+override makes it the new default.
 
 During login Dispatcher creates a short-lived pending login and returns a
 Railway authorization URL. The CLI opens that URL (or prints it in a headless

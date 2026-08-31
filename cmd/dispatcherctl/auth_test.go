@@ -28,6 +28,13 @@ func TestStoredSessionRoundTripAndExpiry(t *testing.T) {
 	if !ok || got != want {
 		t.Fatalf("session = %+v, %v; want %+v, true", got, ok, want)
 	}
+	instance, ok, err := loadStoredURL(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || instance != "https://one.example" {
+		t.Fatalf("stored URL = %q, %v", instance, ok)
+	}
 	if _, ok, err := loadStoredSession(path, "https://one.example", now.Add(time.Hour)); err != nil || ok {
 		t.Fatalf("expired session: ok = %v, err = %v", ok, err)
 	}
@@ -37,6 +44,23 @@ func TestStoredSessionRoundTripAndExpiry(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0600 {
 		t.Fatalf("credentials mode = %o, want 600", info.Mode().Perm())
+	}
+}
+
+func TestStoredURLMigratesSingleInstanceCredentials(t *testing.T) {
+	path := t.TempDir() + "/credentials.json"
+	if err := writeCredentials(path, credentialsFile{Sessions: map[string]storedSession{
+		"https://legacy.example": {Session: "session", ExpiresAt: time.Now().Add(time.Hour)},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	instance, ok, err := loadStoredURL(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || instance != "https://legacy.example" {
+		t.Fatalf("stored URL = %q, %v", instance, ok)
 	}
 }
 

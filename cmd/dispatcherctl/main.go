@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -27,13 +29,13 @@ func main() {
 }
 
 func run(args []string, getenv func(string) string, stdout, stderr io.Writer) int {
-	return runWithBrowser(args, getenv, stdout, stderr, openBrowser)
+	return runWithBrowser(args, getenv, os.Stdin, stdout, stderr, openBrowser)
 }
 
-func runWithBrowser(args []string, getenv func(string) string, stdout, stderr io.Writer, openURL func(string) error) int {
+func runWithBrowser(args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer, openURL func(string) error) int {
 	flags := flag.NewFlagSet("dispatcherctl", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	baseURL := flags.String("url", envOr(getenv, "DISPATCHER_URL", defaultDispatcherURL), "Dispatcher instance URL")
+	baseURL := flags.String("url", strings.TrimSpace(getenv("DISPATCHER_URL")), "Dispatcher instance URL")
 	configPath := flags.String("config", getenv("DISPATCHER_CONFIG"), "credentials file path")
 	compact := flags.Bool("compact", false, "emit compact JSON")
 	timeout := flags.Duration("timeout", 90*time.Second, "HTTP request timeout")
@@ -59,22 +61,31 @@ func runWithBrowser(args []string, getenv func(string) string, stdout, stderr io
 		fmt.Fprintln(stderr, "error: timeout must be greater than zero")
 		return 2
 	}
+	if rest[0] == "login" && len(rest) != 1 {
+		fmt.Fprintln(stderr, "error: login takes no arguments")
+		return 2
+	}
+	if rest[0] == "logout" && len(rest) != 1 {
+		fmt.Fprintln(stderr, "error: logout takes no arguments")
+		return 2
+	}
 
-	client, err := newAPIClient(*baseURL, "", *timeout)
+	credentialsPath, err := resolveCredentialsPath(*configPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
+	}
+	selectedURL, err := resolveDispatcherURL(*baseURL, credentialsPath, rest[0] == "login", stdin, stderr)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
+	}
+	client, err := newAPIClient(selectedURL, "", *timeout)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 2
 	}
 	if rest[0] == "login" {
-		if len(rest) != 1 {
-			fmt.Fprintln(stderr, "error: login takes no arguments")
-			return 2
-		}
-		credentialsPath, err := resolveCredentialsPath(*configPath)
-		if err != nil {
-			fmt.Fprintf(stderr, "error: %v\n", err)
-			return 2
-		}
 		ctx, cancel := context.WithTimeout(context.Background(), loginTimeout)
 		defer cancel()
 		if err := login(ctx, client, credentialsPath, stdout, openURL); err != nil {
@@ -84,15 +95,6 @@ func runWithBrowser(args []string, getenv func(string) string, stdout, stderr io
 		return 0
 	}
 	if rest[0] == "logout" {
-		if len(rest) != 1 {
-			fmt.Fprintln(stderr, "error: logout takes no arguments")
-			return 2
-		}
-		credentialsPath, err := resolveCredentialsPath(*configPath)
-		if err != nil {
-			fmt.Fprintf(stderr, "error: %v\n", err)
-			return 2
-		}
 		if err := removeStoredSession(credentialsPath, client.baseURL); err != nil {
 			fmt.Fprintf(stderr, "error: %v\n", err)
 			return 1
@@ -107,11 +109,6 @@ func runWithBrowser(args []string, getenv func(string) string, stdout, stderr io
 		return 2
 	}
 	if cmd.requiresAuth {
-		credentialsPath, err := resolveCredentialsPath(*configPath)
-		if err != nil {
-			fmt.Fprintf(stderr, "error: %v\n", err)
-			return 2
-		}
 		session, ok, err := loadStoredSession(credentialsPath, client.baseURL, time.Now())
 		if err != nil {
 			fmt.Fprintf(stderr, "error: %v\n", err)
@@ -189,13 +186,6 @@ func parseCommand(args []string, stderr io.Writer) (command, error) {
 	}
 }
 
-func envOr(getenv func(string) string, key, fallback string) string {
-	if value := getenv(key); value != "" {
-		return value
-	}
-	return fallback
-}
-
 func resolveCredentialsPath(configured string) (string, error) {
 	if strings.TrimSpace(configured) != "" {
 		return configured, nil
@@ -203,12 +193,39 @@ func resolveCredentialsPath(configured string) (string, error) {
 	return defaultCredentialsPath()
 }
 
+func resolveDispatcherURL(configured, credentialsPath string, prompt bool, input io.Reader, output io.Writer) (string, error) {
+	if configured = strings.TrimSpace(configured); configured != "" {
+		return configured, nil
+	}
+	stored, ok, err := loadStoredURL(credentialsPath)
+	if err != nil {
+		return "", err
+	}
+	if ok {
+		return stored, nil
+	}
+	if !prompt {
+		return defaultDispatcherURL, nil
+	}
+
+	fmt.Fprint(output, "Dispatcher URL: ")
+	value, err := bufio.NewReader(input).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("read Dispatcher URL: %w", err)
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", errors.New("Dispatcher URL is required (or pass --url or set DISPATCHER_URL)")
+	}
+	return value, nil
+}
+
 func printUsage(w io.Writer) {
 	fmt.Fprint(w, `Usage:
   dispatcherctl [flags] <command>
 
 Flags:
-  --url URL          Dispatcher instance (env: DISPATCHER_URL)
+  --url URL          Dispatcher instance (env: DISPATCHER_URL; defaults to saved login)
   --config PATH      Credentials file (env: DISPATCHER_CONFIG)
   --compact          Emit compact JSON
   --timeout DURATION HTTP timeout (default: 1m30s)

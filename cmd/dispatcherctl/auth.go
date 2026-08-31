@@ -29,6 +29,7 @@ type storedSession struct {
 }
 
 type credentialsFile struct {
+	URL      string                   `json:"url,omitempty"`
 	Sessions map[string]storedSession `json:"sessions"`
 }
 
@@ -52,6 +53,24 @@ func loadStoredSession(path, instance string, now time.Time) (storedSession, boo
 	return session, true, nil
 }
 
+func loadStoredURL(path string) (string, bool, error) {
+	credentials, err := readCredentials(path)
+	if err != nil {
+		return "", false, err
+	}
+	if instance := strings.TrimSpace(credentials.URL); instance != "" {
+		return instance, true, nil
+	}
+	// Older credentials files did not have URL. Preserve the obvious default
+	// when they contain a session for exactly one Dispatcher instance.
+	if len(credentials.Sessions) == 1 {
+		for instance := range credentials.Sessions {
+			return instance, true, nil
+		}
+	}
+	return "", false, nil
+}
+
 func saveStoredSession(path, instance string, session storedSession) error {
 	credentials, err := readCredentials(path)
 	if err != nil {
@@ -60,6 +79,7 @@ func saveStoredSession(path, instance string, session storedSession) error {
 	if credentials.Sessions == nil {
 		credentials.Sessions = make(map[string]storedSession)
 	}
+	credentials.URL = instance
 	credentials.Sessions[instance] = session
 	return writeCredentials(path, credentials)
 }

@@ -2,12 +2,85 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestRunLoginPromptsForURLAndReusesIt(t *testing.T) {
+	expiresAt := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
+	loginCode, err := randomSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/auth/cli/start":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"authorizationUrl": "https://backboard.railway.com/oauth/auth?client_id=test&state=signed",
+				"code":             loginCode,
+				"expiresAt":        time.Now().Add(time.Minute),
+			})
+		case "/api/auth/cli/exchange":
+			_ = json.NewEncoder(w).Encode(storedSession{Session: "saved-session", ExpiresAt: expiresAt})
+		case "/api/auth/me":
+			cookie, err := r.Cookie("railway_token")
+			if err != nil || cookie.Value != "saved-session" {
+				t.Errorf("session cookie = %v, %v", cookie, err)
+			}
+			_, _ = w.Write([]byte(`{"id":"user-1"}`))
+		default:
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	credentialsPath := t.TempDir() + "/credentials.json"
+	getenv := func(string) string { return "" }
+	var stdout, stderr bytes.Buffer
+	code := runWithBrowser(
+		[]string{"--config", credentialsPath, "login"},
+		getenv,
+		strings.NewReader(server.URL+"\n"),
+		&stdout,
+		&stderr,
+		func(string) error { return nil },
+	)
+	if code != 0 {
+		t.Fatalf("login exit code = %d, stderr = %s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "Dispatcher URL: ") {
+		t.Fatalf("login did not prompt for URL: %q", stderr.String())
+	}
+	storedURL, ok, err := loadStoredURL(credentialsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || storedURL != server.URL {
+		t.Fatalf("stored URL = %q, %v", storedURL, ok)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = runWithBrowser(
+		[]string{"--config", credentialsPath, "whoami"},
+		getenv,
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+		func(string) error { return nil },
+	)
+	if code != 0 {
+		t.Fatalf("whoami exit code = %d, stderr = %s", code, stderr.String())
+	}
+	if strings.Contains(stderr.String(), "Dispatcher URL: ") {
+		t.Fatalf("saved URL prompted again: %q", stderr.String())
+	}
+}
 
 func TestRunPayoutsSendsSessionCookieAndQuery(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

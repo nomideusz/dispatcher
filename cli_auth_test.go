@@ -191,8 +191,22 @@ func TestBrowserAuthCallbackUsesSharedRailwayCompletion(t *testing.T) {
 			break
 		}
 	}
-	if sessionCookie == nil || sessionCookie.Value != "railway-session" || !sessionCookie.HttpOnly || !sessionCookie.Secure {
+	if sessionCookie == nil || !sessionCookie.HttpOnly || !sessionCookie.Secure {
 		t.Fatalf("session cookie = %+v", sessionCookie)
+	}
+	if strings.Contains(sessionCookie.Value, "railway-session") || strings.Contains(sessionCookie.Value, "refresh") {
+		t.Fatal("session cookie exposed the Railway grant in the clear")
+	}
+	// The cookie outlives the hour-long Railway token sealed inside it.
+	if sessionCookie.MaxAge < int(24*time.Hour/time.Second) {
+		t.Fatalf("session cookie MaxAge = %d", sessionCookie.MaxAge)
+	}
+	decoded, err := decodeSession("client-secret", sessionCookie.Value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.AccessToken != "railway-session" || decoded.RefreshToken != "refresh" {
+		t.Fatalf("session = %+v", decoded)
 	}
 }
 
@@ -290,8 +304,15 @@ func TestAuthCallbackCompletesPendingCLIFlowWithoutExposingSession(t *testing.T)
 		t.Fatal("Railway session was exposed to the browser")
 	}
 	handoff, status := cliAuthHandoffs.exchange(loginCode, verifier, time.Now())
-	if status != cliHandoffReady || handoff.Session != "railway-session" {
+	if status != cliHandoffReady || handoff.Session == "" {
 		t.Fatalf("handoff = %+v, status = %d", handoff, status)
+	}
+	decoded, err := decodeSession("client-secret", handoff.Session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.AccessToken != "railway-session" || decoded.RefreshToken != "refresh" {
+		t.Fatalf("session = %+v", decoded)
 	}
 }
 

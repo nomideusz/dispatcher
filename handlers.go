@@ -77,9 +77,18 @@ func handleAuthCallback(db *gorm.DB) http.HandlerFunc {
 			writeRailwayAuthFailure(w, cliState, authErr)
 			return
 		}
+		now := time.Now()
+		value, err := encodeSession(creds.ClientSecret, newSession(tok, now))
+		if err != nil {
+			writeRailwayAuthFailure(w, cliState, &railwayAuthError{
+				Status: http.StatusInternalServerError, Err: err, CLIMessage: "Dispatcher could not issue a session",
+			})
+			return
+		}
 		if cliState != nil {
-			expiresAt := time.Now().Add(time.Duration(tok.ExpiresIn) * time.Second)
-			if !completeCLIAuth(*cliState, tok.AccessToken, expiresAt, "") {
+			// The grant refreshes itself, so the CLI only has to stop trusting
+			// the session once the cookie it was handed would have aged out.
+			if !completeCLIAuth(*cliState, value, now.Add(sessionCookieMaxAge), "") {
 				writeCLIAuthPage(w, "CLI login expired", "Return to the terminal and start login again.")
 				return
 			}
@@ -87,15 +96,7 @@ func handleAuthCallback(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 
-		http.SetCookie(w, &http.Cookie{
-			Name:     authCookieName,
-			Value:    tok.AccessToken,
-			Path:     "/",
-			MaxAge:   int(tok.ExpiresIn),
-			HttpOnly: true,
-			Secure:   secureAuthCookies(),
-			SameSite: http.SameSiteLaxMode,
-		})
+		setSessionCookie(w, value, now)
 		http.Redirect(w, r, "/", http.StatusFound)
 	}
 }
@@ -200,15 +201,7 @@ func handleAuthMe(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleAuthLogout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     authCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   secureAuthCookies(),
-		SameSite: http.SameSiteLaxMode,
-	})
+	clearSessionCookie(w)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "signed out"})
 }
 

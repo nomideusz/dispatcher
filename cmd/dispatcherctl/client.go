@@ -8,16 +8,24 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
 
-const maxResponseBytes = 16 << 20
+const (
+	maxResponseBytes = 16 << 20
+	// sessionCookieName matches the cookie the Dispatcher server issues.
+	sessionCookieName = "railway_token"
+)
 
 type apiClient struct {
 	baseURL string
 	session string
-	http    *http.Client
+	// onSession persists a session Dispatcher rotated mid-request, so the next
+	// command starts from the renewed one instead of a spent grant.
+	onSession func(storedSession) error
+	http      *http.Client
 }
 
 func newAPIClient(baseURL, session string, timeout time.Duration) (*apiClient, error) {
@@ -63,7 +71,7 @@ func (c *apiClient) requestBody(ctx context.Context, method, path string, payloa
 		req.Header.Set("Content-Type", contentType)
 	}
 	if c.session != "" {
-		req.AddCookie(&http.Cookie{Name: "railway_token", Value: c.session})
+		req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: c.session})
 	}
 
 	res, err := c.http.Do(req)
@@ -71,6 +79,7 @@ func (c *apiClient) requestBody(ctx context.Context, method, path string, payloa
 		return nil, fmt.Errorf("request Dispatcher: %w", err)
 	}
 	defer res.Body.Close()
+	c.adoptRotatedSession(res)
 
 	body, err := io.ReadAll(io.LimitReader(res.Body, maxResponseBytes+1))
 	if err != nil {
@@ -83,6 +92,39 @@ func (c *apiClient) requestBody(ctx context.Context, method, path string, payloa
 		return nil, responseError(res.Status, body)
 	}
 	return body, nil
+}
+
+// adoptRotatedSession picks up a renewed session cookie. Dispatcher refreshes
+// the Railway grant behind a session on demand and returns the new one, so a
+// CLI login stays valid for as long as Railway honours the refresh token.
+func (c *apiClient) adoptRotatedSession(res *http.Response) {
+	if c.session == "" {
+		return
+	}
+	for _, cookie := range res.Cookies() {
+		if cookie.Name != sessionCookieName || cookie.Value == "" || cookie.Value == c.session {
+			continue
+		}
+		c.session = cookie.Value
+		if c.onSession == nil {
+			continue
+		}
+		if err := c.onSession(storedSession{Session: cookie.Value, ExpiresAt: cookieExpiry(cookie, time.Now())}); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not save the renewed session: %v\n", err)
+		}
+	}
+}
+
+// cookieExpiry prefers Max-Age, which is what Dispatcher sets, and falls back
+// to the Expires date so an unusual response still yields a usable lifetime.
+func cookieExpiry(cookie *http.Cookie, now time.Time) time.Time {
+	if cookie.MaxAge > 0 {
+		return now.Add(time.Duration(cookie.MaxAge) * time.Second)
+	}
+	if !cookie.Expires.IsZero() {
+		return cookie.Expires
+	}
+	return now.Add(24 * time.Hour)
 }
 
 func responseError(status string, body []byte) error {

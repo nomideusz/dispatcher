@@ -235,3 +235,49 @@ func TestParseCommandRejectsInvalidPayoutWindow(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 }
+
+func TestRunSavesSessionRotatedByDispatcher(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("railway_token")
+		if err != nil || cookie.Value != "old-session" {
+			t.Errorf("session cookie = %v, %v", cookie, err)
+		}
+		// Dispatcher refreshed the Railway grant behind the session.
+		http.SetCookie(w, &http.Cookie{
+			Name:   "railway_token",
+			Value:  "renewed-session",
+			Path:   "/",
+			MaxAge: int((48 * time.Hour) / time.Second),
+		})
+		_, _ = w.Write([]byte(`{"templates":[]}`))
+	}))
+	defer server.Close()
+	credentialsPath := t.TempDir() + "/credentials.json"
+	if err := saveStoredSession(credentialsPath, server.URL, storedSession{
+		Session: "old-session", ExpiresAt: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run(
+		[]string{"--url", server.URL, "--config", credentialsPath, "templates"},
+		func(string) string { return "" },
+		&stdout,
+		&stderr,
+	)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %s", code, stderr.String())
+	}
+	session, ok, err := loadStoredSession(credentialsPath, server.URL, time.Now())
+	if err != nil || !ok {
+		t.Fatalf("load session: ok = %t, err = %v", ok, err)
+	}
+	if session.Session != "renewed-session" {
+		t.Fatalf("stored session = %+v", session)
+	}
+	if session.ExpiresAt.Before(time.Now().Add(24 * time.Hour)) {
+		t.Fatalf("stored session expires at %s", session.ExpiresAt)
+	}
+}

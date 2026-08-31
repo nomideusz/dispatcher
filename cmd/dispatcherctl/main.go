@@ -119,6 +119,9 @@ func runWithBrowser(args []string, getenv func(string) string, stdin io.Reader, 
 			return 1
 		}
 		client.session = session.Session
+		client.onSession = func(renewed storedSession) error {
+			return saveStoredSession(credentialsPath, client.baseURL, renewed)
+		}
 	}
 	body, err := client.request(context.Background(), cmd.method, cmd.path)
 	if err != nil {

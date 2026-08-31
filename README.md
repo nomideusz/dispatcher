@@ -32,6 +32,28 @@ Note: `go build` embeds `web/build/client`, so the frontend must be built first 
 
 GORM with DuckDB (via `github.com/vogo/duckdb/v2`). Data lives in `dispatcher.duckdb` next to the binary (override with `DB_PATH`); `db.go` holds the models and connection, and `AutoMigrate` runs on startup. Building needs CGO (DuckDB links a C library) — already the Go default.
 
+## Sessions
+
+The auth cookie carries the whole Railway OAuth grant — access token, refresh
+token, expiry — sealed with AES-GCM under the OAuth client secret. There is no
+session table: Railway stays the only authority on who you are.
+
+A Railway access token lasts about an hour, which is how long a login used to
+last. `requireAuth` now refreshes the grant when the access token is spent,
+re-seals the cookie, and carries on, so a login lives for as long as Railway
+honours the refresh token. Parallel requests that arrive on an expired token
+share a single refresh. Every request is still validated against Railway, so
+losing workspace access ends the session at once, and the refreshed token is
+also written to the stored workspace credentials that background jobs use.
+
+The cookie is encrypted rather than signed so a leaked cookie cannot be
+replayed against Railway's own API, and it is `HttpOnly`, `SameSite=Lax`, and
+`Secure` whenever `CALLBACK_URL` is HTTPS. Its lifetime is 400 days, the
+ceiling browsers accept; `dispatcherctl` stores the same value and adopts the
+renewed session whenever Dispatcher rotates it. Logging out drops the cookie,
+and re-registering the OAuth client invalidates every session, since the client
+secret is the encryption key.
+
 ## Notifications
 
 Notification targets send payout requests, template health drops, and weekly template summaries to Discord, Slack, ntfy, or a custom HTTP webhook. Targets use editable Go text/templates and can be tested before they are enabled.
@@ -85,7 +107,8 @@ environment) and polls Dispatcher while the browser completes the existing
 OAuth callback. Browser and CLI login share the same Railway authorization URL
 builder, code exchange, workspace-access check, saved credentials, and
 `requireAuth` cookie middleware. The only CLI-specific part is how the completed
-session reaches the terminal. That result is bound to a verifier held only by
+session reaches the terminal. Sessions renew themselves, so a CLI login lasts
+until Railway revokes the grant. That result is bound to a verifier held only by
 the CLI, so the browser never receives the Railway session itself. This also
 works when the CLI and browser are on different machines. Sessions are stored
 with owner-only permissions in the operating system's user config directory.

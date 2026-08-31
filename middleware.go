@@ -3,26 +3,65 @@ package main
 import (
 	"context"
 	"net/http"
+	"time"
+
+	"gorm.io/gorm"
 )
 
 const authCookieName = "railway_token"
 
 type userKey struct{}
 
-func requireAuth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie(authCookieName)
-		if err != nil || cookie.Value == "" {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not authenticated"})
-			return
-		}
-		user, err := getAuthUser(r.Context(), cookie.Value)
-		if err != nil {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid or expired token"})
-			return
-		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userKey{}, user)))
-	})
+// requireAuth validates the caller against Railway on every request. The
+// cookie carries the whole OAuth grant, so a login that outlived its access
+// token is refreshed here instead of being rejected.
+func requireAuth(db *gorm.DB) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			cookie, err := r.Cookie(authCookieName)
+			if err != nil || cookie.Value == "" {
+				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not authenticated"})
+				return
+			}
+			creds, err := gorm.G[RailwayCredentials](db).First(r.Context())
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "no client credentials, start at /api/auth/redirect"})
+				return
+			}
+			current, err := decodeSession(creds.ClientSecret, cookie.Value)
+			if err != nil {
+				rejectSession(w)
+				return
+			}
+			now := time.Now()
+			resolved, refreshed, err := resolveSession(r.Context(), db, creds, current, now)
+			if err != nil {
+				rejectSession(w)
+				return
+			}
+			user, err := getAuthUser(r.Context(), resolved.AccessToken)
+			if err != nil {
+				rejectSession(w)
+				return
+			}
+			if refreshed {
+				value, err := encodeSession(creds.ClientSecret, resolved)
+				if err != nil {
+					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "could not renew the session"})
+					return
+				}
+				setSessionCookie(w, value, now)
+			}
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userKey{}, user)))
+		})
+	}
+}
+
+// rejectSession drops a session Railway no longer honours, so the client stops
+// replaying it and logs in again.
+func rejectSession(w http.ResponseWriter) {
+	clearSessionCookie(w)
+	writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid or expired session"})
 }
 
 // authUserFrom returns the user stored by requireAuth; zero value if the

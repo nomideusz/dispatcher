@@ -58,6 +58,24 @@ func pointerTo[T any](value T) *T {
 	return &value
 }
 
+// Payout is one withdrawal mirrored from Railway. Railway stays the source of
+// truth, but its history is a paginated connection with no aggregate resolver,
+// so it is synced into DuckDB and every read (chart, table, totals) is served
+// from here.
+type Payout struct {
+	// ID is Railway's withdrawal id. Credit payouts carry no id of their own,
+	// so they get a deterministic synthetic one (see payoutRowID) — re-syncing
+	// the same credit updates its row instead of duplicating it.
+	ID          string    `gorm:"primaryKey" json:"id"`
+	CreatedAt   time.Time `json:"createdAt"`
+	AmountCents int64     `json:"amountCents"`
+	Status      string    `json:"status"`
+	Kind        string    `json:"kind"`        // "cash" | "credits"
+	Destination string    `json:"destination"` // "Bank ••8149", "Railway credits"
+	AccountID   string    `json:"-"`
+	SyncedAt    time.Time `json:"-"`
+}
+
 // autoWithdrawSettingsID is the fixed primary key of the singleton settings
 // row, seeded on startup so writes are plain updates.
 const autoWithdrawSettingsID uint = 1
@@ -97,7 +115,7 @@ func openDB(dsn string) *gorm.DB {
 	if err != nil {
 		log.Fatalf("open database %s: %v", dsn, err)
 	}
-	if err := db.AutoMigrate(&RailwayCredentials{}, &TemplateSnapshot{}, &AutoWithdrawSettings{}, &NotificationTarget{}); err != nil {
+	if err := db.AutoMigrate(&RailwayCredentials{}, &TemplateSnapshot{}, &AutoWithdrawSettings{}, &NotificationTarget{}, &Payout{}); err != nil {
 		log.Fatalf("migrate database: %v", err)
 	}
 	// Seed the singleton settings row so later saves are plain updates (GORM's

@@ -1,10 +1,13 @@
 package main
 
 import (
-	"maps"
+	"context"
+	"fmt"
+	"log"
 	"net/http"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,9 +18,17 @@ import (
 // taken as Railway credits instead of cash.
 const railwayCreditWithdrawalTypename = "CreditWithdrawalInfo"
 
-// monthKeyLayout is both the bucket key and the wire format for a chart
-// column: a UTC calendar month.
-const monthKeyLayout = "2006-01"
+const (
+	// dayKeyLayout is both the daily bucket key and the wire format for a
+	// point on the chart.
+	dayKeyLayout = "2006-01-02"
+	// recentPayoutRows caps the payout table. The chart carries the shape of
+	// the history, so the table only has to show what happened lately.
+	recentPayoutRows = 8
+	// defaultPayoutWindowDays matches the analytics chart's default range.
+	defaultPayoutWindowDays = 30
+	maxPayoutWindowDays     = 365
+)
 
 // voidPayoutStatuses are the withdrawal states where no money actually moved.
 // Everything else — COMPLETED, PENDING, and any state Railway adds later —
@@ -30,29 +41,32 @@ var voidPayoutStatuses = map[string]bool{
 	"REJECTED":  true,
 }
 
-// payout is one row of the payout table.
-type payout struct {
-	ID          string    `json:"id"`
-	CreatedAt   time.Time `json:"createdAt"`
-	AmountCents int64     `json:"amountCents"`
-	Status      string    `json:"status"`
-	Kind        string    `json:"kind"`        // "cash" | "credits"
-	Destination string    `json:"destination"` // "Bank ••8149", "Railway credits"
-}
+func isVoidPayout(status string) bool { return voidPayoutStatuses[status] }
 
-// payoutMonth is one column of the payout chart: what was paid out in a
-// calendar month (UTC), split so cash and credits stack.
-type payoutMonth struct {
-	Month        string `json:"month"` // YYYY-MM
+// payoutPoint is one day of the chart. Amounts are cumulative from the start
+// of the selected window, so the line only ever climbs; Count is the running
+// number of payouts behind it.
+type payoutPoint struct {
+	Date         string `json:"date"` // YYYY-MM-DD
 	CashCents    int64  `json:"cashCents"`
 	CreditsCents int64  `json:"creditsCents"`
 	Count        int    `json:"count"`
 }
 
-// payoutTotals carries the running figures the chart deliberately does not
-// plot. A cumulative line over monthly columns would need a second y-scale,
-// whose alignment is arbitrary and invents a correlation, so the lifetime
-// number is a stat tile instead.
+// payoutWindow summarizes the selected range against the range of equal length
+// immediately before it, for a "+8.4% vs previous 30d" read.
+type payoutWindow struct {
+	Days          int      `json:"days"`
+	TotalCents    int64    `json:"totalCents"`
+	PreviousCents int64    `json:"previousCents"`
+	ChangePct     *float64 `json:"changePct"`
+	Count         int      `json:"count"`
+}
+
+// payoutTotals carries the lifetime figures the chart deliberately does not
+// plot. The chart is scoped to the selected window; a cumulative line that
+// also spanned all time would need a second y-scale, whose alignment is
+// arbitrary and invents a trend.
 type payoutTotals struct {
 	LifetimeCents int64      `json:"lifetimeCents"`
 	CashCents     int64      `json:"cashCents"`
@@ -65,77 +79,88 @@ type payoutTotals struct {
 }
 
 type payoutHistoryResponse struct {
-	Payouts []payout      `json:"payouts"`
-	Months  []payoutMonth `json:"months"`
-	Totals  payoutTotals  `json:"totals"`
-	// Truncated reports that the history is longer than the page walk read,
-	// so the oldest months are missing from the chart.
-	Truncated bool `json:"truncated"`
+	Points []payoutPoint `json:"points"`
+	Window payoutWindow  `json:"window"`
+	Totals payoutTotals  `json:"totals"`
+	// Payouts is the most recent recentPayoutRows rows, newest first, and
+	// TotalRows how many exist in all — so the table can say what it is hiding.
+	Payouts   []Payout `json:"payouts"`
+	TotalRows int      `json:"totalRows"`
 }
 
-// handlePayoutHistory serves Railway's payout history live. Withdrawals are
-// Railway's own immutable record, so unlike template metrics there is nothing
-// to snapshot — reading them on demand can't drift.
+// handlePayoutHistory serves the payout dashboard straight from DuckDB.
+// Railway is still the source of truth, but its history is a paginated
+// connection with no aggregate resolver, so it is mirrored by the collector
+// (see syncPayouts) and read locally. ?days=N bounds the chart window.
 func handlePayoutHistory(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		token, customerID, err := workspaceCustomer(ctx, db)
+		days := defaultPayoutWindowDays
+		if v, err := strconv.Atoi(r.URL.Query().Get("days")); err == nil && v >= 1 && v <= maxPayoutWindowDays {
+			days = v
+		}
+		payouts := []Payout{}
+		err := db.WithContext(r.Context()).Raw(`
+			SELECT id, created_at, amount_cents, status, kind, destination
+			FROM payouts
+			ORDER BY created_at DESC`).Scan(&payouts).Error
 		if err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		records, truncated, err := getPayoutHistory(ctx, token, customerID)
-		if err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
-			return
-		}
-		writeJSON(w, http.StatusOK, buildPayoutHistory(records, truncated))
+		writeJSON(w, http.StatusOK, buildPayoutHistory(payouts, days, time.Now().UTC()))
 	}
 }
 
-// buildPayoutHistory turns raw Railway payout records into the table rows,
-// monthly chart columns and totals the dashboard renders.
-func buildPayoutHistory(records []payoutRecord, truncated bool) payoutHistoryResponse {
-	resp := payoutHistoryResponse{Payouts: []payout{}, Months: []payoutMonth{}, Truncated: truncated}
+// buildPayoutHistory turns the stored payouts into the windowed cumulative
+// series, the window/previous-window comparison, lifetime totals and the
+// recent rows the table shows.
+func buildPayoutHistory(payouts []Payout, days int, now time.Time) payoutHistoryResponse {
+	resp := payoutHistoryResponse{
+		Points:    []payoutPoint{},
+		Payouts:   []Payout{},
+		Window:    payoutWindow{Days: days},
+		TotalRows: len(payouts),
+	}
 
-	// Railway returns newest first, but the page walk is the only thing
-	// guaranteeing that order survives, so sort explicitly.
-	sorted := slices.Clone(records)
+	// Newest first for the table. The SQL already orders this way, but the
+	// pure function must not depend on its caller for correctness.
+	sorted := slices.Clone(payouts)
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].CreatedAt.After(sorted[j].CreatedAt) })
-
-	byMonth := map[string]*payoutMonth{}
-	for _, rec := range sorted {
-		credits := rec.Typename == railwayCreditWithdrawalTypename
-		at := rec.CreatedAt.UTC()
-		// Credit payouts carry no status field; they are settled the moment
-		// they exist, so normalize them onto the cash vocabulary.
-		status := rec.Status
-		if status == "" {
-			status = "COMPLETED"
+	for i, p := range sorted {
+		if i >= recentPayoutRows {
+			break
 		}
-		kind := "cash"
-		if credits {
-			kind = "credits"
-		}
-		resp.Payouts = append(resp.Payouts, payout{
-			ID:          rec.ID,
-			CreatedAt:   at,
-			AmountCents: rec.Amount,
-			Status:      status,
-			Kind:        kind,
-			Destination: payoutDestination(rec, credits),
-		})
+		p.CreatedAt = p.CreatedAt.UTC()
+		resp.Payouts = append(resp.Payouts, p)
+	}
 
-		// Failed and cancelled requests stay in the table (they explain a gap)
-		// but never count as money paid out.
-		if voidPayoutStatuses[status] {
+	// The window is the last N whole UTC days including today, so the axis
+	// lines up with the daily buckets rather than a ragged clock time.
+	today := now.UTC().Truncate(24 * time.Hour)
+	windowStart := today.AddDate(0, 0, -(days - 1))
+	previousStart := windowStart.AddDate(0, 0, -days)
+
+	perDayCash := map[string]int64{}
+	perDayCredits := map[string]int64{}
+	perDayCount := map[string]int{}
+
+	for _, p := range sorted {
+		at := p.CreatedAt.UTC()
+		if isVoidPayout(p.Status) {
 			continue
 		}
+		credits := p.Kind == "credits"
+
 		resp.Totals.Count++
-		resp.Totals.LifetimeCents += rec.Amount
-		if status == "PENDING" {
+		resp.Totals.LifetimeCents += p.AmountCents
+		if credits {
+			resp.Totals.CreditsCents += p.AmountCents
+		} else {
+			resp.Totals.CashCents += p.AmountCents
+		}
+		if p.Status == "PENDING" {
 			resp.Totals.PendingCount++
-			resp.Totals.PendingCents += rec.Amount
+			resp.Totals.PendingCents += p.AmountCents
 		}
 		if resp.Totals.LastPayoutAt == nil || at.After(*resp.Totals.LastPayoutAt) {
 			resp.Totals.LastPayoutAt = &at
@@ -144,39 +169,77 @@ func buildPayoutHistory(records []payoutRecord, truncated bool) payoutHistoryRes
 			resp.Totals.FirstPayoutAt = &at
 		}
 
-		key := at.Format(monthKeyLayout)
-		bucket, ok := byMonth[key]
-		if !ok {
-			bucket = &payoutMonth{Month: key}
-			byMonth[key] = bucket
-		}
-		bucket.Count++
-		if credits {
-			resp.Totals.CreditsCents += rec.Amount
-			bucket.CreditsCents += rec.Amount
-		} else {
-			resp.Totals.CashCents += rec.Amount
-			bucket.CashCents += rec.Amount
+		switch {
+		case !at.Before(windowStart):
+			key := at.Format(dayKeyLayout)
+			perDayCount[key]++
+			if credits {
+				perDayCredits[key] += p.AmountCents
+			} else {
+				perDayCash[key] += p.AmountCents
+			}
+			resp.Window.TotalCents += p.AmountCents
+			resp.Window.Count++
+		case !at.Before(previousStart):
+			resp.Window.PreviousCents += p.AmountCents
 		}
 	}
 
-	if len(byMonth) == 0 {
-		return resp
+	if resp.Window.PreviousCents > 0 {
+		pct := float64(resp.Window.TotalCents-resp.Window.PreviousCents) / float64(resp.Window.PreviousCents) * 100
+		resp.Window.ChangePct = &pct
 	}
-	// Zero-fill the quiet months so the columns sit on an even time axis
-	// instead of collapsing a payout-free stretch into no gap at all.
-	keys := slices.Sorted(maps.Keys(byMonth))
-	first, _ := time.Parse(monthKeyLayout, keys[0])
-	last, _ := time.Parse(monthKeyLayout, keys[len(keys)-1])
-	for m := first; !m.After(last); m = m.AddDate(0, 1, 0) {
-		key := m.Format(monthKeyLayout)
-		if bucket, ok := byMonth[key]; ok {
-			resp.Months = append(resp.Months, *bucket)
-			continue
-		}
-		resp.Months = append(resp.Months, payoutMonth{Month: key})
+
+	// Walk every day in the window, including the empty ones, accumulating as
+	// we go: a cumulative line must not jump over a payout-free stretch.
+	var cash, credits int64
+	var count int
+	for d := windowStart; !d.After(today); d = d.AddDate(0, 0, 1) {
+		key := d.Format(dayKeyLayout)
+		cash += perDayCash[key]
+		credits += perDayCredits[key]
+		count += perDayCount[key]
+		resp.Points = append(resp.Points, payoutPoint{
+			Date: key, CashCents: cash, CreditsCents: credits, Count: count,
+		})
 	}
 	return resp
+}
+
+// payoutRowID is the primary key a Railway record is stored under. Cash
+// withdrawals have their own id; credit payouts expose none, so they get a
+// deterministic key from the only fields they do carry — re-syncing the same
+// credit then updates its row instead of inserting a duplicate.
+func payoutRowID(rec payoutRecord) string {
+	if rec.ID != "" {
+		return rec.ID
+	}
+	return fmt.Sprintf("credit:%s:%d", rec.CreatedAt.UTC().Format(time.RFC3339Nano), rec.Amount)
+}
+
+// payoutFromRecord maps a Railway history entry onto the stored row.
+func payoutFromRecord(rec payoutRecord, syncedAt time.Time) Payout {
+	credits := rec.Typename == railwayCreditWithdrawalTypename
+	// Credit payouts carry no status field; they are settled the moment they
+	// exist, so normalize them onto the cash vocabulary.
+	status := rec.Status
+	if status == "" {
+		status = "COMPLETED"
+	}
+	kind := "cash"
+	if credits {
+		kind = "credits"
+	}
+	return Payout{
+		ID:          payoutRowID(rec),
+		CreatedAt:   rec.CreatedAt.UTC(),
+		AmountCents: rec.Amount,
+		Status:      status,
+		Kind:        kind,
+		Destination: payoutDestination(rec, credits),
+		AccountID:   rec.Account.ID,
+		SyncedAt:    syncedAt,
+	}
 }
 
 // payoutDestination labels where a payout landed: the last four of the bank
@@ -198,4 +261,71 @@ func payoutDestination(rec payoutRecord, credits bool) string {
 		return strings.ToUpper(label[:1]) + label[1:]
 	}
 	return "Unknown account"
+}
+
+// diffPayouts splits freshly fetched rows into the ones missing locally and
+// the ones whose mutable fields moved (a PENDING withdrawal settling, mainly).
+// Rows that are byte-identical are left alone so a sync of unchanged history
+// writes nothing.
+func diffPayouts(fetched []Payout, existing map[string]Payout) (inserts, updates []Payout) {
+	for _, p := range fetched {
+		prev, ok := existing[p.ID]
+		if !ok {
+			inserts = append(inserts, p)
+			continue
+		}
+		if prev.Status != p.Status || prev.AmountCents != p.AmountCents || prev.Destination != p.Destination {
+			updates = append(updates, p)
+		}
+	}
+	return inserts, updates
+}
+
+// syncPayouts mirrors Railway's payout history into DuckDB. It is an upsert
+// rather than a replace: a truncated page walk must never delete history it
+// simply did not read this time.
+func syncPayouts(ctx context.Context, db *gorm.DB) (inserted, updated int, err error) {
+	token, customerID, err := workspaceCustomer(ctx, db)
+	if err != nil {
+		return 0, 0, err
+	}
+	records, truncated, err := getPayoutHistory(ctx, token, customerID)
+	if err != nil {
+		return 0, 0, err
+	}
+	if truncated {
+		log.Printf("payout sync: history longer than the page walk, oldest payouts not read")
+	}
+
+	syncedAt := time.Now().UTC()
+	fetched := make([]Payout, 0, len(records))
+	for _, rec := range records {
+		fetched = append(fetched, payoutFromRecord(rec, syncedAt))
+	}
+
+	stored := []Payout{}
+	if err := db.WithContext(ctx).Raw(
+		`SELECT id, created_at, amount_cents, status, kind, destination FROM payouts`).
+		Scan(&stored).Error; err != nil {
+		return 0, 0, err
+	}
+	existing := make(map[string]Payout, len(stored))
+	for _, p := range stored {
+		existing[p.ID] = p
+	}
+
+	inserts, updates := diffPayouts(fetched, existing)
+	if len(inserts) > 0 {
+		if err := gorm.G[Payout](db).CreateInBatches(ctx, &inserts, 100); err != nil {
+			return 0, 0, err
+		}
+	}
+	for _, p := range updates {
+		if _, err := gorm.G[Payout](db).Where("id = ?", p.ID).Updates(ctx, Payout{
+			Status: p.Status, AmountCents: p.AmountCents, Destination: p.Destination, SyncedAt: syncedAt,
+		}); err != nil {
+			return len(inserts), 0, err
+		}
+	}
+	return len(inserts), len(updates), nil
 }

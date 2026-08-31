@@ -1,8 +1,9 @@
 import { queryOptions } from "@tanstack/react-query";
 import { api } from "~/lib/api";
 
-/** One withdrawal from Railway. Credits payouts have no id and are always
- * reported as COMPLETED — they settle the moment they exist. */
+/** One withdrawal, mirrored from Railway into Dispatcher's database by the
+ * collector. Credit payouts have no Railway id and are always reported as
+ * COMPLETED — they settle the moment they exist. */
 export interface Payout {
   id: string;
   createdAt: string;
@@ -13,12 +14,21 @@ export interface Payout {
   destination: string;
 }
 
-/** One column of the payout chart: a UTC calendar month, split by kind so the
- * two stack. Quiet months are zero-filled by the server. */
-export interface PayoutMonth {
-  month: string; // YYYY-MM
+/** One day of the chart. Amounts are cumulative from the start of the selected
+ * window, and count is the running number of payouts behind them. */
+export interface PayoutPoint {
+  date: string; // YYYY-MM-DD
   cashCents: number;
   creditsCents: number;
+  count: number;
+}
+
+/** The selected range against the range of equal length before it. */
+export interface PayoutWindow {
+  days: number;
+  totalCents: number;
+  previousCents: number;
+  changePct: number | null;
   count: number;
 }
 
@@ -34,17 +44,22 @@ export interface PayoutTotals {
 }
 
 export interface PayoutHistory {
-  payouts: Payout[];
-  months: PayoutMonth[];
+  points: PayoutPoint[];
+  window: PayoutWindow;
   totals: PayoutTotals;
-  /** The history is longer than the server's page walk read, so the oldest
-   * months are missing from the chart. */
-  truncated: boolean;
+  /** Only the most recent rows; totalRows is how many exist in all. */
+  payouts: Payout[];
+  totalRows: number;
 }
 
-/** Payout history is read live from Railway rather than snapshotted: it's
- * Railway's own immutable record, so there's nothing to drift. */
-export const payoutHistoryQuery = queryOptions({
-  queryKey: ["payouts", "history"],
-  queryFn: ({ signal }) => api.get("payouts", { signal }).json<PayoutHistory>(),
-});
+/** Served from Dispatcher's own database — the collector mirrors Railway's
+ * paginated history on every refresh and after each withdrawal, so the
+ * dashboard never waits on Railway to paint. */
+export const payoutHistoryQuery = (days: number) =>
+  queryOptions({
+    queryKey: ["payouts", "history", days],
+    queryFn: ({ signal }) =>
+      api
+        .get("payouts", { searchParams: { days }, signal })
+        .json<PayoutHistory>(),
+  });

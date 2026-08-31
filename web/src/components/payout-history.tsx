@@ -1,17 +1,24 @@
 import { useQuery } from "@tanstack/react-query";
-import { CircleAlert, CircleCheck, Clock } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  ArrowDownRight,
+  ArrowUpRight,
+  CircleAlert,
+  CircleCheck,
+  Clock,
+} from "lucide-react";
+import { useState } from "react";
 import { PayoutHistoryChart } from "~/components/payout-history-chart";
 import { Button } from "~/components/ui/button";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
-import { fmtCents, fmtNum } from "~/lib/format";
+import { fmtCents, fmtNum, fmtSignedPct } from "~/lib/format";
 import { type Payout, payoutHistoryQuery } from "~/queries/payouts";
 
 const dayFmt = new Intl.DateTimeFormat("en-US", {
@@ -22,39 +29,42 @@ const dayFmt = new Intl.DateTimeFormat("en-US", {
 const monthLong = new Intl.DateTimeFormat("en-US", {
   month: "long",
   year: "numeric",
-  timeZone: "UTC",
 });
 
-/** Rows to reveal before the "show all" button — roughly a screenful, and
- * enough that a daily-withdrawal workspace still sees a full recent month. */
-const collapsedRowCount = 15;
+/** Matches the ranges on the Total payout chart, so the two read as one pair
+ * of controls rather than two unrelated pickers. */
+const RANGES = [7, 30, 90] as const;
 
 export function PayoutHistory() {
-  const history = useQuery(payoutHistoryQuery);
-  const [expanded, setExpanded] = useState(false);
-
-  const groups = useMemo(
-    () => groupByMonth(history.data?.payouts ?? []),
-    [history.data],
-  );
-  // Cut on a month boundary rather than mid-group, so a visible month total
-  // always matches the rows under it.
-  const visible = expanded ? groups : takeRows(groups, collapsedRowCount);
-  const hidden = (history.data?.payouts.length ?? 0) - countRows(visible);
+  const [days, setDays] = useState<number>(30);
+  const history = useQuery(payoutHistoryQuery(days));
+  const data = history.data;
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Payouts</CardTitle>
         <CardDescription>
-          Withdrawals from your Railway balance, by month
+          Withdrawals from your Railway balance, cumulative over the range
         </CardDescription>
+        <CardAction className="flex gap-1">
+          {RANGES.map((r) => (
+            <Button
+              key={r}
+              size="xs"
+              variant={r === days ? "secondary" : "ghost"}
+              onClick={() => setDays(r)}
+            >
+              {r}d
+            </Button>
+          ))}
+        </CardAction>
       </CardHeader>
 
       {history.isPending && (
         <CardContent className="space-y-3">
           <Skeleton className="h-64 w-full" />
-          {Array.from({ length: 5 }, (_, i) => (
+          {Array.from({ length: 4 }, (_, i) => (
             <Skeleton key={i} className="h-8 w-full" />
           ))}
         </CardContent>
@@ -63,52 +73,48 @@ export function PayoutHistory() {
       {history.isError && (
         <CardContent>
           <p className="text-sm text-(--viz-critical)">
-            Couldn&apos;t read payout history from Railway — check the server
-            logs.
+            Couldn&apos;t load payout history — check the server logs.
           </p>
         </CardContent>
       )}
 
-      {history.data && history.data.payouts.length === 0 && (
+      {data && data.totalRows === 0 && (
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            No payouts yet. Railway pays out once your balance clears{" "}
-            {fmtCents(10000)}.
+            No payouts recorded yet. Railway pays out once your balance clears{" "}
+            {fmtCents(10000)}; the collector picks them up on each refresh.
           </p>
         </CardContent>
       )}
 
-      {history.data && history.data.payouts.length > 0 && (
+      {data && data.totalRows > 0 && (
         <>
-          <CardContent className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
+          <CardContent className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
+            <WindowFigure days={days} data={data} />
             <Figure
               label="Total paid out"
-              value={fmtCents(history.data.totals.lifetimeCents)}
-            />
-            <Figure
-              label="Payouts"
-              value={fmtNum(history.data.totals.count)}
+              value={fmtCents(data.totals.lifetimeCents)}
               note={
-                history.data.totals.firstPayoutAt
-                  ? `since ${monthLong.format(new Date(history.data.totals.firstPayoutAt))}`
+                data.totals.firstPayoutAt
+                  ? `since ${monthLong.format(new Date(data.totals.firstPayoutAt))}`
                   : undefined
               }
             />
-            {history.data.totals.pendingCount > 0 && (
+            {data.totals.pendingCount > 0 && (
               <Figure
                 label="In flight"
-                value={fmtCents(history.data.totals.pendingCents)}
-                note={`${history.data.totals.pendingCount} pending`}
+                value={fmtCents(data.totals.pendingCents)}
+                note={`${data.totals.pendingCount} pending`}
               />
             )}
           </CardContent>
 
           <CardContent>
-            <PayoutHistoryChart months={history.data.months} />
-            {history.data.truncated && (
-              <p className="pt-2 text-xs text-muted-foreground">
-                Showing the most recent {fmtNum(history.data.payouts.length)}{" "}
-                payouts — older months are not charted.
+            {data.window.count > 0 ? (
+              <PayoutHistoryChart points={data.points} />
+            ) : (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                No payouts in the last {days} days.
               </p>
             )}
           </CardContent>
@@ -116,7 +122,7 @@ export function PayoutHistory() {
           <CardContent className="overflow-x-auto">
             <table className="w-full text-sm">
               <caption className="sr-only">
-                Every payout, newest first, grouped by month
+                The {data.payouts.length} most recent payouts, newest first
               </caption>
               <thead>
                 <tr className="border-b text-left text-xs text-muted-foreground">
@@ -126,39 +132,61 @@ export function PayoutHistory() {
                   <th className="pb-2 pl-3 text-right font-medium">Amount</th>
                 </tr>
               </thead>
-              {visible.map((group) => (
-                <tbody key={group.month}>
-                  <tr className="border-b border-border/50 bg-muted/40">
-                    <th
-                      colSpan={3}
-                      className="py-1.5 text-left text-xs font-medium text-muted-foreground"
-                    >
-                      {monthLong.format(new Date(`${group.month}-01T00:00:00Z`))}
-                    </th>
-                    <td className="py-1.5 pl-3 text-right text-xs font-medium tabular-nums text-muted-foreground">
-                      {fmtCents(group.totalCents)}
-                    </td>
-                  </tr>
-                  {group.payouts.map((p) => (
-                    <PayoutRow key={p.id || p.createdAt} payout={p} />
-                  ))}
-                </tbody>
-              ))}
+              <tbody>
+                {data.payouts.map((p) => (
+                  <PayoutRow key={p.id} payout={p} />
+                ))}
+              </tbody>
             </table>
-            {hidden > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="mt-3"
-                onClick={() => setExpanded(true)}
-              >
-                Show {fmtNum(hidden)} older {hidden === 1 ? "payout" : "payouts"}
-              </Button>
+            {data.totalRows > data.payouts.length && (
+              <p className="pt-3 text-xs text-muted-foreground">
+                Showing the {data.payouts.length} most recent of{" "}
+                {fmtNum(data.totalRows)} payouts.
+              </p>
             )}
           </CardContent>
         </>
       )}
     </Card>
+  );
+}
+
+/** The headline for the selected range, with the same "vs previous period"
+ * treatment the dashboard's stat tiles use. */
+function WindowFigure({
+  days,
+  data,
+}: {
+  days: number;
+  data: { window: { totalCents: number; changePct: number | null; count: number } };
+}) {
+  const { totalCents, changePct, count } = data.window;
+  return (
+    <div>
+      <div className="text-xs text-muted-foreground">Paid out · last {days}d</div>
+      <div className="text-xl font-semibold">{fmtCents(totalCents)}</div>
+      {changePct != null ? (
+        <div className="flex items-center gap-1 text-xs">
+          <span
+            className={`flex items-center gap-0.5 font-medium ${
+              changePct >= 0 ? "text-(--viz-up)" : "text-(--viz-down)"
+            }`}
+          >
+            {changePct >= 0 ? (
+              <ArrowUpRight className="size-3.5" />
+            ) : (
+              <ArrowDownRight className="size-3.5" />
+            )}
+            {fmtSignedPct(changePct)}
+          </span>
+          <span className="text-muted-foreground">vs previous {days}d</span>
+        </div>
+      ) : (
+        <div className="text-xs text-muted-foreground">
+          {count} {count === 1 ? "payout" : "payouts"}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -188,9 +216,7 @@ function PayoutRow({ payout }: { payout: Payout }) {
       <td className="whitespace-nowrap py-2.5 pr-4 tabular-nums">
         {dayFmt.format(new Date(payout.createdAt))}
       </td>
-      <td className="py-2.5 pl-3 text-muted-foreground">
-        {payout.destination}
-      </td>
+      <td className="py-2.5 pl-3 text-muted-foreground">{payout.destination}</td>
       <td className="py-2.5 pl-3">
         <PayoutStatus status={payout.status} />
       </td>
@@ -201,8 +227,7 @@ function PayoutRow({ payout }: { payout: Payout }) {
   );
 }
 
-/** Status always ships as icon + word, never color alone. Completed is the
- * norm and stays quiet; only the states that need attention take a color. */
+/** Status always ships as icon + word, never colour alone. */
 function PayoutStatus({ status }: { status: string }) {
   const label = status.charAt(0) + status.slice(1).toLowerCase();
   if (status === "PENDING") {
@@ -227,46 +252,4 @@ function PayoutStatus({ status }: { status: string }) {
       {label}
     </span>
   );
-}
-
-interface MonthGroup {
-  month: string;
-  totalCents: number;
-  payouts: Payout[];
-}
-
-/** Group the newest-first payout list into the same months the chart plots, so
- * the table is the chart's readable twin. Failed payouts are listed but left
- * out of the month total, matching how the server builds the columns. */
-function groupByMonth(payouts: Payout[]): MonthGroup[] {
-  const groups: MonthGroup[] = [];
-  for (const payout of payouts) {
-    const month = payout.createdAt.slice(0, 7);
-    let group = groups[groups.length - 1];
-    if (!group || group.month !== month) {
-      group = { month, totalCents: 0, payouts: [] };
-      groups.push(group);
-    }
-    group.payouts.push(payout);
-    if (payout.status === "COMPLETED" || payout.status === "PENDING") {
-      group.totalCents += payout.amountCents;
-    }
-  }
-  return groups;
-}
-
-function countRows(groups: MonthGroup[]): number {
-  return groups.reduce((sum, g) => sum + g.payouts.length, 0);
-}
-
-/** Whole months until at least `min` rows are shown — always at least one. */
-function takeRows(groups: MonthGroup[], min: number): MonthGroup[] {
-  let rows = 0;
-  const taken: MonthGroup[] = [];
-  for (const group of groups) {
-    taken.push(group);
-    rows += group.payouts.length;
-    if (rows >= min) break;
-  }
-  return taken;
 }

@@ -331,12 +331,16 @@ func pctChange(current float64, previous *float64) *float64 {
 	return &pct
 }
 
-// handleRefreshAnalytics collects a fresh template snapshot on demand, so a
-// first-time user doesn't sit in an empty dashboard waiting for the hourly
-// cron.
+// handleRefreshAnalytics collects a fresh template snapshot and payout sync on
+// demand, so a first-time user doesn't sit in an empty dashboard waiting for
+// the hourly cron.
 func handleRefreshAnalytics(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := collectTemplateSnapshots(db); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+			return
+		}
+		if _, _, err := syncPayouts(r.Context(), db); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}

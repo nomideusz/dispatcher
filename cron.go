@@ -92,6 +92,24 @@ func runTemplateSnapshots(db *gorm.DB) {
 	if err := collectTemplateSnapshots(db); err != nil {
 		log.Printf("template snapshots: %v", err)
 	}
+	runPayoutSync(db)
+}
+
+// runPayoutSync mirrors Railway's payout history into DuckDB. It rides the
+// same schedule as the template collector, and failures are logged rather
+// than surfaced: a stale payout table degrades the dashboard, it doesn't
+// break it.
+func runPayoutSync(db *gorm.DB) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	inserted, updated, err := syncPayouts(ctx, db)
+	if err != nil {
+		log.Printf("payout sync: %v", err)
+		return
+	}
+	if inserted > 0 || updated > 0 {
+		log.Printf("payout sync: %d new, %d updated", inserted, updated)
+	}
 }
 
 func runWeeklySummary(db *gorm.DB) {
@@ -277,6 +295,9 @@ func runAutoWithdraw(db *gorm.DB) {
 		return
 	}
 	log.Printf("auto-withdraw: requested $%.2f withdrawal", float64(amount)/100)
+	// Pull the new PENDING row in now so the dashboard reflects the request
+	// immediately rather than at the next collector tick.
+	runPayoutSync(db)
 	formattedAmount := fmt.Sprintf("$%.2f", float64(amount)/100)
 	go notifyAll(db, NotificationEvent{
 		Event:      "payout",

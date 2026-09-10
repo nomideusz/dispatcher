@@ -13,7 +13,8 @@ export interface Payout {
   /** "Bank ••8149" / "Card ••4242" / "Railway credits". */
   destination: string;
   /** Template that earned this credit payout, matched from snapshot deltas.
-   * Empty while the match is pending, "unknown" if it never resolved. */
+   * Empty while the match is pending, "unknown" if it never resolved,
+   * "untracked" if the payout predates the first snapshot. */
   templateId: string;
   templateName: string;
 }
@@ -49,7 +50,10 @@ export interface PayoutTotals {
 
 /** One template's share of the window's credit payouts. Payouts still
  * awaiting attribution group under templateId "pending", ones the matcher
- * gave up on under "unknown". */
+ * gave up on under "unknown", ones older than the first snapshot under
+ * "untracked". */
+export const PSEUDO_TEMPLATE_IDS = new Set(["pending", "unknown", "untracked"]);
+
 export interface PayoutTemplateTotal {
   templateId: string;
   templateName: string;

@@ -68,10 +68,11 @@ collector matches new payouts to templates by finding the partition of the
 window's payouts that reproduces those deltas, and stores the result on the
 payout row (`templateId`, `templateName` in `/api/payouts` and
 `dispatcherctl payouts`, a Template column in the payouts table). Payouts
-older than the first snapshot can never be matched; a payout the snapshots
-cannot explain stays `pending` and is retried after each snapshot, and is
-marked `unknown` after two days. Cash withdrawals are lump sums of the
-balance and are never attributed.
+older than the first snapshot can never be matched and are marked
+`untracked` ("before tracking"); a payout the snapshots cannot explain yet
+stays `pending` and is retried after each snapshot, and is marked `unknown`
+after two days. Cash withdrawals are lump sums of the balance and are never
+attributed.
 
 Background collection, auto-withdraw, weekly summaries, and notification delivery assume the app runs as a single process. Running multiple replicas can duplicate cron work and notifications.
 

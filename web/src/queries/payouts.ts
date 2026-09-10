@@ -47,6 +47,16 @@ export interface PayoutTotals {
   lastPayoutAt: string | null;
 }
 
+/** One template's share of the window's credit payouts. Payouts still
+ * awaiting attribution group under templateId "pending", ones the matcher
+ * gave up on under "unknown". */
+export interface PayoutTemplateTotal {
+  templateId: string;
+  templateName: string;
+  count: number;
+  cents: number;
+}
+
 export interface PayoutHistory {
   points: PayoutPoint[];
   window: PayoutWindow;
@@ -54,6 +64,8 @@ export interface PayoutHistory {
   /** Only the most recent rows; totalRows is how many exist in all. */
   payouts: Payout[];
   totalRows: number;
+  /** The window's credit payouts per template, largest earner first. */
+  byTemplate: PayoutTemplateTotal[];
 }
 
 /** Served from Dispatcher's own database — the collector mirrors Railway's

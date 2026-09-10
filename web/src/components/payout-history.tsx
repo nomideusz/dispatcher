@@ -119,6 +119,40 @@ export function PayoutHistory() {
             )}
           </CardContent>
 
+          {data.byTemplate.length > 0 && (
+            <CardContent className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <caption className="pb-2 text-left text-xs text-muted-foreground">
+                  Credit payouts by template, last {days} days
+                </caption>
+                <thead>
+                  <tr className="border-b text-left text-xs text-muted-foreground">
+                    <th className="pb-2 font-medium">Template</th>
+                    <th className="pb-2 pl-3 text-right font-medium">Payouts</th>
+                    <th className="pb-2 pl-3 text-right font-medium">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.byTemplate.map((t) => (
+                    <tr key={t.templateId} className="border-b border-border/50 last:border-0">
+                      <td
+                        className={
+                          t.templateId === "pending" || t.templateId === "unknown"
+                            ? "py-2 text-muted-foreground"
+                            : "py-2"
+                        }
+                      >
+                        {t.templateName}
+                      </td>
+                      <td className="py-2 pl-3 text-right tabular-nums">{fmtNum(t.count)}</td>
+                      <td className="py-2 pl-3 text-right tabular-nums">{fmtCents(t.cents)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </CardContent>
+          )}
+
           <CardContent className="overflow-x-auto">
             <table className="w-full text-sm">
               <caption className="sr-only">

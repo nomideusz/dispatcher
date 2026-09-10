@@ -43,7 +43,7 @@ func TestAttributePayoutsUsesSnapshotDeltasAndWaitsWhenTheyDisagree(t *testing.T
 	t1 := t0.Add(time.Hour)
 	f := func(v float64) *float64 { return &v }
 	snap := func(at time.Time, id, name string, earned float64) TemplateSnapshot {
-		return TemplateSnapshot{SampledAt: at, TemplateID: id, Name: name, Code: id, Status: "PUBLISHED", TotalEarnings: f(earned)}
+		return TemplateSnapshot{SampledAt: at, TemplateID: id, Name: name, Code: id, Status: "PUBLISHED", TotalPayout: earned, TotalEarnings: f(earned)}
 	}
 	if err := db.Create(&[]TemplateSnapshot{
 		snap(t0, "twenty", "Twenty CRM", 50.00), snap(t0, "owncast", "Owncast", 0),

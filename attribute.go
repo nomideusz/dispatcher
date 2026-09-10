@@ -11,10 +11,11 @@ import (
 )
 
 // Railway's ledger says how much each kickback payout was worth but not which
-// template earned it; templateMetrics says how much each template has earned
-// in total but keeps no history. Between two snapshots the two must agree: the
-// credit payouts that arrived sum, per template, to that template's earnings
-// delta. So each new payout is matched to a template by finding the partition
+// template earned it; the template list says how much each template has earned
+// in total (totalPayout) but keeps no history. Between two snapshots the two
+// must agree: the credit payouts that arrived sum, per template, to that
+// template's payout delta. (templateMetrics.totalEarnings converges to the
+// same figure but trails the ledger by hours, so it is not used here.) So each new payout is matched to a template by finding the partition
 // of the window's payouts whose per-template sums equal those deltas.
 //
 // Windows are one snapshot apart (hourly), so they almost always hold a single
@@ -72,7 +73,7 @@ func runAttribution(db *gorm.DB) {
 // explains is marked unattributed so the payouts after it get their own,
 // tighter window. Payouts older than the first snapshot are never touched.
 func attributePayouts(ctx context.Context, db *gorm.DB) (int, error) {
-	first, err := scanTime(ctx, db, `SELECT MIN(sampled_at) FROM template_snapshots WHERE total_earnings IS NOT NULL`)
+	first, err := scanTime(ctx, db, `SELECT MIN(sampled_at) FROM template_snapshots`)
 	if err != nil || first == nil {
 		return 0, err
 	}
@@ -93,7 +94,7 @@ func attributePayouts(ctx context.Context, db *gorm.DB) (int, error) {
 		ends := []time.Time{}
 		if err := db.WithContext(ctx).Raw(`
 			SELECT DISTINCT sampled_at FROM template_snapshots
-			WHERE sampled_at > ? AND total_earnings IS NOT NULL ORDER BY sampled_at`, *baseAt).Scan(&ends).Error; err != nil {
+			WHERE sampled_at > ? ORDER BY sampled_at`, *baseAt).Scan(&ends).Error; err != nil {
 			return attributed, err
 		}
 		base, _, err := earningsAt(ctx, db, *baseAt)
@@ -165,22 +166,20 @@ func matchWindow(window []pendingPayout, base, current map[string]float64) map[s
 	return partitionPayouts(window, deltas)
 }
 
-// earningsAt returns total_earnings (dollars) and name per template for the
+// earningsAt returns total_payout (dollars) and name per template for the
 // snapshot taken at exactly `at`. Every template in one collection shares the
 // same sampled_at, so this reads one whole snapshot.
 func earningsAt(ctx context.Context, db *gorm.DB, at time.Time) (map[string]float64, map[string]string, error) {
 	rows := []struct {
-		TemplateID    string
-		Name          string
-		TotalEarnings *float64
+		TemplateID  string
+		Name        string
+		TotalPayout float64
 	}{}
-	err := db.WithContext(ctx).Raw(`SELECT template_id, name, total_earnings FROM template_snapshots WHERE sampled_at = ?`, at).Scan(&rows).Error
+	err := db.WithContext(ctx).Raw(`SELECT template_id, name, total_payout FROM template_snapshots WHERE sampled_at = ?`, at).Scan(&rows).Error
 	earnings, names := map[string]float64{}, map[string]string{}
 	for _, r := range rows {
-		if r.TotalEarnings != nil {
-			earnings[r.TemplateID] = *r.TotalEarnings
-			names[r.TemplateID] = r.Name
-		}
+		earnings[r.TemplateID] = r.TotalPayout
+		names[r.TemplateID] = r.Name
 	}
 	return earnings, names, err
 }

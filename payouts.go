@@ -22,9 +22,6 @@ const (
 	// dayKeyLayout is both the daily bucket key and the wire format for a
 	// point on the chart.
 	dayKeyLayout = "2006-01-02"
-	// recentPayoutRows caps the payout table. The chart carries the shape of
-	// the history, so the table only has to show what happened lately.
-	recentPayoutRows = 8
 	// defaultPayoutWindowDays matches the analytics chart's default range.
 	defaultPayoutWindowDays = 30
 	maxPayoutWindowDays     = 365
@@ -93,8 +90,8 @@ type payoutHistoryResponse struct {
 	Points []payoutPoint `json:"points"`
 	Window payoutWindow  `json:"window"`
 	Totals payoutTotals  `json:"totals"`
-	// Payouts is the most recent recentPayoutRows rows, newest first, and
-	// TotalRows how many exist in all — so the table can say what it is hiding.
+	// Payouts is every row in the selected window, newest first, and TotalRows
+	// how many exist in all — so the table can say what lies outside the window.
 	Payouts   []Payout `json:"payouts"`
 	TotalRows int      `json:"totalRows"`
 	// ByTemplate breaks the window's credit payouts down per template, largest
@@ -126,8 +123,8 @@ func handlePayoutHistory(db *gorm.DB) http.HandlerFunc {
 }
 
 // buildPayoutHistory turns the stored payouts into the windowed cumulative
-// series, the window/previous-window comparison, lifetime totals, the recent
-// rows the table shows and the per-template breakdown of the window.
+// series, the window/previous-window comparison, lifetime totals, the rows
+// the table shows and the per-template breakdown of the window.
 func buildPayoutHistory(payouts []Payout, days int, now time.Time) payoutHistoryResponse {
 	resp := payoutHistoryResponse{
 		Points:     []payoutPoint{},
@@ -137,28 +134,51 @@ func buildPayoutHistory(payouts []Payout, days int, now time.Time) payoutHistory
 		TotalRows:  len(payouts),
 	}
 
-	// Newest first for the table. The SQL already orders this way, but the
-	// pure function must not depend on its caller for correctness.
-	sorted := slices.Clone(payouts)
-	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].CreatedAt.After(sorted[j].CreatedAt) })
-	for i, p := range sorted {
-		if i >= recentPayoutRows {
-			break
-		}
-		p.CreatedAt = p.CreatedAt.UTC()
-		resp.Payouts = append(resp.Payouts, p)
-	}
-
 	// The window is the last N whole UTC days including today, so the axis
 	// lines up with the daily buckets rather than a ragged clock time.
 	today := now.UTC().Truncate(24 * time.Hour)
 	windowStart := today.AddDate(0, 0, -(days - 1))
 	previousStart := windowStart.AddDate(0, 0, -days)
 
+	// Newest first for the table. The SQL already orders this way, but the
+	// pure function must not depend on its caller for correctness.
+	sorted := slices.Clone(payouts)
+	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].CreatedAt.After(sorted[j].CreatedAt) })
+	byTemplate := map[string]*payoutTemplateTotal{}
+	for _, p := range sorted {
+		if p.CreatedAt.UTC().Before(windowStart) {
+			continue
+		}
+		p.CreatedAt = p.CreatedAt.UTC()
+		resp.Payouts = append(resp.Payouts, p)
+		if p.Kind != "credits" || isVoidPayout(p.Status) {
+			continue
+		}
+		key, name := p.TemplateID, p.TemplateName
+		if key == "" {
+			key, name = "pending", "pending"
+		} else if name == "" {
+			name = key
+		}
+		if byTemplate[key] == nil {
+			byTemplate[key] = &payoutTemplateTotal{TemplateID: key, TemplateName: name}
+		}
+		byTemplate[key].Count++
+		byTemplate[key].Cents += p.AmountCents
+	}
+	for _, t := range byTemplate {
+		resp.ByTemplate = append(resp.ByTemplate, *t)
+	}
+	sort.Slice(resp.ByTemplate, func(i, j int) bool {
+		if resp.ByTemplate[i].Cents != resp.ByTemplate[j].Cents {
+			return resp.ByTemplate[i].Cents > resp.ByTemplate[j].Cents
+		}
+		return resp.ByTemplate[i].TemplateName < resp.ByTemplate[j].TemplateName
+	})
+
 	perDayCash := map[string]int64{}
 	perDayCredits := map[string]int64{}
 	perDayCount := map[string]int{}
-	byTemplate := map[string]*payoutTemplateTotal{}
 
 	for _, p := range sorted {
 		at := p.CreatedAt.UTC()
@@ -196,19 +216,6 @@ func buildPayoutHistory(payouts []Payout, days int, now time.Time) payoutHistory
 			}
 			resp.Window.TotalCents += p.AmountCents
 			resp.Window.Count++
-			if credits {
-				key, name := p.TemplateID, p.TemplateName
-				if key == "" {
-					key, name = "pending", "pending"
-				} else if name == "" {
-					name = key
-				}
-				if byTemplate[key] == nil {
-					byTemplate[key] = &payoutTemplateTotal{TemplateID: key, TemplateName: name}
-				}
-				byTemplate[key].Count++
-				byTemplate[key].Cents += p.AmountCents
-			}
 		case !at.Before(previousStart):
 			resp.Window.PreviousCents += p.AmountCents
 		}
@@ -218,15 +225,6 @@ func buildPayoutHistory(payouts []Payout, days int, now time.Time) payoutHistory
 		pct := float64(resp.Window.TotalCents-resp.Window.PreviousCents) / float64(resp.Window.PreviousCents) * 100
 		resp.Window.ChangePct = &pct
 	}
-	for _, t := range byTemplate {
-		resp.ByTemplate = append(resp.ByTemplate, *t)
-	}
-	sort.Slice(resp.ByTemplate, func(i, j int) bool {
-		if resp.ByTemplate[i].Cents != resp.ByTemplate[j].Cents {
-			return resp.ByTemplate[i].Cents > resp.ByTemplate[j].Cents
-		}
-		return resp.ByTemplate[i].TemplateName < resp.ByTemplate[j].TemplateName
-	})
 
 	// Walk every day in the window, including the empty ones, accumulating as
 	// we go: a cumulative line must not jump over a payout-free stretch.

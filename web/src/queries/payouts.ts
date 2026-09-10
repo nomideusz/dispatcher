@@ -61,7 +61,7 @@ export interface PayoutHistory {
   points: PayoutPoint[];
   window: PayoutWindow;
   totals: PayoutTotals;
-  /** Only the most recent rows; totalRows is how many exist in all. */
+  /** Every row inside the selected window; totalRows is how many exist in all. */
   payouts: Payout[];
   totalRows: number;
   /** The window's credit payouts per template, largest earner first. */

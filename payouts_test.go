@@ -98,23 +98,36 @@ func TestBuildPayoutHistoryExcludesVoidPayoutsButStillListsThem(t *testing.T) {
 	}
 }
 
-func TestBuildPayoutHistoryBreaksTheWindowDownByTemplate(t *testing.T) {
+func TestBuildPayoutHistoryListsTheWindowAndBreaksItDownByTemplate(t *testing.T) {
 	now := time.Date(2026, 8, 30, 15, 0, 0, 0, time.UTC)
-	credit := func(hoursAgo int, cents int64, status, templateID, name string) Payout {
+	payouts := []Payout{}
+	for i := range 20 {
+		payouts = append(payouts, cashPayout(now.Add(-time.Duration(i)*time.Hour), 10000, "COMPLETED"))
+	}
+	// Outside the 30-day window: counted in the lifetime figures, not listed.
+	payouts = append(payouts, cashPayout(now.AddDate(0, 0, -40), 10000, "COMPLETED"))
+	credit := func(hoursAgo int, cents int64, templateID, name string) Payout {
 		at := now.Add(-time.Duration(hoursAgo) * time.Hour)
-		return Payout{ID: "c-" + at.Format(time.RFC3339Nano), CreatedAt: at, AmountCents: cents, Status: status, Kind: "credits", Destination: "Railway credits", TemplateID: templateID, TemplateName: name}
+		return Payout{ID: "c-" + at.Format(time.RFC3339Nano), CreatedAt: at, AmountCents: cents, Status: "COMPLETED", Kind: "credits", Destination: "Railway credits", TemplateID: templateID, TemplateName: name}
 	}
-	payouts := []Payout{
-		credit(1, 125, "COMPLETED", "twenty", "Twenty CRM"), credit(2, 13, "COMPLETED", "twenty", "Twenty CRM"),
-		credit(3, 204, "COMPLETED", "owncast", "Owncast"), credit(4, 5, "COMPLETED", "", ""),
-		credit(5, 3, "COMPLETED", unattributedTemplateID, ""),
-		credit(6, 50, "FAILED", "owncast", "Owncast"),           // void: not counted anywhere
-		credit(24*40, 999, "COMPLETED", "twenty", "Twenty CRM"), // outside the window
-		cashPayout(now.Add(-7*time.Hour), 10000, "COMPLETED"),   // cash: never attributed
-	}
+	payouts = append(payouts,
+		credit(1, 125, "twenty", "Twenty CRM"), credit(2, 13, "twenty", "Twenty CRM"),
+		credit(3, 204, "owncast", "Owncast"), credit(4, 5, "", ""),
+		credit(5, 3, unattributedTemplateID, ""),
+		credit(24*40, 999, "twenty", "Twenty CRM"), // outside the window
+	)
 
 	got := buildPayoutHistory(payouts, 30, now)
 
+	if len(got.Payouts) != 25 {
+		t.Errorf("payouts = %d, want every row inside the window", len(got.Payouts))
+	}
+	if got.TotalRows != 27 {
+		t.Errorf("totalRows = %d, want 27 so the table can say what lies outside the window", got.TotalRows)
+	}
+	if got.Totals.Count != 27 || got.Window.Count != 25 {
+		t.Errorf("counts = %d/%d, want 27 lifetime and 25 in the window", got.Totals.Count, got.Window.Count)
+	}
 	want := []payoutTemplateTotal{
 		{TemplateID: "owncast", TemplateName: "Owncast", Count: 1, Cents: 204},
 		{TemplateID: "twenty", TemplateName: "Twenty CRM", Count: 2, Cents: 138},
@@ -128,27 +141,6 @@ func TestBuildPayoutHistoryBreaksTheWindowDownByTemplate(t *testing.T) {
 		if got.ByTemplate[i] != want[i] {
 			t.Errorf("byTemplate[%d] = %+v, want %+v", i, got.ByTemplate[i], want[i])
 		}
-	}
-}
-
-func TestBuildPayoutHistoryCapsTableRows(t *testing.T) {
-	now := time.Date(2026, 8, 30, 15, 0, 0, 0, time.UTC)
-	payouts := []Payout{}
-	for i := range 20 {
-		payouts = append(payouts, cashPayout(now.Add(-time.Duration(i)*time.Hour), 10000, "COMPLETED"))
-	}
-
-	got := buildPayoutHistory(payouts, 30, now)
-
-	if len(got.Payouts) != recentPayoutRows {
-		t.Errorf("payouts = %d, want capped at %d", len(got.Payouts), recentPayoutRows)
-	}
-	if got.TotalRows != 20 {
-		t.Errorf("totalRows = %d, want 20 so the table can say what it hides", got.TotalRows)
-	}
-	// The cap must not touch the aggregates.
-	if got.Totals.Count != 20 || got.Window.Count != 20 {
-		t.Errorf("counts = %d/%d, want all 20 counted despite the row cap", got.Totals.Count, got.Window.Count)
 	}
 }
 

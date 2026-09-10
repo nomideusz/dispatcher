@@ -132,7 +132,9 @@ export function PayoutHistory() {
                   per billed service, so a burst of rows is one deployer&apos;s
                   invoice, and one billing cycle of invoices counts each paying
                   deployer once. Invoices, rows and amount follow the selected
-                  range.
+                  range; lifetime is the template&apos;s all-time payout, which
+                  is how templates that only earned before tracking still
+                  appear.
                 </caption>
                 <thead>
                   <tr className="border-b text-left text-xs text-muted-foreground">
@@ -143,6 +145,7 @@ export function PayoutHistory() {
                     <th className="pb-2 pl-3 text-right font-medium">Invoices {days}d</th>
                     <th className="pb-2 pl-3 text-right font-medium">Rows</th>
                     <th className="pb-2 pl-3 text-right font-medium">Amount</th>
+                    <th className="pb-2 pl-3 text-right font-medium">Lifetime</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -177,6 +180,9 @@ export function PayoutHistory() {
                       <td className="py-2 pl-3 text-right tabular-nums">{fmtNum(t.invoices)}</td>
                       <td className="py-2 pl-3 text-right tabular-nums">{fmtNum(t.count)}</td>
                       <td className="py-2 pl-3 text-right tabular-nums">{fmtCents(t.cents)}</td>
+                      <td className="py-2 pl-3 text-right tabular-nums text-muted-foreground">
+                        {t.lifetimeCents > 0 ? fmtCents(t.lifetimeCents) : "—"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

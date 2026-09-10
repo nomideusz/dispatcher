@@ -69,6 +69,9 @@ export interface PayoutTemplateTotal {
   payers: number;
   payersPrevious: number;
   payerCents: number;
+  /** All-time payout from the latest snapshot; lists templates whose
+   * earnings predate tracking. */
+  lifetimeCents: number;
 }
 
 export interface PayoutHistory {

@@ -28,6 +28,10 @@ import (
 // holding the window open for everything after it.
 const unattributedTemplateID = "unknown"
 
+// untrackedTemplateID marks a payout older than the first snapshot: nothing
+// can ever explain it, and it should not read as pending.
+const untrackedTemplateID = "untracked"
+
 // attributionHorizon bounds how far past a payout the matcher will extend its
 // window looking for a snapshot that explains it. Earnings and ledger normally
 // agree within one snapshot; two days of disagreement mean Railway's figures
@@ -75,6 +79,10 @@ func runAttribution(db *gorm.DB) {
 func attributePayouts(ctx context.Context, db *gorm.DB) (int, error) {
 	first, err := scanTime(ctx, db, `SELECT MIN(sampled_at) FROM template_snapshots`)
 	if err != nil || first == nil {
+		return 0, err
+	}
+	if err := db.WithContext(ctx).Exec(`UPDATE payouts SET template_id = ?, template_name = 'before tracking'
+		WHERE kind = 'credits' AND COALESCE(template_id, '') = '' AND created_at < ?`, untrackedTemplateID, *first).Error; err != nil {
 		return 0, err
 	}
 	attributed := 0

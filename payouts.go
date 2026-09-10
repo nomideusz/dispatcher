@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"slices"
 	"sort"
@@ -112,6 +113,19 @@ type payoutTemplateTotal struct {
 	Payers         int   `json:"payers"`
 	PayersPrevious int   `json:"payersPrevious"`
 	PayerCents     int64 `json:"payerCents"`
+	// LifetimeCents is the template's all-time payout from the latest
+	// snapshot. It is what lists a template whose earnings all predate
+	// tracking, and it keeps the breakdown honest against the "before
+	// tracking" line.
+	LifetimeCents int64 `json:"lifetimeCents"`
+}
+
+// templateLifetime is one template's all-time payout as of the latest
+// snapshot, keyed by template id when passed to buildPayoutHistory.
+type templateLifetime struct {
+	TemplateID  string
+	Name        string
+	TotalPayout float64
 }
 
 // payerCycleDays is Railway's billing cycle: each customer is invoiced once
@@ -155,14 +169,25 @@ func handlePayoutHistory(db *gorm.DB) http.HandlerFunc {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		writeJSON(w, http.StatusOK, buildPayoutHistory(payouts, days, time.Now().UTC()))
+		lifetime := []templateLifetime{}
+		err = db.WithContext(r.Context()).Raw(`
+			SELECT template_id, name, total_payout
+			FROM template_snapshots
+			WHERE sampled_at = (SELECT MAX(sampled_at) FROM template_snapshots) AND total_payout > 0`).Scan(&lifetime).Error
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, buildPayoutHistory(payouts, lifetime, days, time.Now().UTC()))
 	}
 }
 
 // buildPayoutHistory turns the stored payouts into the windowed cumulative
 // series, the window/previous-window comparison, lifetime totals, the recent
-// rows the table shows and the per-template breakdown of the window.
-func buildPayoutHistory(payouts []Payout, days int, now time.Time) payoutHistoryResponse {
+// rows the table shows and the per-template breakdown of the window. lifetime
+// (all-time payout per template from the latest snapshot) adds the templates
+// whose earnings predate the payouts on file.
+func buildPayoutHistory(payouts []Payout, lifetime []templateLifetime, days int, now time.Time) payoutHistoryResponse {
 	resp := payoutHistoryResponse{
 		Points:     []payoutPoint{},
 		Payouts:    []Payout{},
@@ -294,16 +319,26 @@ func buildPayoutHistory(payouts []Payout, days int, now time.Time) payoutHistory
 		pct := float64(resp.Window.TotalCents-resp.Window.PreviousCents) / float64(resp.Window.PreviousCents) * 100
 		resp.Window.ChangePct = &pct
 	}
+	for _, l := range lifetime {
+		if byTemplate[l.TemplateID] == nil {
+			byTemplate[l.TemplateID] = &payoutTemplateTotal{TemplateID: l.TemplateID, TemplateName: l.Name}
+		}
+		byTemplate[l.TemplateID].LifetimeCents = int64(math.Round(l.TotalPayout * 100))
+	}
 	for _, t := range byTemplate {
-		if t.Count > 0 || t.InvoicesPrevious > 0 || t.Payers > 0 || t.PayersPrevious > 0 {
+		if t.Count > 0 || t.InvoicesPrevious > 0 || t.Payers > 0 || t.PayersPrevious > 0 || t.LifetimeCents > 0 {
 			resp.ByTemplate = append(resp.ByTemplate, *t)
 		}
 	}
 	sort.Slice(resp.ByTemplate, func(i, j int) bool {
-		if resp.ByTemplate[i].Cents != resp.ByTemplate[j].Cents {
-			return resp.ByTemplate[i].Cents > resp.ByTemplate[j].Cents
+		a, b := resp.ByTemplate[i], resp.ByTemplate[j]
+		if a.Cents != b.Cents {
+			return a.Cents > b.Cents
 		}
-		return resp.ByTemplate[i].TemplateName < resp.ByTemplate[j].TemplateName
+		if a.LifetimeCents != b.LifetimeCents {
+			return a.LifetimeCents > b.LifetimeCents
+		}
+		return a.TemplateName < b.TemplateName
 	})
 
 	// Walk every day in the window, including the empty ones, accumulating as

@@ -35,7 +35,7 @@ func TestBuildPayoutHistoryAccumulatesAcrossTheWindow(t *testing.T) {
 		cashPayout(day(24), 10000, "COMPLETED"),
 		cashPayout(day(28), 15000, "COMPLETED"),
 		cashPayout(day(30), 12000, "PENDING"),
-	}, 7, now)
+	}, nil, 7, now)
 
 	if len(got.Points) != 7 {
 		t.Fatalf("points = %d, want 7", len(got.Points))
@@ -83,7 +83,7 @@ func TestBuildPayoutHistoryExcludesVoidPayoutsButStillListsThem(t *testing.T) {
 	got := buildPayoutHistory([]Payout{
 		cashPayout(at, 99900, "FAILED"),
 		cashPayout(at.Add(-time.Hour), 10000, "COMPLETED"),
-	}, 7, now)
+	}, nil, 7, now)
 
 	// The failed request explains a gap, so it stays in the table...
 	if len(got.Payouts) != 2 {
@@ -123,12 +123,19 @@ func TestBuildPayoutHistoryBreaksTheWindowDownByTemplate(t *testing.T) {
 		cashPayout(now.Add(-7*time.Hour), 10000, "COMPLETED"),   // cash: never attributed
 	}
 
-	got := buildPayoutHistory(payouts, 30, now)
+	// Lifetime totals from the latest snapshot: twenty's covers more than the
+	// payouts on file; azuracast earned everything before tracking began.
+	lifetime := []templateLifetime{
+		{TemplateID: "twenty", Name: "Twenty CRM", TotalPayout: 52.39},
+		{TemplateID: "azuracast", Name: "AzuraCast", TotalPayout: 9.86},
+	}
+	got := buildPayoutHistory(payouts, lifetime, 30, now)
 	want := []payoutTemplateTotal{
-		{TemplateID: "twenty", TemplateName: "Twenty CRM", Count: 5, Cents: 345, Invoices: 2, InvoicesPrevious: 1, Payers: 2, PayersPrevious: 1, PayerCents: 345},
+		{TemplateID: "twenty", TemplateName: "Twenty CRM", Count: 5, Cents: 345, Invoices: 2, InvoicesPrevious: 1, Payers: 2, PayersPrevious: 1, PayerCents: 345, LifetimeCents: 5239},
 		{TemplateID: "owncast", TemplateName: "Owncast", Count: 1, Cents: 204, Invoices: 1, Payers: 1, PayerCents: 204},
 		{TemplateID: "pending", TemplateName: "pending", Count: 1, Cents: 5, Invoices: 1, Payers: 1, PayerCents: 5},
 		{TemplateID: unattributedTemplateID, TemplateName: unattributedTemplateID, Count: 1, Cents: 3, Invoices: 1, Payers: 1, PayerCents: 3},
+		{TemplateID: "azuracast", TemplateName: "AzuraCast", LifetimeCents: 986},
 		{TemplateID: "dify", TemplateName: "Dify", InvoicesPrevious: 1, PayersPrevious: 1},
 	}
 	if len(got.ByTemplate) != len(want) {
@@ -142,7 +149,7 @@ func TestBuildPayoutHistoryBreaksTheWindowDownByTemplate(t *testing.T) {
 
 	// A 7-day range only sees this week's invoices, but payers still cover
 	// the trailing billing cycle — a short range must not read as churn.
-	week := buildPayoutHistory(payouts, 7, now)
+	week := buildPayoutHistory(payouts, lifetime, 7, now)
 	var twenty payoutTemplateTotal
 	for _, row := range week.ByTemplate {
 		if row.TemplateID == "twenty" {
@@ -161,7 +168,7 @@ func TestBuildPayoutHistoryCapsTableRows(t *testing.T) {
 		payouts = append(payouts, cashPayout(now.Add(-time.Duration(i)*time.Hour), 10000, "COMPLETED"))
 	}
 
-	got := buildPayoutHistory(payouts, 30, now)
+	got := buildPayoutHistory(payouts, nil, 30, now)
 
 	if len(got.Payouts) != recentPayoutRows {
 		t.Errorf("payouts = %d, want capped at %d", len(got.Payouts), recentPayoutRows)

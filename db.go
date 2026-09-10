@@ -123,6 +123,13 @@ func openDB(dsn string) *gorm.DB {
 	if err := db.AutoMigrate(&RailwayCredentials{}, &TemplateSnapshot{}, &AutoWithdrawSettings{}, &NotificationTarget{}, &Payout{}); err != nil {
 		log.Fatalf("migrate database: %v", err)
 	}
+	// Snapshots taken before templateMetrics was collected recorded the same
+	// lifetime figure as workspaceTemplates.totalPayout. Carry it into
+	// total_earnings so charts and payout attribution reach back through them.
+	if err := db.Exec(`UPDATE template_snapshots SET total_earnings = total_payout
+		WHERE total_earnings IS NULL AND status = 'PUBLISHED'`).Error; err != nil {
+		log.Fatalf("backfill legacy earnings: %v", err)
+	}
 	// Seed the singleton settings row so later saves are plain updates (GORM's
 	// Save does not insert a missing primary key).
 	if err := db.Where(AutoWithdrawSettings{ID: autoWithdrawSettingsID}).

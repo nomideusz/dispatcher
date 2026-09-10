@@ -93,4 +93,31 @@ func TestAttributePayoutsUsesSnapshotDeltasAndWaitsWhenTheyDisagree(t *testing.T
 	if n, err := attributePayouts(ctx, db); err != nil || n != 1 {
 		t.Fatalf("want the late payout attributed once a snapshot explains it, got %d, %v", n, err)
 	}
+	// A payout nothing explains is marked unknown once a snapshot lies beyond the
+	// horizon, so payouts after it still get matched.
+	t2 := t1.Add(2 * time.Hour)
+	if err := db.Create(&[]Payout{
+		{ID: "ghost", CreatedAt: t2.Add(time.Minute), AmountCents: 77, Kind: "credits", Status: "COMPLETED"},
+		{ID: "p5", CreatedAt: t2.Add(30 * time.Minute), AmountCents: 5, Kind: "credits", Status: "COMPLETED"},
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&[]TemplateSnapshot{
+		snap(t2.Add(time.Hour), "twenty", "Twenty CRM", 51.43), snap(t2.Add(time.Hour), "owncast", "Owncast", 3.03),
+		snap(t2.Add(attributionHorizon+2*time.Hour), "twenty", "Twenty CRM", 51.43), snap(t2.Add(attributionHorizon+2*time.Hour), "owncast", "Owncast", 3.03),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if n, err := attributePayouts(ctx, db); err != nil || n != 1 {
+		t.Fatalf("want p5 attributed after the ghost is given up, got %d, %v", n, err)
+	}
+	rows = nil
+	if err := db.Raw(`SELECT id, template_id FROM payouts WHERE id IN ('ghost','p5')`).Scan(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rows {
+		if (r.ID == "ghost" && r.TemplateID != unattributedTemplateID) || (r.ID == "p5" && r.TemplateID != "twenty") {
+			t.Fatalf("unexpected attribution %s → %q", r.ID, r.TemplateID)
+		}
+	}
 }

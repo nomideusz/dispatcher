@@ -27,11 +27,12 @@ import (
 // holding the window open for everything after it.
 const unattributedTemplateID = "unknown"
 
-// attributionGiveUpAfter bounds how long an unmatched payout may block the
-// window before it is marked unattributed. Earnings and ledger normally agree
-// within one snapshot; days of disagreement mean Railway's figures moved in a
-// way snapshots cannot explain (a refund, a manual adjustment).
-const attributionGiveUpAfter = 48 * time.Hour
+// attributionHorizon bounds how far past a payout the matcher will extend its
+// window looking for a snapshot that explains it. Earnings and ledger normally
+// agree within one snapshot; two days of disagreement mean Railway's figures
+// moved in a way snapshots cannot explain (a refund, a manual adjustment), and
+// the payout is marked unattributed.
+const attributionHorizon = 48 * time.Hour
 
 // maxPartitionSteps caps the search so a pathological window can never stall
 // the collector. Real windows resolve in a few dozen steps.
@@ -51,7 +52,7 @@ type templateDelta struct {
 
 // runAttribution is the cron entrypoint: attribute and just log.
 func runAttribution(db *gorm.DB) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	n, err := attributePayouts(ctx, db)
 	if err != nil {
@@ -64,71 +65,104 @@ func runAttribution(db *gorm.DB) {
 }
 
 // attributePayouts assigns a template to every credit payout it can prove and
-// returns how many it assigned. Payouts it cannot prove yet stay pending and
-// are retried after the next snapshot; the baseline stays anchored to the
-// oldest pending payout, so a window only grows until it resolves.
+// returns how many it assigned. It works oldest-first, one window at a time:
+// the baseline is the last snapshot before the oldest pending payout, and the
+// window end is the first later snapshot whose per-template deltas the pending
+// payouts up to it reproduce exactly. A payout no snapshot within the horizon
+// explains is marked unattributed so the payouts after it get their own,
+// tighter window. Payouts older than the first snapshot are never touched.
 func attributePayouts(ctx context.Context, db *gorm.DB) (int, error) {
 	first, err := scanTime(ctx, db, `SELECT MIN(sampled_at) FROM template_snapshots WHERE total_earnings IS NOT NULL`)
 	if err != nil || first == nil {
 		return 0, err
 	}
-	pending := []pendingPayout{}
-	if err := db.WithContext(ctx).Raw(`
-		SELECT id, created_at, amount_cents FROM payouts
-		WHERE kind = 'credits' AND COALESCE(template_id, '') = '' AND created_at >= ?
-		ORDER BY created_at, id`, *first).Scan(&pending).Error; err != nil || len(pending) == 0 {
-		return 0, err
+	attributed := 0
+	for {
+		pending := []pendingPayout{}
+		if err := db.WithContext(ctx).Raw(`
+			SELECT id, created_at, amount_cents FROM payouts
+			WHERE kind = 'credits' AND COALESCE(template_id, '') = '' AND created_at >= ?
+			ORDER BY created_at, id`, *first).Scan(&pending).Error; err != nil || len(pending) == 0 {
+			return attributed, err
+		}
+		oldest := pending[0]
+		baseAt, err := scanTime(ctx, db, `SELECT MAX(sampled_at) FROM template_snapshots WHERE sampled_at <= ?`, oldest.CreatedAt)
+		if err != nil || baseAt == nil {
+			return attributed, err
+		}
+		ends := []time.Time{}
+		if err := db.WithContext(ctx).Raw(`
+			SELECT DISTINCT sampled_at FROM template_snapshots
+			WHERE sampled_at > ? AND total_earnings IS NOT NULL ORDER BY sampled_at`, *baseAt).Scan(&ends).Error; err != nil {
+			return attributed, err
+		}
+		base, _, err := earningsAt(ctx, db, *baseAt)
+		if err != nil {
+			return attributed, err
+		}
+		matched := false
+		for _, end := range ends {
+			if end.Sub(oldest.CreatedAt) > attributionHorizon {
+				break
+			}
+			window := []pendingPayout{}
+			for _, p := range pending {
+				if !p.CreatedAt.After(end) {
+					window = append(window, p)
+				}
+			}
+			current, names, err := earningsAt(ctx, db, end)
+			if err != nil {
+				return attributed, err
+			}
+			assignment := matchWindow(window, base, current)
+			if assignment == nil {
+				continue
+			}
+			byTemplate := map[string][]string{}
+			for payoutID, templateID := range assignment {
+				byTemplate[templateID] = append(byTemplate[templateID], payoutID)
+			}
+			for templateID, ids := range byTemplate {
+				if err := db.WithContext(ctx).Exec(`UPDATE payouts SET template_id = ?, template_name = ? WHERE id IN ?`,
+					templateID, names[templateID], ids).Error; err != nil {
+					return attributed, err
+				}
+			}
+			attributed += len(assignment)
+			matched = true
+			break
+		}
+		if matched {
+			continue
+		}
+		if len(ends) == 0 || ends[len(ends)-1].Sub(oldest.CreatedAt) <= attributionHorizon {
+			return attributed, nil // no snapshot beyond the horizon yet; try again after the next one
+		}
+		if err := db.WithContext(ctx).Exec(`UPDATE payouts SET template_id = ? WHERE id = ?`, unattributedTemplateID, oldest.ID).Error; err != nil {
+			return attributed, err
+		}
 	}
-	baseAt, err := scanTime(ctx, db, `SELECT MAX(sampled_at) FROM template_snapshots WHERE sampled_at <= ?`, pending[0].CreatedAt)
-	if err != nil || baseAt == nil {
-		return 0, err
-	}
-	latestAt, err := scanTime(ctx, db, `SELECT MAX(sampled_at) FROM template_snapshots`)
-	if err != nil || latestAt == nil || !latestAt.After(*baseAt) {
-		return 0, err
-	}
-	base, _, err := earningsAt(ctx, db, *baseAt)
-	if err != nil {
-		return 0, err
-	}
-	current, names, err := earningsAt(ctx, db, *latestAt)
-	if err != nil {
-		return 0, err
-	}
+}
+
+// matchWindow returns the payout → template assignment for one window, or nil
+// when the payouts and the earnings deltas do not add up to the cent.
+func matchWindow(window []pendingPayout, base, current map[string]float64) map[string]string {
 	var deltas []templateDelta
 	var deltaSum, payoutSum int64
 	for id, earned := range current {
 		if cents := int64(math.Round((earned - base[id]) * 100)); cents > 0 {
-			deltas = append(deltas, templateDelta{TemplateID: id, Name: names[id], Cents: cents})
+			deltas = append(deltas, templateDelta{TemplateID: id, Cents: cents})
 			deltaSum += cents
 		}
 	}
-	for _, p := range pending {
+	for _, p := range window {
 		payoutSum += p.AmountCents
 	}
-	assignment := map[string]string(nil)
-	if deltaSum == payoutSum {
-		assignment = partitionPayouts(pending, deltas)
+	if len(window) == 0 || deltaSum != payoutSum {
+		return nil
 	}
-	if assignment == nil {
-		if time.Since(pending[0].CreatedAt) > attributionGiveUpAfter {
-			// ponytail: drop only the oldest blocker; the rest get a fresh, tighter window next run
-			err := db.WithContext(ctx).Exec(`UPDATE payouts SET template_id = ? WHERE id = ?`, unattributedTemplateID, pending[0].ID).Error
-			return 0, err
-		}
-		return 0, nil
-	}
-	byTemplate := map[string][]string{}
-	for payoutID, templateID := range assignment {
-		byTemplate[templateID] = append(byTemplate[templateID], payoutID)
-	}
-	for templateID, ids := range byTemplate {
-		if err := db.WithContext(ctx).Exec(`UPDATE payouts SET template_id = ?, template_name = ? WHERE id IN ?`,
-			templateID, names[templateID], ids).Error; err != nil {
-			return 0, err
-		}
-	}
-	return len(assignment), nil
+	return partitionPayouts(window, deltas)
 }
 
 // earningsAt returns total_earnings (dollars) and name per template for the

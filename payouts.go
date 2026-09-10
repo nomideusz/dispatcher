@@ -100,7 +100,7 @@ func handlePayoutHistory(db *gorm.DB) http.HandlerFunc {
 		}
 		payouts := []Payout{}
 		err := db.WithContext(r.Context()).Raw(`
-			SELECT id, created_at, amount_cents, status, kind, destination
+			SELECT id, created_at, amount_cents, status, kind, destination, template_id, template_name
 			FROM payouts
 			ORDER BY created_at DESC`).Scan(&payouts).Error
 		if err != nil {

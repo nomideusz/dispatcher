@@ -127,6 +127,7 @@ export function PayoutHistory() {
               <thead>
                 <tr className="border-b text-left text-xs text-muted-foreground">
                   <th className="pb-2 font-medium">Date</th>
+                  <th className="pb-2 pl-3 font-medium">Template</th>
                   <th className="pb-2 pl-3 font-medium">Destination</th>
                   <th className="pb-2 pl-3 font-medium">Status</th>
                   <th className="pb-2 pl-3 text-right font-medium">Amount</th>
@@ -215,6 +216,16 @@ function PayoutRow({ payout }: { payout: Payout }) {
     <tr className="border-b border-border/50 last:border-0">
       <td className="whitespace-nowrap py-2.5 pr-4 tabular-nums">
         {dayFmt.format(new Date(payout.createdAt))}
+      </td>
+      <td className="py-2.5 pl-3">
+        {payout.templateName ||
+          (payout.templateId === "unknown" ? (
+            <span className="text-muted-foreground">unknown</span>
+          ) : payout.kind === "credits" ? (
+            <span className="text-muted-foreground">pending</span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ))}
       </td>
       <td className="py-2.5 pl-3 text-muted-foreground">{payout.destination}</td>
       <td className="py-2.5 pl-3">

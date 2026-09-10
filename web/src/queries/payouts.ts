@@ -12,6 +12,10 @@ export interface Payout {
   kind: "cash" | "credits";
   /** "Bank ••8149" / "Card ••4242" / "Railway credits". */
   destination: string;
+  /** Template that earned this credit payout, matched from snapshot deltas.
+   * Empty while the match is pending, "unknown" if it never resolved. */
+  templateId: string;
+  templateName: string;
 }
 
 /** One day of the chart. Amounts are cumulative from the start of the selected

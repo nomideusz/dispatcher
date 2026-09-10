@@ -72,8 +72,13 @@ type Payout struct {
 	Status      string    `json:"status"`
 	Kind        string    `json:"kind"`        // "cash" | "credits"
 	Destination string    `json:"destination"` // "Bank ••8149", "Railway credits"
-	AccountID   string    `json:"-"`
-	SyncedAt    time.Time `json:"-"`
+	// TemplateID/TemplateName are filled in by attributePayouts once a credit
+	// payout has been matched to the template that earned it. Empty while the
+	// match is pending; "unknown" when the matcher gave up (see attribute.go).
+	TemplateID   string    `json:"templateId"`
+	TemplateName string    `json:"templateName"`
+	AccountID    string    `json:"-"`
+	SyncedAt     time.Time `json:"-"`
 }
 
 // autoWithdrawSettingsID is the fixed primary key of the singleton settings

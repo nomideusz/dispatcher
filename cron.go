@@ -93,6 +93,7 @@ func runTemplateSnapshots(db *gorm.DB) {
 		log.Printf("template snapshots: %v", err)
 	}
 	runPayoutSync(db)
+	runAttribution(db)
 }
 
 // runPayoutSync mirrors Railway's payout history into DuckDB. It rides the

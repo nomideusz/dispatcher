@@ -51,7 +51,8 @@ func TestAttributePayoutsUsesSnapshotDeltasAndWaitsWhenTheyDisagree(t *testing.T
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
-	// A cash withdrawal is never attributed; an old credit predates the first snapshot.
+	// A cash withdrawal is never attributed; a credit older than the first
+	// snapshot is marked untracked rather than left looking pending.
 	payouts := []Payout{
 		{ID: "cash", CreatedAt: t0.Add(30 * time.Minute), AmountCents: 10000, Kind: "cash", Status: "COMPLETED"},
 		{ID: "old", CreatedAt: t0.Add(-time.Hour), AmountCents: 7, Kind: "credits", Status: "COMPLETED"},
@@ -74,7 +75,7 @@ func TestAttributePayoutsUsesSnapshotDeltasAndWaitsWhenTheyDisagree(t *testing.T
 	for _, r := range rows {
 		got[r.ID] = r.TemplateID
 	}
-	want := map[string]string{"cash": "", "old": "", "p125": "twenty", "p13": "twenty", "p204": "owncast"}
+	want := map[string]string{"cash": "", "old": untrackedTemplateID, "p125": "twenty", "p13": "twenty", "p204": "owncast"}
 	for id, tid := range want {
 		if got[id] != tid {
 			t.Fatalf("payout %s: want template %q, got %q (all: %v)", id, tid, got[id], got)

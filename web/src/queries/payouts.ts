@@ -55,6 +55,10 @@ export interface PayoutTemplateTotal {
   templateName: string;
   count: number;
   cents: number;
+  /** Estimated paying deployers: invoices (batches of service rows) in the
+   * window, and in the window of equal length before it. */
+  payers: number;
+  payersPrevious: number;
 }
 
 export interface PayoutHistory {

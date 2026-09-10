@@ -79,15 +79,35 @@ type payoutTotals struct {
 }
 
 // payoutTemplateTotal is one line of the per-template breakdown: how many
-// credit payouts a template earned in the selected window and what they added
-// up to. Payouts still awaiting attribution group under "pending", ones the
-// matcher gave up on under "unknown" (see attribute.go).
+// credit payouts a template earned in the selected window, what they added up
+// to, and how many deployers that looks like. Payouts still awaiting
+// attribution group under "pending", ones the matcher gave up on under
+// "unknown" (see attribute.go).
+//
+// Railway writes one kickback row per billed service, and a deployer's
+// services are billed together: a single-service template pays out one row
+// at a time, a four-service template four rows within a couple of seconds.
+// A run of rows for one template closer together than payerBatchGap is
+// therefore one deployer's invoice, and since Railway invoices each customer
+// once per billing cycle, invoices in a 30-day window ≈ paying deployers.
+// Two deployers invoiced in the same billing run would merge into one
+// (undercount); a deployer charged more than once a cycle would split
+// (overcount). Estimate, not census.
 type payoutTemplateTotal struct {
 	TemplateID   string `json:"templateId"`
 	TemplateName string `json:"templateName"`
 	Count        int    `json:"count"`
 	Cents        int64  `json:"cents"`
+	// Payers is the number of invoices (row batches) in the window and
+	// PayersPrevious the same for the window of equal length before it.
+	Payers         int `json:"payers"`
+	PayersPrevious int `json:"payersPrevious"`
 }
+
+// payerBatchGap separates one deployer's invoice rows from the next
+// invoice. Rows of one invoice land ~1s apart; distinct invoices for the same
+// template have been hours apart.
+const payerBatchGap = 5 * time.Minute
 
 type payoutHistoryResponse struct {
 	Points []payoutPoint `json:"points"`
@@ -159,6 +179,24 @@ func buildPayoutHistory(payouts []Payout, days int, now time.Time) payoutHistory
 	perDayCredits := map[string]int64{}
 	perDayCount := map[string]int{}
 	byTemplate := map[string]*payoutTemplateTotal{}
+	lastCreditAt := map[string]time.Time{} // per template key, for batch detection
+	templateKey := func(p Payout) (key, name string) {
+		key, name = p.TemplateID, p.TemplateName
+		if key == "" {
+			return "pending", "pending"
+		}
+		if name == "" {
+			name = key
+		}
+		return key, name
+	}
+	// newInvoice reports whether this credit row starts a new batch for its
+	// template. Rows arrive newest first, so a gap is measured backwards.
+	newInvoice := func(key string, at time.Time) bool {
+		last, seen := lastCreditAt[key]
+		lastCreditAt[key] = at
+		return !seen || last.Sub(at) > payerBatchGap
+	}
 
 	for _, p := range sorted {
 		at := p.CreatedAt.UTC()
@@ -197,20 +235,27 @@ func buildPayoutHistory(payouts []Payout, days int, now time.Time) payoutHistory
 			resp.Window.TotalCents += p.AmountCents
 			resp.Window.Count++
 			if credits {
-				key, name := p.TemplateID, p.TemplateName
-				if key == "" {
-					key, name = "pending", "pending"
-				} else if name == "" {
-					name = key
-				}
+				key, name := templateKey(p)
 				if byTemplate[key] == nil {
 					byTemplate[key] = &payoutTemplateTotal{TemplateID: key, TemplateName: name}
 				}
 				byTemplate[key].Count++
 				byTemplate[key].Cents += p.AmountCents
+				if newInvoice(key, at) {
+					byTemplate[key].Payers++
+				}
 			}
 		case !at.Before(previousStart):
 			resp.Window.PreviousCents += p.AmountCents
+			if credits {
+				key, name := templateKey(p)
+				if byTemplate[key] == nil {
+					byTemplate[key] = &payoutTemplateTotal{TemplateID: key, TemplateName: name}
+				}
+				if newInvoice(key, at) {
+					byTemplate[key].PayersPrevious++
+				}
+			}
 		}
 	}
 

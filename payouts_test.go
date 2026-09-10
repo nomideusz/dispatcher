@@ -100,26 +100,36 @@ func TestBuildPayoutHistoryExcludesVoidPayoutsButStillListsThem(t *testing.T) {
 
 func TestBuildPayoutHistoryBreaksTheWindowDownByTemplate(t *testing.T) {
 	now := time.Date(2026, 8, 30, 15, 0, 0, 0, time.UTC)
-	credit := func(hoursAgo int, cents int64, status, templateID, name string) Payout {
-		at := now.Add(-time.Duration(hoursAgo) * time.Hour)
+	creditAt := func(at time.Time, cents int64, status, templateID, name string) Payout {
 		return Payout{ID: "c-" + at.Format(time.RFC3339Nano), CreatedAt: at, AmountCents: cents, Status: status, Kind: "credits", Destination: "Railway credits", TemplateID: templateID, TemplateName: name}
 	}
+	credit := func(hoursAgo int, cents int64, status, templateID, name string) Payout {
+		return creditAt(now.Add(-time.Duration(hoursAgo)*time.Hour), cents, status, templateID, name)
+	}
+	invoice := now.Add(-time.Hour) // one Twenty deployer: four service rows a second apart
 	payouts := []Payout{
-		credit(1, 125, "COMPLETED", "twenty", "Twenty CRM"), credit(2, 13, "COMPLETED", "twenty", "Twenty CRM"),
-		credit(3, 204, "COMPLETED", "owncast", "Owncast"), credit(4, 5, "COMPLETED", "", ""),
+		creditAt(invoice, 125, "COMPLETED", "twenty", "Twenty CRM"),
+		creditAt(invoice.Add(time.Second), 13, "COMPLETED", "twenty", "Twenty CRM"),
+		creditAt(invoice.Add(2*time.Second), 118, "COMPLETED", "twenty", "Twenty CRM"),
+		creditAt(invoice.Add(3*time.Second), 5, "COMPLETED", "twenty", "Twenty CRM"),
+		credit(24*3, 84, "COMPLETED", "twenty", "Twenty CRM"), // another Twenty deployer, three days earlier
+		credit(3, 204, "COMPLETED", "owncast", "Owncast"),
+		credit(4, 5, "COMPLETED", "", ""),
 		credit(5, 3, "COMPLETED", unattributedTemplateID, ""),
 		credit(6, 50, "FAILED", "owncast", "Owncast"),           // void: not counted anywhere
-		credit(24*40, 999, "COMPLETED", "twenty", "Twenty CRM"), // outside the window
+		credit(24*40, 999, "COMPLETED", "twenty", "Twenty CRM"), // previous window: a payer then, not now
+		credit(24*41, 7, "COMPLETED", "dify", "Dify"),           // previous window only
 		cashPayout(now.Add(-7*time.Hour), 10000, "COMPLETED"),   // cash: never attributed
 	}
 
 	got := buildPayoutHistory(payouts, 30, now)
 
 	want := []payoutTemplateTotal{
-		{TemplateID: "owncast", TemplateName: "Owncast", Count: 1, Cents: 204},
-		{TemplateID: "twenty", TemplateName: "Twenty CRM", Count: 2, Cents: 138},
-		{TemplateID: "pending", TemplateName: "pending", Count: 1, Cents: 5},
-		{TemplateID: unattributedTemplateID, TemplateName: unattributedTemplateID, Count: 1, Cents: 3},
+		{TemplateID: "twenty", TemplateName: "Twenty CRM", Count: 5, Cents: 345, Payers: 2, PayersPrevious: 1},
+		{TemplateID: "owncast", TemplateName: "Owncast", Count: 1, Cents: 204, Payers: 1},
+		{TemplateID: "pending", TemplateName: "pending", Count: 1, Cents: 5, Payers: 1},
+		{TemplateID: unattributedTemplateID, TemplateName: unattributedTemplateID, Count: 1, Cents: 3, Payers: 1},
+		{TemplateID: "dify", TemplateName: "Dify", PayersPrevious: 1},
 	}
 	if len(got.ByTemplate) != len(want) {
 		t.Fatalf("byTemplate = %+v, want %+v", got.ByTemplate, want)

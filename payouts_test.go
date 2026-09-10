@@ -112,24 +112,24 @@ func TestBuildPayoutHistoryBreaksTheWindowDownByTemplate(t *testing.T) {
 		creditAt(invoice.Add(time.Second), 13, "COMPLETED", "twenty", "Twenty CRM"),
 		creditAt(invoice.Add(2*time.Second), 118, "COMPLETED", "twenty", "Twenty CRM"),
 		creditAt(invoice.Add(3*time.Second), 5, "COMPLETED", "twenty", "Twenty CRM"),
-		credit(24*3, 84, "COMPLETED", "twenty", "Twenty CRM"), // another Twenty deployer, three days earlier
+		credit(24*10, 84, "COMPLETED", "twenty", "Twenty CRM"), // another Twenty deployer, ten days earlier
 		credit(3, 204, "COMPLETED", "owncast", "Owncast"),
 		credit(4, 5, "COMPLETED", "", ""),
 		credit(5, 3, "COMPLETED", unattributedTemplateID, ""),
 		credit(6, 50, "FAILED", "owncast", "Owncast"),           // void: not counted anywhere
-		credit(24*40, 999, "COMPLETED", "twenty", "Twenty CRM"), // previous window: a payer then, not now
-		credit(24*41, 7, "COMPLETED", "dify", "Dify"),           // previous window only
+		credit(24*40, 999, "COMPLETED", "twenty", "Twenty CRM"), // previous cycle: a payer then, not now
+		credit(24*41, 7, "COMPLETED", "dify", "Dify"),           // previous cycle only
+		credit(24*80, 7, "COMPLETED", "old", "Old"),             // beyond every window: not listed
 		cashPayout(now.Add(-7*time.Hour), 10000, "COMPLETED"),   // cash: never attributed
 	}
 
 	got := buildPayoutHistory(payouts, 30, now)
-
 	want := []payoutTemplateTotal{
-		{TemplateID: "twenty", TemplateName: "Twenty CRM", Count: 5, Cents: 345, Payers: 2, PayersPrevious: 1},
-		{TemplateID: "owncast", TemplateName: "Owncast", Count: 1, Cents: 204, Payers: 1},
-		{TemplateID: "pending", TemplateName: "pending", Count: 1, Cents: 5, Payers: 1},
-		{TemplateID: unattributedTemplateID, TemplateName: unattributedTemplateID, Count: 1, Cents: 3, Payers: 1},
-		{TemplateID: "dify", TemplateName: "Dify", PayersPrevious: 1},
+		{TemplateID: "twenty", TemplateName: "Twenty CRM", Count: 5, Cents: 345, Invoices: 2, InvoicesPrevious: 1, Payers: 2, PayersPrevious: 1, PayerCents: 345},
+		{TemplateID: "owncast", TemplateName: "Owncast", Count: 1, Cents: 204, Invoices: 1, Payers: 1, PayerCents: 204},
+		{TemplateID: "pending", TemplateName: "pending", Count: 1, Cents: 5, Invoices: 1, Payers: 1, PayerCents: 5},
+		{TemplateID: unattributedTemplateID, TemplateName: unattributedTemplateID, Count: 1, Cents: 3, Invoices: 1, Payers: 1, PayerCents: 3},
+		{TemplateID: "dify", TemplateName: "Dify", InvoicesPrevious: 1, PayersPrevious: 1},
 	}
 	if len(got.ByTemplate) != len(want) {
 		t.Fatalf("byTemplate = %+v, want %+v", got.ByTemplate, want)
@@ -138,6 +138,19 @@ func TestBuildPayoutHistoryBreaksTheWindowDownByTemplate(t *testing.T) {
 		if got.ByTemplate[i] != want[i] {
 			t.Errorf("byTemplate[%d] = %+v, want %+v", i, got.ByTemplate[i], want[i])
 		}
+	}
+
+	// A 7-day range only sees this week's invoices, but payers still cover
+	// the trailing billing cycle — a short range must not read as churn.
+	week := buildPayoutHistory(payouts, 7, now)
+	var twenty payoutTemplateTotal
+	for _, row := range week.ByTemplate {
+		if row.TemplateID == "twenty" {
+			twenty = row
+		}
+	}
+	if twenty.Invoices != 1 || twenty.InvoicesPrevious != 1 || twenty.Payers != 2 || twenty.PayersPrevious != 1 || twenty.PayerCents != 345 {
+		t.Errorf("7-day twenty = %+v, want 1 invoice this week, 1 the week before, 2 payers over the cycle", twenty)
 	}
 }
 

@@ -86,20 +86,34 @@ type payoutTotals struct {
 // at a time, a four-service template four rows within a couple of seconds.
 // A run of rows for one template closer together than payerBatchGap is
 // therefore one deployer's invoice, and since Railway invoices each customer
-// once per billing cycle, invoices in a 30-day window ≈ paying deployers.
+// once per billing cycle, invoices in one cycle (payerCycleDays) ≈ paying
+// deployers. That is why Payers is always measured over the trailing cycle,
+// whatever range the chart shows: a 7-day range only sees the deployers whose
+// billing date fell that week, a 90-day range sees each deployer three times.
 // Two deployers invoiced in the same billing run would merge into one
 // (undercount); a deployer charged more than once a cycle would split
 // (overcount). Estimate, not census.
 type payoutTemplateTotal struct {
 	TemplateID   string `json:"templateId"`
 	TemplateName string `json:"templateName"`
-	Count        int    `json:"count"`
-	Cents        int64  `json:"cents"`
-	// Payers is the number of invoices (row batches) in the window and
-	// PayersPrevious the same for the window of equal length before it.
-	Payers         int `json:"payers"`
-	PayersPrevious int `json:"payersPrevious"`
+	// Count, Cents and Invoices cover the selected range; InvoicesPrevious
+	// the range of equal length before it.
+	Count            int   `json:"count"`
+	Cents            int64 `json:"cents"`
+	Invoices         int   `json:"invoices"`
+	InvoicesPrevious int   `json:"invoicesPrevious"`
+	// Payers is the invoice count over the trailing payerCycleDays,
+	// PayersPrevious over the cycle before that, and PayerCents what the
+	// trailing cycle's invoices added up to — so PayerCents/Payers is what one
+	// paying deployer is worth per cycle.
+	Payers         int   `json:"payers"`
+	PayersPrevious int   `json:"payersPrevious"`
+	PayerCents     int64 `json:"payerCents"`
 }
+
+// payerCycleDays is Railway's billing cycle: each customer is invoiced once
+// per month, so one cycle of invoices counts each paying deployer once.
+const payerCycleDays = 30
 
 // payerBatchGap separates one deployer's invoice rows from the next
 // invoice. Rows of one invoice land ~1s apart; distinct invoices for the same
@@ -177,6 +191,8 @@ func buildPayoutHistory(payouts []Payout, days int, now time.Time) payoutHistory
 	perDayCredits := map[string]int64{}
 	perDayCount := map[string]int{}
 	byTemplate := map[string]*payoutTemplateTotal{}
+	cycleStart := today.AddDate(0, 0, -(payerCycleDays - 1))
+	previousCycleStart := cycleStart.AddDate(0, 0, -payerCycleDays)
 	lastCreditAt := map[string]time.Time{} // per template key, for batch detection
 	templateKey := func(p Payout) (key, name string) {
 		key, name = p.TemplateID, p.TemplateName
@@ -232,27 +248,42 @@ func buildPayoutHistory(payouts []Payout, days int, now time.Time) payoutHistory
 			}
 			resp.Window.TotalCents += p.AmountCents
 			resp.Window.Count++
-			if credits {
-				key, name := templateKey(p)
-				if byTemplate[key] == nil {
-					byTemplate[key] = &payoutTemplateTotal{TemplateID: key, TemplateName: name}
-				}
-				byTemplate[key].Count++
-				byTemplate[key].Cents += p.AmountCents
-				if newInvoice(key, at) {
-					byTemplate[key].Payers++
-				}
-			}
 		case !at.Before(previousStart):
 			resp.Window.PreviousCents += p.AmountCents
-			if credits {
-				key, name := templateKey(p)
-				if byTemplate[key] == nil {
-					byTemplate[key] = &payoutTemplateTotal{TemplateID: key, TemplateName: name}
-				}
-				if newInvoice(key, at) {
-					byTemplate[key].PayersPrevious++
-				}
+		}
+
+		if !credits {
+			continue
+		}
+		// Batches are detected over the whole history so an invoice straddling
+		// a window edge is still one invoice; the counters then pick windows.
+		key, name := templateKey(p)
+		if byTemplate[key] == nil {
+			byTemplate[key] = &payoutTemplateTotal{TemplateID: key, TemplateName: name}
+		}
+		t := byTemplate[key]
+		isNew := newInvoice(key, at)
+		switch {
+		case !at.Before(windowStart):
+			t.Count++
+			t.Cents += p.AmountCents
+			if isNew {
+				t.Invoices++
+			}
+		case !at.Before(previousStart):
+			if isNew {
+				t.InvoicesPrevious++
+			}
+		}
+		switch {
+		case !at.Before(cycleStart):
+			t.PayerCents += p.AmountCents
+			if isNew {
+				t.Payers++
+			}
+		case !at.Before(previousCycleStart):
+			if isNew {
+				t.PayersPrevious++
 			}
 		}
 	}
@@ -262,7 +293,9 @@ func buildPayoutHistory(payouts []Payout, days int, now time.Time) payoutHistory
 		resp.Window.ChangePct = &pct
 	}
 	for _, t := range byTemplate {
-		resp.ByTemplate = append(resp.ByTemplate, *t)
+		if t.Count > 0 || t.InvoicesPrevious > 0 || t.Payers > 0 || t.PayersPrevious > 0 {
+			resp.ByTemplate = append(resp.ByTemplate, *t)
+		}
 	}
 	sort.Slice(resp.ByTemplate, func(i, j int) bool {
 		if resp.ByTemplate[i].Cents != resp.ByTemplate[j].Cents {

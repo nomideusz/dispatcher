@@ -127,17 +127,20 @@ export function PayoutHistory() {
             <CardContent className="overflow-x-auto">
               <table className="w-full text-sm">
                 <caption className="pb-2 text-left text-xs text-muted-foreground">
-                  Credit payouts by template, last {days} days. Payers is an
-                  estimate: Railway pays out one row per billed service, so a
-                  burst of rows is one deployer&apos;s invoice, and invoices in
-                  a billing cycle ≈ paying deployers.
+                  Credit payouts by template. Payers is an estimate over the
+                  trailing 30 days whatever the range: Railway pays out one row
+                  per billed service, so a burst of rows is one deployer&apos;s
+                  invoice, and one billing cycle of invoices counts each paying
+                  deployer once. Invoices, rows and amount follow the selected
+                  range.
                 </caption>
                 <thead>
                   <tr className="border-b text-left text-xs text-muted-foreground">
                     <th className="pb-2 font-medium">Template</th>
-                    <th className="pb-2 pl-3 text-right font-medium">Payers</th>
-                    <th className="pb-2 pl-3 text-right font-medium">vs prev.</th>
+                    <th className="pb-2 pl-3 text-right font-medium">Payers 30d</th>
+                    <th className="pb-2 pl-3 text-right font-medium">vs prev. 30d</th>
                     <th className="pb-2 pl-3 text-right font-medium">$/payer</th>
+                    <th className="pb-2 pl-3 text-right font-medium">Invoices {days}d</th>
                     <th className="pb-2 pl-3 text-right font-medium">Rows</th>
                     <th className="pb-2 pl-3 text-right font-medium">Amount</th>
                   </tr>
@@ -169,8 +172,9 @@ export function PayoutHistory() {
                           : `${t.payers > t.payersPrevious ? "+" : ""}${t.payers - t.payersPrevious}`}
                       </td>
                       <td className="py-2 pl-3 text-right tabular-nums">
-                        {t.payers > 0 ? fmtCents(Math.round(t.cents / t.payers)) : "—"}
+                        {t.payers > 0 ? fmtCents(Math.round(t.payerCents / t.payers)) : "—"}
                       </td>
+                      <td className="py-2 pl-3 text-right tabular-nums">{fmtNum(t.invoices)}</td>
                       <td className="py-2 pl-3 text-right tabular-nums">{fmtNum(t.count)}</td>
                       <td className="py-2 pl-3 text-right tabular-nums">{fmtCents(t.cents)}</td>
                     </tr>

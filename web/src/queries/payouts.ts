@@ -57,12 +57,18 @@ export const PSEUDO_TEMPLATE_IDS = new Set(["pending", "unknown", "untracked"]);
 export interface PayoutTemplateTotal {
   templateId: string;
   templateName: string;
+  /** Rows, amount and invoices (batches of service rows) in the selected
+   * range; invoicesPrevious for the range of equal length before it. */
   count: number;
   cents: number;
-  /** Estimated paying deployers: invoices (batches of service rows) in the
-   * window, and in the window of equal length before it. */
+  invoices: number;
+  invoicesPrevious: number;
+  /** Estimated paying deployers: invoices over the trailing 30-day billing
+   * cycle regardless of the selected range, the cycle before it, and what the
+   * trailing cycle's invoices added up to. */
   payers: number;
   payersPrevious: number;
+  payerCents: number;
 }
 
 export interface PayoutHistory {

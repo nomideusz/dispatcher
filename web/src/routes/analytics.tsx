@@ -62,11 +62,17 @@ export default function Analytics() {
       {summary.isSuccess && !hasData && <EmptyState />}
 
       {summary.data && (
-        <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <section className="grid grid-cols-2 gap-4 lg:grid-cols-5">
           <StatTile
             label="Total payout"
             value={fmtUsd(summary.data.totalPayout.current)}
             change={summary.data.totalPayout}
+            ago={comparedAgo}
+          />
+          <StatTile
+            label="Running instances"
+            value={fmtNum(summary.data.runningInstances.current)}
+            change={summary.data.runningInstances}
             ago={comparedAgo}
           />
           <StatTile
@@ -144,6 +150,7 @@ export default function Analytics() {
                   <th className="pb-2 font-medium">Template</th>
                   <th className="pb-2 pl-3 text-right font-medium">Projects</th>
                   <th className="pb-2 pl-3 text-right font-medium">Active</th>
+                  <th className="pb-2 pl-3 text-right font-medium">Running</th>
                   <th className="pb-2 pl-3 text-right font-medium">Health</th>
                   <th className="pb-2 pl-3 text-right font-medium">Support</th>
                   <th className="pb-2 pl-3 text-right font-medium">Payout</th>
@@ -300,6 +307,12 @@ function TemplateRow({ template: t }: { template: TemplateAnalytics }) {
       </td>
       <td className="py-2.5 pl-3 text-right tabular-nums">
         {fmtNum(t.activeProjects)}
+      </td>
+      <td
+        className="py-2.5 pl-3 text-right tabular-nums"
+        title="Currently running instances of this template (Railway metrics)"
+      >
+        {t.runningInstances == null ? "—" : fmtNum(t.runningInstances)}
       </td>
       <td className="py-2.5 pl-3 text-right tabular-nums">
         <TemplateHealth template={t} />

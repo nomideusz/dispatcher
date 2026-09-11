@@ -33,6 +33,10 @@ export interface AnalyticsSummary {
   projects: MetricChange;
   recentProjects: MetricChange;
   activeProjects: MetricChange;
+  /** templateMetrics.activeDeployments: Railway's "currently running
+   * instances of this template". Runs well above active projects and tracks
+   * live use better; compared only when the comparison sample has metrics. */
+  runningInstances: MetricChange;
 }
 
 export interface TemplateAnalytics {
@@ -50,6 +54,9 @@ export interface TemplateAnalytics {
   projects: number;
   recentProjects: number;
   activeProjects: number;
+  /** Currently running instances (templateMetrics); null before metrics
+   * were collected. */
+  runningInstances: number | null;
   totalPayout: number;
   payoutPrevious: number | null;
   payoutChangePct: number | null;

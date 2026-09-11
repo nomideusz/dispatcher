@@ -129,20 +129,29 @@ type metricChange struct {
 	ChangePct *float64 `json:"changePct"`
 }
 
+// Railway reports two families of deploy counts and both are shown under
+// their own names. Projects / RecentProjects / ActiveProjects come from the
+// template list (the templates page). RunningInstances is templateMetrics'
+// activeDeployments, which Railway's metrics page defines as "currently
+// running instances of this template"; it runs well above active projects
+// (a template with 9 active projects showed 28 running instances) and agrees
+// far better with the invoice counts, so it is the better read of live use.
 type analyticsSummary struct {
-	SampledAt      time.Time    `json:"sampledAt"`
-	ComparedTo     *time.Time   `json:"comparedTo"`
-	TotalPayout    metricChange `json:"totalPayout"`
-	Projects       metricChange `json:"projects"`
-	RecentProjects metricChange `json:"recentProjects"`
-	ActiveProjects metricChange `json:"activeProjects"`
+	SampledAt        time.Time    `json:"sampledAt"`
+	ComparedTo       *time.Time   `json:"comparedTo"`
+	TotalPayout      metricChange `json:"totalPayout"`
+	Projects         metricChange `json:"projects"`
+	RecentProjects   metricChange `json:"recentProjects"`
+	ActiveProjects   metricChange `json:"activeProjects"`
+	RunningInstances metricChange `json:"runningInstances"`
 }
 
 type snapshotTotals struct {
-	TotalPayout    float64
-	Projects       float64
-	RecentProjects float64
-	ActiveProjects float64
+	TotalPayout      float64
+	Projects         float64
+	RecentProjects   float64
+	ActiveProjects   float64
+	RunningInstances float64
 }
 
 // handleAnalyticsSummary returns workspace totals from the latest sample next
@@ -181,25 +190,32 @@ func handleAnalyticsSummary(db *gorm.DB) http.HandlerFunc {
 			Projects:       changeOf(current.Projects, prev, func(t snapshotTotals) float64 { return t.Projects }),
 			RecentProjects: changeOf(current.RecentProjects, prev, func(t snapshotTotals) float64 { return t.RecentProjects }),
 			ActiveProjects: changeOf(current.ActiveProjects, prev, func(t snapshotTotals) float64 { return t.ActiveProjects }),
+			// Metrics columns only exist on snapshots taken since templateMetrics
+			// was collected; an older comparison sample sums to 0 and reads as
+			// "no comparison yet" rather than as a drop.
+			RunningInstances: changeOf(current.RunningInstances, prev, func(t snapshotTotals) float64 { return t.RunningInstances }),
 		})
 	}
 }
 
 type templateAnalytics struct {
-	TemplateID      string   `json:"templateId"`
-	Name            string   `json:"name"`
-	Code            string   `json:"code"`
-	Status          string   `json:"status"`
-	Health          *float64 `json:"health"`
-	SupportSolved   *float64 `json:"supportSolved"`
-	SupportCsat     *float64 `json:"supportCsat"`
-	SupportHealth   *float64 `json:"supportHealth"`
-	Projects        int64    `json:"projects"`
-	RecentProjects  int64    `json:"recentProjects"`
-	ActiveProjects  int64    `json:"activeProjects"`
-	TotalPayout     float64  `json:"totalPayout"`
-	PayoutPrevious  *float64 `json:"payoutPrevious"`
-	PayoutChangePct *float64 `json:"payoutChangePct"`
+	TemplateID     string   `json:"templateId"`
+	Name           string   `json:"name"`
+	Code           string   `json:"code"`
+	Status         string   `json:"status"`
+	Health         *float64 `json:"health"`
+	SupportSolved  *float64 `json:"supportSolved"`
+	SupportCsat    *float64 `json:"supportCsat"`
+	SupportHealth  *float64 `json:"supportHealth"`
+	Projects       int64    `json:"projects"`
+	RecentProjects int64    `json:"recentProjects"`
+	// RunningInstances is templateMetrics.activeDeployments; nil on
+	// snapshots taken before metrics were collected.
+	RunningInstances *int64   `json:"runningInstances"`
+	ActiveProjects   int64    `json:"activeProjects"`
+	TotalPayout      float64  `json:"totalPayout"`
+	PayoutPrevious   *float64 `json:"payoutPrevious"`
+	PayoutChangePct  *float64 `json:"payoutChangePct"`
 }
 
 type templateAnalyticsResponse struct {
@@ -235,6 +251,7 @@ func handleTemplateAnalytics(db *gorm.DB) http.HandlerFunc {
 			       cur.projects,
 			       cur.recent_projects,
 			       cur.active_projects,
+			       cur.active_deployments AS running_instances,
 			       cur.total_earnings AS total_payout,
 			       prev.total_earnings AS payout_previous
 			FROM template_snapshots cur
@@ -301,7 +318,8 @@ func totalsAt(ctx context.Context, db *gorm.DB, at time.Time) (snapshotTotals, e
 		SELECT COALESCE(SUM(total_earnings), 0) AS total_payout,
 		       COALESCE(SUM(projects), 0) AS projects,
 		       COALESCE(SUM(recent_projects), 0) AS recent_projects,
-		       COALESCE(SUM(active_projects), 0) AS active_projects
+		       COALESCE(SUM(active_projects), 0) AS active_projects,
+		       COALESCE(SUM(active_deployments), 0) AS running_instances
 		FROM template_snapshots
 		WHERE sampled_at = ? AND total_earnings IS NOT NULL`, at).Scan(&totals).Error
 	return totals, err

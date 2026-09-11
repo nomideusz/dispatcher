@@ -214,12 +214,16 @@ export function PayoutHistory() {
             <CardContent className="max-h-[24rem] overflow-auto">
               <table className="w-full text-sm">
                 <caption className="pb-2 text-left text-xs text-muted-foreground">
-                  Payers, one line per deployer. Returning means they paid again
-                  on their billing date; lapsed means a due invoice never came.
+                  Payers, one line per deployer, under a stable pseudonym derived
+                  from their first invoice. Rank is by lifetime total. Returning
+                  means they paid again on their billing date; lapsed means a due
+                  invoice never came.
                 </caption>
                 <thead>
                   <tr className="border-b text-left text-xs text-muted-foreground">
-                    <th className="pb-2 font-medium">Template</th>
+                    <th className="pb-2 text-right font-medium">#</th>
+                    <th className="pb-2 pl-3 font-medium">Payer</th>
+                    <th className="pb-2 pl-3 font-medium">Template</th>
                     <th className="pb-2 pl-3 font-medium">Status</th>
                     <th className="pb-2 pl-3 font-medium">First</th>
                     <th className="pb-2 pl-3 font-medium">Last</th>
@@ -339,11 +343,13 @@ function PayerRow({ chain }: { chain: PayerChain }) {
         : "text-muted-foreground";
   return (
     <tr className="border-b border-border/50 last:border-0">
+      <td className="py-2 text-right tabular-nums text-muted-foreground">{chain.rank}</td>
+      <td className="py-2 pl-3 font-medium capitalize">{chain.name}</td>
       <td
         className={
           PSEUDO_TEMPLATE_IDS.has(chain.templateId)
-            ? "py-2 text-muted-foreground"
-            : "py-2"
+            ? "py-2 pl-3 text-muted-foreground"
+            : "py-2 pl-3"
         }
       >
         {chain.templateName}

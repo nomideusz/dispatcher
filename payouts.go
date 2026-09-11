@@ -131,6 +131,10 @@ type payoutTemplateTotal struct {
 // 30-day pair 13 minutes off, while unrelated invoices were hours off). A
 // missed cycle ends the chain; paying again later starts a new one.
 type payerChain struct {
+	// Name is a stable pseudonym derived from the template and first invoice
+	// (see payerName); Rank orders every chain by TotalCents, 1 = biggest.
+	Name         string    `json:"name"`
+	Rank         int       `json:"rank"`
 	TemplateID   string    `json:"templateId"`
 	TemplateName string    `json:"templateName"`
 	FirstAt      time.Time `json:"firstAt"`
@@ -384,6 +388,16 @@ func buildPayoutHistory(payouts []Payout, lifetime []templateLifetime, days int,
 	}
 	sort.Slice(resp.Payers, func(i, j int) bool {
 		a, b := resp.Payers[i], resp.Payers[j]
+		if a.TotalCents != b.TotalCents {
+			return a.TotalCents > b.TotalCents
+		}
+		return a.FirstAt.Before(b.FirstAt)
+	})
+	for i := range resp.Payers {
+		resp.Payers[i].Rank = i + 1
+	}
+	sort.SliceStable(resp.Payers, func(i, j int) bool {
+		a, b := resp.Payers[i], resp.Payers[j]
 		rank := map[string]int{"returning": 0, "new": 1, "lapsed": 2}
 		if rank[a.Status] != rank[b.Status] {
 			return rank[a.Status] < rank[b.Status]
@@ -463,6 +477,7 @@ func chainPayers(templateID, name string, invs []invoice, now time.Time) []payer
 	}
 	out := make([]payerChain, 0, len(chains))
 	for _, c := range chains {
+		c.Name = payerName(templateID, c.FirstAt)
 		c.NextDueAt = c.LastAt.AddDate(0, 1, 0)
 		switch {
 		case now.After(c.NextDueAt.Add(payerLapseGrace)):

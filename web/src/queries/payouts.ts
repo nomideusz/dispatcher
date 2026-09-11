@@ -83,6 +83,10 @@ export interface PayoutTemplateTotal {
  * rhythm: invoices exactly a calendar month or 30 days apart, within
  * minutes, are the same deployer. */
 export interface PayerChain {
+  /** Stable pseudonym derived from template + first invoice. */
+  name: string;
+  /** 1 = biggest total across all payers. */
+  rank: number;
   templateId: string;
   templateName: string;
   firstAt: string;

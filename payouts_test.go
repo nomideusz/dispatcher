@@ -285,3 +285,17 @@ func TestChainPayersLinksInvoicesOnBillingCycle(t *testing.T) {
 		t.Errorf("want new within grace, got %s", c.Status)
 	}
 }
+
+func TestPayerNameIsStableAndDistinct(t *testing.T) {
+	at := time.Date(2026, 7, 25, 0, 8, 0, 0, time.UTC)
+	a, b := payerName("chatwoot", at), payerName("chatwoot", at.In(time.FixedZone("x", 3600)))
+	if a != b {
+		t.Errorf("name must not depend on zone: %q vs %q", a, b)
+	}
+	if payerName("chatwoot", at) == payerName("twenty", at) || payerName("chatwoot", at) == payerName("chatwoot", at.Add(time.Minute)) {
+		t.Error("different template or first invoice should (almost always) name differently")
+	}
+	if a == "" || len(a) < 5 {
+		t.Errorf("odd name %q", a)
+	}
+}

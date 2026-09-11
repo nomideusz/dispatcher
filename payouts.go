@@ -43,12 +43,14 @@ func isVoidPayout(status string) bool { return voidPayoutStatuses[status] }
 
 // payoutPoint is one day of the chart. Amounts are cumulative from the start
 // of the selected window, so the line only ever climbs; Count is the running
-// number of payouts behind it.
+// number of payouts behind it. Deployments is net-new template deploys in
+// the same window (see applyWindowDeployments), for a count-vs-cash overlay.
 type payoutPoint struct {
 	Date         string `json:"date"` // YYYY-MM-DD
 	CashCents    int64  `json:"cashCents"`
 	CreditsCents int64  `json:"creditsCents"`
 	Count        int    `json:"count"`
+	Deployments  int64  `json:"deployments"`
 }
 
 // payoutWindow summarizes the selected range against the range of equal length
@@ -221,7 +223,22 @@ func handlePayoutHistory(db *gorm.DB) http.HandlerFunc {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		writeJSON(w, http.StatusOK, buildPayoutHistory(payouts, lifetime, days, time.Now().UTC()))
+		now := time.Now().UTC()
+		today := now.Truncate(24 * time.Hour)
+		windowStart := today.AddDate(0, 0, -(days - 1))
+		deploys := []deployObservation{}
+		err = db.WithContext(r.Context()).Raw(`
+			SELECT sampled_at, template_id, total_deployments AS deployments
+			FROM template_snapshots
+			WHERE total_deployments IS NOT NULL AND sampled_at >= ?
+			ORDER BY sampled_at`, windowStart.AddDate(0, 0, -3)).Scan(&deploys).Error
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		hist := buildPayoutHistory(payouts, lifetime, days, now)
+		applyWindowDeployments(hist.Points, deploys, windowStart)
+		writeJSON(w, http.StatusOK, hist)
 	}
 }
 
@@ -433,6 +450,69 @@ func buildPayoutHistory(payouts []Payout, lifetime []templateLifetime, days int,
 		})
 	}
 	return resp
+}
+
+// deployObservation is one template's totalDeployments at a collector sample.
+// The withdrawals chart overlays the window's net-new deploys — the same
+// reading the weekly mail calls NetNewProjects — so cash out and usage share
+// an axis of time without pretending they share a unit.
+type deployObservation struct {
+	SampledAt   time.Time
+	TemplateID  string
+	Deployments int64
+}
+
+// applyWindowDeployments writes cumulative net-new template deployments onto
+// each chart point. Per template, the last reading at or before the window
+// start is the baseline (first in-window reading if none). Each day holds
+// that template's peak gain so a revised or dropped count cannot pull the
+// overlay down — same plateau shape as the payout line.
+func applyWindowDeployments(points []payoutPoint, observations []deployObservation, windowStart time.Time) {
+	if len(points) == 0 || len(observations) == 0 {
+		return
+	}
+	obs := slices.Clone(observations)
+	sort.SliceStable(obs, func(i, j int) bool {
+		if obs[i].SampledAt.Equal(obs[j].SampledAt) {
+			return obs[i].TemplateID < obs[j].TemplateID
+		}
+		return obs[i].SampledAt.Before(obs[j].SampledAt)
+	})
+
+	baseline := map[string]int64{}
+	haveBaseline := map[string]bool{}
+	peak := map[string]int64{}
+	for _, o := range obs {
+		if !o.SampledAt.After(windowStart) {
+			baseline[o.TemplateID] = o.Deployments
+			haveBaseline[o.TemplateID] = true
+		}
+	}
+
+	oi := 0
+	for i := range points {
+		day, err := time.Parse(dayKeyLayout, points[i].Date)
+		if err != nil {
+			continue
+		}
+		dayEnd := day.AddDate(0, 0, 1)
+		for oi < len(obs) && obs[oi].SampledAt.Before(dayEnd) {
+			o := obs[oi]
+			if !haveBaseline[o.TemplateID] {
+				baseline[o.TemplateID] = o.Deployments
+				haveBaseline[o.TemplateID] = true
+			}
+			if delta := o.Deployments - baseline[o.TemplateID]; delta > peak[o.TemplateID] {
+				peak[o.TemplateID] = delta
+			}
+			oi++
+		}
+		var added int64
+		for _, d := range peak {
+			added += d
+		}
+		points[i].Deployments = added
+	}
 }
 
 // onCycle reports whether `next` falls one billing cycle after `prev`: exactly

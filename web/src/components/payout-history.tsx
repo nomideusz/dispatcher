@@ -95,7 +95,8 @@ export function PayoutHistory() {
         <CardHeader>
           <CardTitle>Withdrawals</CardTitle>
           <CardDescription>
-            Cash and credits that left your Railway balance
+            Cash and credits out. The dashed line is new template deployments
+            in the same window.
           </CardDescription>
           <CardAction className="flex gap-1">
             {RANGES.map((r) => (

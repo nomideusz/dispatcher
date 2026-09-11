@@ -185,6 +185,39 @@ func TestBuildPayoutHistoryListsTheWholeWindow(t *testing.T) {
 	}
 }
 
+func TestApplyWindowDeploymentsOverlaysNetNewDeploys(t *testing.T) {
+	now := time.Date(2026, 8, 30, 15, 0, 0, 0, time.UTC)
+	got := buildPayoutHistory([]Payout{
+		cashPayout(time.Date(2026, 8, 24, 9, 0, 0, 0, time.UTC), 10000, "COMPLETED"),
+	}, nil, 7, now)
+	windowStart := time.Date(2026, 8, 24, 0, 0, 0, 0, time.UTC)
+	at := func(d, h int) time.Time { return time.Date(2026, 8, d, h, 0, 0, 0, time.UTC) }
+
+	applyWindowDeployments(got.Points, []deployObservation{
+		{SampledAt: at(23, 15), TemplateID: "a", Deployments: 100},
+		{SampledAt: at(25, 12), TemplateID: "a", Deployments: 105},
+		{SampledAt: at(28, 8), TemplateID: "a", Deployments: 110},
+		{SampledAt: at(26, 10), TemplateID: "b", Deployments: 3},
+		{SampledAt: at(29, 9), TemplateID: "b", Deployments: 5},
+		{SampledAt: at(29, 9), TemplateID: "a", Deployments: 108}, // a drop must not pull the overlay down
+	}, windowStart)
+
+	want := map[string]int64{
+		"2026-08-24": 0,  // baseline only
+		"2026-08-25": 5,  // a +5
+		"2026-08-26": 5,  // b appears; its first reading is its baseline
+		"2026-08-27": 5,  // hold
+		"2026-08-28": 10, // a +10
+		"2026-08-29": 12, // a stays at its peak (+10), b +2
+		"2026-08-30": 12,
+	}
+	for _, p := range got.Points {
+		if p.Deployments != want[p.Date] {
+			t.Errorf("%s deployments = %d, want %d", p.Date, p.Deployments, want[p.Date])
+		}
+	}
+}
+
 func TestPayoutFromRecordNormalizesCreditsAndDestinations(t *testing.T) {
 	at := time.Date(2026, 8, 2, 9, 0, 0, 0, time.UTC)
 	syncedAt := time.Date(2026, 8, 31, 0, 0, 0, 0, time.UTC)

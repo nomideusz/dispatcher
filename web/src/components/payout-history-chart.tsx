@@ -7,7 +7,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "~/components/ui/chart";
-import { fmtCents, fmtUsdTick } from "~/lib/format";
+import { fmtCents, fmtNum, fmtUsdTick } from "~/lib/format";
 import type { PayoutPoint } from "~/queries/payouts";
 
 const dayFmt = new Intl.DateTimeFormat("en-US", {
@@ -32,27 +32,36 @@ function dayDate(date: string): Date {
  * paid out from the start of the range up to that day, so the line only ever
  * climbs and a payout-free stretch reads as a plateau rather than a drop.
  *
- * Deliberately one y-scale. Overlaying lifetime-to-date on the same plot would
- * need a second axis, and the alignment between two scales is arbitrary enough
- * to invent a trend — the lifetime figure is a stat beside the chart instead. */
+ * Deployments share the time axis, not the money scale — a second axis is
+ * the honest comparison. The dashed stroke is the pattern that says "count,
+ * not dollars" without inventing a dollars-per-deploy trend. */
 export function PayoutHistoryChart({ points }: { points: PayoutPoint[] }) {
   const hasCredits = points.some((p) => p.creditsCents > 0);
+  const hasDeploys = points.some((p) => p.deployments > 0);
+  const lastMoneyIndex = hasCredits ? 1 : 0;
 
   const chartConfig = {
     cashCents: { label: "Cash", color: "var(--chart-1)" },
     creditsCents: { label: "Railway credits", color: "var(--chart-2)" },
+    deployments: { label: "Deployments", color: "var(--chart-3)" },
   } satisfies ChartConfig;
 
   const peak = Math.max(
     0,
     ...points.map((p) => p.cashCents + (hasCredits ? p.creditsCents : 0)),
   );
+  const deployPeak = Math.max(0, ...points.map((p) => p.deployments));
   // Size the gutter to the widest tick so full dollar amounts never clip.
   const yAxisWidth = Math.max(56, fmtUsdTick(peak / 100).length * 7 + 14);
+  const countAxisWidth = Math.max(36, fmtNum(deployPeak).length * 7 + 14);
 
   return (
     <ChartContainer config={chartConfig} className="aspect-auto h-64 w-full">
-      <LineChart accessibilityLayer data={points} margin={{ top: 8, right: 12 }}>
+      <LineChart
+        accessibilityLayer
+        data={points}
+        margin={{ top: 8, right: hasDeploys ? 8 : 12 }}
+      >
         <CartesianGrid vertical={false} />
         <XAxis
           dataKey="date"
@@ -63,57 +72,81 @@ export function PayoutHistoryChart({ points }: { points: PayoutPoint[] }) {
           tickFormatter={(date: string) => dayFmt.format(dayDate(date))}
         />
         <YAxis
+          yAxisId="money"
           tickLine={false}
           axisLine={false}
           width={yAxisWidth}
           domain={[0, "auto"]}
           tickFormatter={(cents: number) => fmtUsdTick(cents / 100)}
         />
+        {hasDeploys && (
+          <YAxis
+            yAxisId="count"
+            orientation="right"
+            tickLine={false}
+            axisLine={false}
+            width={countAxisWidth}
+            domain={[0, "auto"]}
+            tickFormatter={(n: number) => fmtNum(n)}
+          />
+        )}
         <ChartTooltip
           content={
             <ChartTooltipContent
               labelFormatter={(_, payload) =>
                 fullFmt.format(dayDate(payload?.[0]?.payload?.date ?? ""))
               }
-              formatter={(value, name, item, index) => (
-                <>
-                  <div
-                    className="h-2.5 w-1 shrink-0 rounded-[2px]"
-                    style={{ background: item.color }}
-                  />
-                  <div className="flex flex-1 items-center justify-between gap-4 leading-none">
-                    <span className="text-muted-foreground">
-                      {chartConfig[name as keyof typeof chartConfig]?.label ??
-                        name}
-                    </span>
-                    <span className="font-mono font-medium text-foreground tabular-nums">
-                      {fmtCents(Number(value))}
-                    </span>
-                  </div>
-                  {/* Close the last row with what the running total is made of:
-                      one big payout and six small ones read identically from
-                      the line alone. */}
-                  {index === (hasCredits ? 1 : 0) && (
-                    <div className="mt-0.5 flex basis-full items-center justify-between gap-4 border-t border-border/50 pt-1.5 leading-none">
+              formatter={(value, name, item, index) => {
+                const isDeploy = name === "deployments";
+                return (
+                  <>
+                    <div
+                      className={`h-2.5 w-1 shrink-0 rounded-[2px] ${isDeploy ? "border border-current bg-transparent" : ""}`}
+                      style={
+                        isDeploy
+                          ? { color: item.color, borderStyle: "dashed" }
+                          : { background: item.color }
+                      }
+                    />
+                    <div className="flex flex-1 items-center justify-between gap-4 leading-none">
                       <span className="text-muted-foreground">
-                        {item.payload.count}{" "}
-                        {item.payload.count === 1 ? "payout" : "payouts"} so far
+                        {chartConfig[name as keyof typeof chartConfig]?.label ??
+                          name}
                       </span>
-                      {hasCredits && (
-                        <span className="font-mono font-medium text-foreground tabular-nums">
-                          {fmtCents(
-                            item.payload.cashCents + item.payload.creditsCents,
-                          )}
-                        </span>
-                      )}
+                      <span className="font-mono font-medium text-foreground tabular-nums">
+                        {isDeploy
+                          ? fmtNum(Number(value))
+                          : fmtCents(Number(value))}
+                      </span>
                     </div>
-                  )}
-                </>
-              )}
+                    {/* Close the last money row with what the running total is
+                        made of: one big payout and six small ones read
+                        identically from the line alone. */}
+                    {index === lastMoneyIndex && !isDeploy && (
+                      <div className="mt-0.5 flex basis-full items-center justify-between gap-4 border-t border-border/50 pt-1.5 leading-none">
+                        <span className="text-muted-foreground">
+                          {item.payload.count}{" "}
+                          {item.payload.count === 1 ? "payout" : "payouts"} so
+                          far
+                        </span>
+                        {hasCredits && (
+                          <span className="font-mono font-medium text-foreground tabular-nums">
+                            {fmtCents(
+                              item.payload.cashCents +
+                                item.payload.creditsCents,
+                            )}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </>
+                );
+              }}
             />
           }
         />
         <Line
+          yAxisId="money"
           dataKey="cashCents"
           type="monotone"
           stroke="var(--color-cashCents)"
@@ -123,6 +156,7 @@ export function PayoutHistoryChart({ points }: { points: PayoutPoint[] }) {
         />
         {hasCredits && (
           <Line
+            yAxisId="money"
             dataKey="creditsCents"
             type="monotone"
             stroke="var(--color-creditsCents)"
@@ -131,7 +165,21 @@ export function PayoutHistoryChart({ points }: { points: PayoutPoint[] }) {
             activeDot={{ r: 4, stroke: "var(--card)", strokeWidth: 2 }}
           />
         )}
-        {hasCredits && <ChartLegend content={<ChartLegendContent />} />}
+        {hasDeploys && (
+          <Line
+            yAxisId="count"
+            dataKey="deployments"
+            type="monotone"
+            stroke="var(--color-deployments)"
+            strokeWidth={2}
+            strokeDasharray="5 4"
+            dot={false}
+            activeDot={{ r: 4, stroke: "var(--card)", strokeWidth: 2 }}
+          />
+        )}
+        {(hasCredits || hasDeploys) && (
+          <ChartLegend content={<ChartLegendContent />} />
+        )}
       </LineChart>
     </ChartContainer>
   );

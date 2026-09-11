@@ -18,7 +18,7 @@ body {
 
 /* Shared dashboard width — header, hydrate fallback, and page share it. */
 .shell {
-  @apply mx-auto w-full max-w-6xl px-4 sm:px-6;
+  @apply mx-auto w-full max-w-[1920px] px-4 sm:px-6 lg:px-8;
 }
 
 html.dark {

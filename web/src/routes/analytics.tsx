@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { Delta } from "~/components/delta";
-import { HealthWatch } from "~/components/health-watch";
 import { PayoutChart } from "~/components/payout-chart";
 import { PayoutHistory } from "~/components/payout-history";
 import { RangeToggle, type RangeDays } from "~/components/range-toggle";
@@ -163,7 +162,7 @@ export default function Analytics() {
               </CardContent>
             </Card>
 
-            <Card className="lg:col-span-7">
+            <Card className="lg:col-span-12">
               <CardHeader>
                 <CardTitle>Templates</CardTitle>
                 <CardDescription>
@@ -172,7 +171,7 @@ export default function Analytics() {
                     : "Latest snapshot"}
                 </CardDescription>
               </CardHeader>
-              <CardContent className="max-h-[28rem] overflow-auto">
+              <CardContent className="max-h-[32rem] overflow-auto">
                 {templates.isPending ? (
                   <div className="space-y-3">
                     {Array.from({ length: 5 }, (_, i) => (
@@ -188,35 +187,9 @@ export default function Analytics() {
                 )}
               </CardContent>
             </Card>
-
-            <Card className="lg:col-span-5">
-              <CardHeader>
-                <CardTitle>Support bonus</CardTitle>
-                <CardDescription>
-                  80% health unlocks an extra 10% kickback
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {templates.isPending ? (
-                  <div className="space-y-3">
-                    {Array.from({ length: 4 }, (_, i) => (
-                      <Skeleton key={i} className="h-10 w-full" />
-                    ))}
-                  </div>
-                ) : list.length > 0 ? (
-                  <HealthWatch templates={list} />
-                ) : (
-                  <p className="py-6 text-center text-sm text-muted-foreground">
-                    Health appears once a snapshot lands.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-
-            <div className="lg:col-span-12">
-              <PayoutHistory />
-            </div>
           </div>
+
+          <PayoutHistory />
         </>
       )}
     </main>

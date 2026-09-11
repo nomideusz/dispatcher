@@ -90,204 +90,205 @@ export function PayoutHistory() {
   const data = history.data;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Withdrawals</CardTitle>
-        <CardDescription>
-          Cash and credits that left your Railway balance, plus payers
-        </CardDescription>
-        <CardAction className="flex gap-1">
-          {RANGES.map((r) => (
-            <Button
-              key={r}
-              size="xs"
-              variant={r === days ? "secondary" : "ghost"}
-              onClick={() => setDays(r)}
-            >
-              {r}d
-            </Button>
-          ))}
-        </CardAction>
-      </CardHeader>
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle>Withdrawals</CardTitle>
+          <CardDescription>
+            Cash and credits that left your Railway balance
+          </CardDescription>
+          <CardAction className="flex gap-1">
+            {RANGES.map((r) => (
+              <Button
+                key={r}
+                size="xs"
+                variant={r === days ? "secondary" : "ghost"}
+                onClick={() => setDays(r)}
+              >
+                {r}d
+              </Button>
+            ))}
+          </CardAction>
+        </CardHeader>
 
-      {history.isPending && (
-        <CardContent className="space-y-3">
-          <Skeleton className="h-64 w-full" />
-          {Array.from({ length: 4 }, (_, i) => (
-            <Skeleton key={i} className="h-8 w-full" />
-          ))}
-        </CardContent>
+        {history.isPending && (
+          <CardContent>
+            <Skeleton className="h-64 w-full" />
+          </CardContent>
+        )}
+
+        {history.isError && (
+          <CardContent>
+            <p className="text-sm text-(--viz-critical)">
+              Couldn&apos;t load payout history — check the server logs.
+            </p>
+          </CardContent>
+        )}
+
+        {data && data.totalRows === 0 && (
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              No payouts recorded yet. Railway pays out once your balance clears{" "}
+              {fmtCents(10000)}; the collector picks them up on each refresh.
+            </p>
+          </CardContent>
+        )}
+
+        {data && data.totalRows > 0 && (
+          <>
+            <CardContent className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
+              <WindowFigure days={days} data={data} />
+              <Figure
+                label="Total paid out"
+                value={fmtCents(data.totals.lifetimeCents)}
+                note={
+                  data.totals.firstPayoutAt
+                    ? `since ${monthLong.format(new Date(data.totals.firstPayoutAt))}`
+                    : undefined
+                }
+              />
+              {data.totals.pendingCount > 0 && (
+                <Figure
+                  label="In flight"
+                  value={fmtCents(data.totals.pendingCents)}
+                  note={`${data.totals.pendingCount} pending`}
+                />
+              )}
+            </CardContent>
+            <CardContent>
+              {data.window.count > 0 ? (
+                <PayoutHistoryChart points={data.points} />
+              ) : (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  No payouts in the last {days} days.
+                </p>
+              )}
+            </CardContent>
+          </>
+        )}
+      </Card>
+
+      {data && data.totalRows > 0 && data.byTemplate.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>By template</CardTitle>
+            <CardDescription>
+              Credit payouts by template. Payers estimated over the trailing 30
+              days. Amount follows the selected range; lifetime is all-time.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs text-muted-foreground">
+                  <th className="pb-2 font-medium">Template</th>
+                  <th className="pb-2 pl-3 text-right font-medium">Payers 30d</th>
+                  <th className="pb-2 pl-3 text-right font-medium">New</th>
+                  <th className="pb-2 pl-3 text-right font-medium">Returning</th>
+                  <th className="pb-2 pl-3 text-right font-medium">Lapsed</th>
+                  <th className="pb-2 pl-3 text-right font-medium">$/payer</th>
+                  {days <= 7 && (
+                    <th className="pb-2 pl-3 text-right font-medium">Invoices {days}d</th>
+                  )}
+                  <th className="pb-2 pl-3 text-right font-medium">Amount</th>
+                  <th className="pb-2 pl-3 text-right font-medium">Lifetime</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.byTemplate.map((t) => (
+                  <tr key={t.templateId} className="border-b border-border/50 last:border-0">
+                    <td
+                      className={
+                        PSEUDO_TEMPLATE_IDS.has(t.templateId)
+                          ? "py-2 text-muted-foreground"
+                          : "py-2"
+                      }
+                    >
+                      {t.templateName}
+                    </td>
+                    <td className="py-2 pl-3 text-right tabular-nums">{fmtNum(t.payers)}</td>
+                    <td className="py-2 pl-3 text-right tabular-nums">{t.new || "—"}</td>
+                    <td className={`py-2 pl-3 text-right tabular-nums ${t.returning ? "text-(--viz-up)" : ""}`}>
+                      {t.returning || "—"}
+                    </td>
+                    <td className={`py-2 pl-3 text-right tabular-nums ${t.lapsed ? "text-(--viz-down)" : ""}`}>
+                      {t.lapsed || "—"}
+                    </td>
+                    <td className="py-2 pl-3 text-right tabular-nums">
+                      {t.payers > 0 ? fmtCents(Math.round(t.payerCents / t.payers)) : "—"}
+                    </td>
+                    {days <= 7 && (
+                      <td className="py-2 pl-3 text-right tabular-nums">{fmtNum(t.invoices)}</td>
+                    )}
+                    <td className="py-2 pl-3 text-right tabular-nums">{fmtCents(t.cents)}</td>
+                    <td className="py-2 pl-3 text-right tabular-nums text-muted-foreground">
+                      {t.lifetimeCents > 0 ? fmtCents(t.lifetimeCents) : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
       )}
 
-      {history.isError && (
-        <CardContent>
-          <p className="text-sm text-(--viz-critical)">
-            Couldn&apos;t load payout history — check the server logs.
-          </p>
-        </CardContent>
-      )}
-
-      {data && data.totalRows === 0 && (
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            No payouts recorded yet. Railway pays out once your balance clears{" "}
-            {fmtCents(10000)}; the collector picks them up on each refresh.
-          </p>
-        </CardContent>
+      {data && data.payers.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Payers</CardTitle>
+            <CardDescription>
+              One line per deployer, under a stable pseudonym. Returning paid
+              again on their billing date; lapsed missed a due invoice.
+            </CardDescription>
+            <CardAction className="flex gap-1">
+              {(["rank", "status", "due"] as const).map((s) => (
+                <Button
+                  key={s}
+                  size="xs"
+                  variant={s === payerSort ? "secondary" : "ghost"}
+                  onClick={() => setPayerSort(s)}
+                >
+                  {PAYER_SORT_LABELS[s]}
+                </Button>
+              ))}
+            </CardAction>
+          </CardHeader>
+          <CardContent className="max-h-[32rem] overflow-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs text-muted-foreground">
+                  <th className="pb-2 text-right font-medium">#</th>
+                  <th className="pb-2 pl-3 font-medium">Payer</th>
+                  <th className="pb-2 pl-3 font-medium">Template</th>
+                  <th className="pb-2 pl-3 font-medium">Status</th>
+                  <th className="pb-2 pl-3 font-medium">First</th>
+                  <th className="pb-2 pl-3 font-medium">Last</th>
+                  <th className="pb-2 pl-3 font-medium">Next due</th>
+                  <th className="pb-2 pl-3 text-right font-medium">Invoices</th>
+                  <th className="pb-2 pl-3 text-right font-medium">Last amount</th>
+                  <th className="pb-2 pl-3 text-right font-medium">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortPayers(data.payers, payerSort).map((c) => (
+                  <PayerRow key={`${c.templateId}-${c.firstAt}`} chain={c} />
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
       )}
 
       {data && data.totalRows > 0 && (
-        <>
-          <CardContent className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
-            <WindowFigure days={days} data={data} />
-            <Figure
-              label="Total paid out"
-              value={fmtCents(data.totals.lifetimeCents)}
-              note={
-                data.totals.firstPayoutAt
-                  ? `since ${monthLong.format(new Date(data.totals.firstPayoutAt))}`
-                  : undefined
-              }
-            />
-            {data.totals.pendingCount > 0 && (
-              <Figure
-                label="In flight"
-                value={fmtCents(data.totals.pendingCents)}
-                note={`${data.totals.pendingCount} pending`}
-              />
-            )}
-          </CardContent>
-
-          <CardContent>
-            {data.window.count > 0 ? (
-              <PayoutHistoryChart points={data.points} />
-            ) : (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                No payouts in the last {days} days.
-              </p>
-            )}
-          </CardContent>
-
-          {data.byTemplate.length > 0 && (
-            <CardContent className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <caption className="pb-2 text-left text-xs text-muted-foreground">
-                  Credit payouts by template. Payers is an estimate over the
-                  trailing 30 days whatever the range: Railway pays out one row
-                  per billed service, so a burst of rows is one deployer&apos;s
-                  invoice, and one billing cycle of invoices counts each paying
-                  deployer once. New, returning and lapsed follow each payer by
-                  billing rhythm: invoices of one template exactly a month or 30
-                  days apart, to within minutes, are the same deployer. Amount
-                  follows the selected range; lifetime is the template&apos;s
-                  all-time payout, which is how templates that only earned
-                  before tracking still appear.
-                </caption>
-                <thead>
-                  <tr className="border-b text-left text-xs text-muted-foreground">
-                    <th className="pb-2 font-medium">Template</th>
-                    <th className="pb-2 pl-3 text-right font-medium">Payers 30d</th>
-                    <th className="pb-2 pl-3 text-right font-medium">New</th>
-                    <th className="pb-2 pl-3 text-right font-medium">Returning</th>
-                    <th className="pb-2 pl-3 text-right font-medium">Lapsed</th>
-                    <th className="pb-2 pl-3 text-right font-medium">$/payer</th>
-                    {days <= 7 && (
-                      <th className="pb-2 pl-3 text-right font-medium">Invoices {days}d</th>
-                    )}
-                    <th className="pb-2 pl-3 text-right font-medium">Amount</th>
-                    <th className="pb-2 pl-3 text-right font-medium">Lifetime</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.byTemplate.map((t) => (
-                    <tr key={t.templateId} className="border-b border-border/50 last:border-0">
-                      <td
-                        className={
-                          PSEUDO_TEMPLATE_IDS.has(t.templateId)
-                            ? "py-2 text-muted-foreground"
-                            : "py-2"
-                        }
-                      >
-                        {t.templateName}
-                      </td>
-                      <td className="py-2 pl-3 text-right tabular-nums">{fmtNum(t.payers)}</td>
-                      <td className="py-2 pl-3 text-right tabular-nums">{t.new || "—"}</td>
-                      <td className={`py-2 pl-3 text-right tabular-nums ${t.returning ? "text-(--viz-up)" : ""}`}>
-                        {t.returning || "—"}
-                      </td>
-                      <td className={`py-2 pl-3 text-right tabular-nums ${t.lapsed ? "text-(--viz-down)" : ""}`}>
-                        {t.lapsed || "—"}
-                      </td>
-                      <td className="py-2 pl-3 text-right tabular-nums">
-                        {t.payers > 0 ? fmtCents(Math.round(t.payerCents / t.payers)) : "—"}
-                      </td>
-                      {days <= 7 && (
-                        <td className="py-2 pl-3 text-right tabular-nums">{fmtNum(t.invoices)}</td>
-                      )}
-                      <td className="py-2 pl-3 text-right tabular-nums">{fmtCents(t.cents)}</td>
-                      <td className="py-2 pl-3 text-right tabular-nums text-muted-foreground">
-                        {t.lifetimeCents > 0 ? fmtCents(t.lifetimeCents) : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </CardContent>
-          )}
-
-          {data.payers.length > 0 && (
-            <CardContent className="max-h-[24rem] overflow-auto">
-              <table className="w-full text-sm">
-                <caption className="pb-2 text-left text-xs text-muted-foreground">
-                  <span className="flex flex-wrap items-center justify-between gap-2">
-                    <span>
-                      Payers, one line per deployer, under a stable pseudonym
-                      derived from their first invoice. Rank is by lifetime
-                      total. Returning means they paid again on their billing
-                      date; lapsed means a due invoice never came.
-                    </span>
-                    <span className="flex gap-1">
-                      {(["rank", "status", "due"] as const).map((s) => (
-                        <Button
-                          key={s}
-                          size="xs"
-                          variant={s === payerSort ? "secondary" : "ghost"}
-                          onClick={() => setPayerSort(s)}
-                        >
-                          {PAYER_SORT_LABELS[s]}
-                        </Button>
-                      ))}
-                    </span>
-                  </span>
-                </caption>
-                <thead>
-                  <tr className="border-b text-left text-xs text-muted-foreground">
-                    <th className="pb-2 text-right font-medium">#</th>
-                    <th className="pb-2 pl-3 font-medium">Payer</th>
-                    <th className="pb-2 pl-3 font-medium">Template</th>
-                    <th className="pb-2 pl-3 font-medium">Status</th>
-                    <th className="pb-2 pl-3 font-medium">First</th>
-                    <th className="pb-2 pl-3 font-medium">Last</th>
-                    <th className="pb-2 pl-3 font-medium">Next due</th>
-                    <th className="pb-2 pl-3 text-right font-medium">Invoices</th>
-                    <th className="pb-2 pl-3 text-right font-medium">Last amount</th>
-                    <th className="pb-2 pl-3 text-right font-medium">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortPayers(data.payers, payerSort).map((c) => (
-                    <PayerRow key={`${c.templateId}-${c.firstAt}`} chain={c} />
-                  ))}
-                </tbody>
-              </table>
-            </CardContent>
-          )}
-
+        <Card>
+          <CardHeader>
+            <CardTitle>Ledger</CardTitle>
+            <CardDescription>
+              Payouts in the last {days} days, newest first
+            </CardDescription>
+          </CardHeader>
           <CardContent className="max-h-[32rem] overflow-auto">
             <table className="w-full text-sm">
-              <caption className="sr-only">
-                Payouts in the last {days} days, newest first
-              </caption>
               <thead>
                 <tr className="border-b text-left text-xs text-muted-foreground">
                   <th className="pb-2 font-medium">Date</th>
@@ -310,9 +311,9 @@ export function PayoutHistory() {
               </p>
             )}
           </CardContent>
-        </>
+        </Card>
       )}
-    </Card>
+    </>
   );
 }
 

@@ -32,35 +32,35 @@ function dayDate(date: string): Date {
  * paid out from the start of the range up to that day, so the line only ever
  * climbs and a payout-free stretch reads as a plateau rather than a drop.
  *
- * Deployments share the time axis, not the money scale — a second axis is
- * the honest comparison. The dashed stroke is the pattern that says "count,
- * not dollars" without inventing a dollars-per-deploy trend. */
+ * Published-template count shares the time axis, not the money scale — a
+ * second axis is the honest comparison. The dashed stroke is the pattern
+ * that says "count, not dollars". */
 export function PayoutHistoryChart({ points }: { points: PayoutPoint[] }) {
   const hasCredits = points.some((p) => p.creditsCents > 0);
-  const hasDeploys = points.some((p) => p.deployments > 0);
+  const hasPublished = points.some((p) => p.published > 0);
   const lastMoneyIndex = hasCredits ? 1 : 0;
 
   const chartConfig = {
     cashCents: { label: "Cash", color: "var(--chart-1)" },
     creditsCents: { label: "Railway credits", color: "var(--chart-2)" },
-    deployments: { label: "Deployments", color: "var(--chart-3)" },
+    published: { label: "Published templates", color: "var(--chart-other)" },
   } satisfies ChartConfig;
 
   const peak = Math.max(
     0,
     ...points.map((p) => p.cashCents + (hasCredits ? p.creditsCents : 0)),
   );
-  const deployPeak = Math.max(0, ...points.map((p) => p.deployments));
+  const publishedPeak = Math.max(0, ...points.map((p) => p.published));
   // Size the gutter to the widest tick so full dollar amounts never clip.
   const yAxisWidth = Math.max(56, fmtUsdTick(peak / 100).length * 7 + 14);
-  const countAxisWidth = Math.max(36, fmtNum(deployPeak).length * 7 + 14);
+  const countAxisWidth = Math.max(36, fmtNum(publishedPeak).length * 7 + 14);
 
   return (
     <ChartContainer config={chartConfig} className="aspect-auto h-64 w-full">
       <LineChart
         accessibilityLayer
         data={points}
-        margin={{ top: 8, right: hasDeploys ? 8 : 12 }}
+        margin={{ top: 8, right: hasPublished ? 8 : 12 }}
       >
         <CartesianGrid vertical={false} />
         <XAxis
@@ -79,7 +79,7 @@ export function PayoutHistoryChart({ points }: { points: PayoutPoint[] }) {
           domain={[0, "auto"]}
           tickFormatter={(cents: number) => fmtUsdTick(cents / 100)}
         />
-        {hasDeploys && (
+        {hasPublished && (
           <YAxis
             yAxisId="count"
             orientation="right"
@@ -97,13 +97,13 @@ export function PayoutHistoryChart({ points }: { points: PayoutPoint[] }) {
                 fullFmt.format(dayDate(payload?.[0]?.payload?.date ?? ""))
               }
               formatter={(value, name, item, index) => {
-                const isDeploy = name === "deployments";
+                const isCount = name === "published";
                 return (
                   <>
                     <div
-                      className={`h-2.5 w-1 shrink-0 rounded-[2px] ${isDeploy ? "border border-current bg-transparent" : ""}`}
+                      className={`h-2.5 w-1 shrink-0 rounded-[2px] ${isCount ? "border border-current bg-transparent" : ""}`}
                       style={
-                        isDeploy
+                        isCount
                           ? { color: item.color, borderStyle: "dashed" }
                           : { background: item.color }
                       }
@@ -114,7 +114,7 @@ export function PayoutHistoryChart({ points }: { points: PayoutPoint[] }) {
                           name}
                       </span>
                       <span className="font-mono font-medium text-foreground tabular-nums">
-                        {isDeploy
+                        {isCount
                           ? fmtNum(Number(value))
                           : fmtCents(Number(value))}
                       </span>
@@ -122,7 +122,7 @@ export function PayoutHistoryChart({ points }: { points: PayoutPoint[] }) {
                     {/* Close the last money row with what the running total is
                         made of: one big payout and six small ones read
                         identically from the line alone. */}
-                    {index === lastMoneyIndex && !isDeploy && (
+                    {index === lastMoneyIndex && !isCount && (
                       <div className="mt-0.5 flex basis-full items-center justify-between gap-4 border-t border-border/50 pt-1.5 leading-none">
                         <span className="text-muted-foreground">
                           {item.payload.count}{" "}
@@ -165,19 +165,19 @@ export function PayoutHistoryChart({ points }: { points: PayoutPoint[] }) {
             activeDot={{ r: 4, stroke: "var(--card)", strokeWidth: 2 }}
           />
         )}
-        {hasDeploys && (
+        {hasPublished && (
           <Line
             yAxisId="count"
-            dataKey="deployments"
-            type="monotone"
-            stroke="var(--color-deployments)"
+            dataKey="published"
+            type="stepAfter"
+            stroke="var(--color-published)"
             strokeWidth={2}
             strokeDasharray="5 4"
             dot={false}
             activeDot={{ r: 4, stroke: "var(--card)", strokeWidth: 2 }}
           />
         )}
-        {(hasCredits || hasDeploys) && (
+        {(hasCredits || hasPublished) && (
           <ChartLegend content={<ChartLegendContent />} />
         )}
       </LineChart>

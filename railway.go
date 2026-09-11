@@ -228,6 +228,10 @@ type workspaceTemplate struct {
 	Name   string `json:"name"`
 	Code   string `json:"code"`
 	Status string `json:"status"`
+	// CreatedAt is when Railway created the template. The public Template
+	// type has no publishedAt; for a PUBLISHED template this is the date
+	// we treat as its publishing.
+	CreatedAt time.Time `json:"createdAt"`
 	// TotalPayout is the template's lifetime kickback in dollars as the
 	// template list reports it. It moves within the hour of a payout, whereas
 	// templateMetrics.totalEarnings can trail the ledger by many hours, so
@@ -261,6 +265,7 @@ const workspaceTemplatesQuery = `query ($workspaceId: String!) {
         name
         code
         status
+        createdAt
         totalPayout
         projects
         recentProjects

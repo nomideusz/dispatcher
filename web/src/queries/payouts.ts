@@ -21,13 +21,13 @@ export interface Payout {
 
 /** One day of the chart. Amounts are cumulative from the start of the selected
  * window, and count is the running number of payouts behind them.
- * deployments is net-new template deploys in the same window. */
+ * published is how many templates existed by that day. */
 export interface PayoutPoint {
   date: string; // YYYY-MM-DD
   cashCents: number;
   creditsCents: number;
   count: number;
-  deployments: number;
+  published: number;
 }
 
 /** The selected range against the range of equal length before it. */

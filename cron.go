@@ -212,6 +212,10 @@ func templateSnapshotAt(sampledAt time.Time, template workspaceTemplate, metrics
 		ActiveProjects: template.ActiveProjects,
 		Services:       template.serviceCount(),
 	}
+	if !template.CreatedAt.IsZero() {
+		at := template.CreatedAt.UTC()
+		snapshot.PublishedAt = &at
+	}
 	if metrics == nil {
 		return snapshot
 	}

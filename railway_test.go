@@ -33,6 +33,12 @@ func TestTemplateMetricsDecodesCompleteResponse(t *testing.T) {
 	}
 }
 
+func TestWorkspaceTemplatesQueryAsksForCreatedAt(t *testing.T) {
+	if !strings.Contains(workspaceTemplatesQuery, "createdAt") {
+		t.Fatal("workspaceTemplates query omits createdAt — publish dates would be lost")
+	}
+}
+
 func TestTemplateMetricsQuerySelectsEveryField(t *testing.T) {
 	if strings.Count(templateMetricsQuery, "templateMetrics(id:") != 1 {
 		t.Fatalf("query does not contain the singular metrics call:\n%s", templateMetricsQuery)

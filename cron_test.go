@@ -33,7 +33,7 @@ func TestTemplateSnapshotPersistsCompleteMetrics(t *testing.T) {
 	snapshot := templateSnapshotAt(
 		time.Date(2026, time.August, 30, 12, 0, 0, 0, time.UTC),
 		func() workspaceTemplate {
-			w := workspaceTemplate{ID: "template-1", Name: "Template", Code: "template", Status: "PUBLISHED", TotalPayout: 2411.65, Projects: 120, RecentProjects: 7, ActiveProjects: 30}
+			w := workspaceTemplate{ID: "template-1", Name: "Template", Code: "template", Status: "PUBLISHED", CreatedAt: time.Date(2025, time.March, 4, 10, 0, 0, 0, time.UTC), TotalPayout: 2411.65, Projects: 120, RecentProjects: 7, ActiveProjects: 30}
 			w.SerializedConfig.Services = map[string]json.RawMessage{"a": nil, "b": nil, "c": nil}
 			return w
 		}(),
@@ -66,6 +66,54 @@ func TestTemplateSnapshotPersistsCompleteMetrics(t *testing.T) {
 	// (whose deployment counts are a different, larger measure).
 	if got.Projects != 120 || got.ActiveProjects != 30 || got.RecentProjects != 7 || got.TotalPayout != 2411.65 || got.Services != 3 {
 		t.Errorf("template-list fields were not persisted: %+v", got)
+	}
+	if got.PublishedAt == nil || !got.PublishedAt.Equal(time.Date(2025, time.March, 4, 10, 0, 0, 0, time.UTC)) {
+		t.Errorf("publishedAt = %v, want Railway createdAt", got.PublishedAt)
+	}
+}
+
+func TestLoadTemplatePublishesPrefersCreatedAtOverFirstSeen(t *testing.T) {
+	db, err := gorm.Open(duckdb.Open(filepath.Join(t.TempDir(), "publishes.duckdb")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&TemplateSnapshot{}); err != nil {
+		t.Fatal(err)
+	}
+	created := time.Date(2025, time.January, 15, 0, 0, 0, 0, time.UTC)
+	seen := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
+	if err := gorm.G[TemplateSnapshot](db).Create(t.Context(), &TemplateSnapshot{
+		SampledAt: seen, TemplateID: "with-date", Status: "PUBLISHED", PublishedAt: &created,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := gorm.G[TemplateSnapshot](db).Create(t.Context(), &TemplateSnapshot{
+		SampledAt: seen, TemplateID: "legacy", Status: "PUBLISHED",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := gorm.G[TemplateSnapshot](db).Create(t.Context(), &TemplateSnapshot{
+		SampledAt: seen, TemplateID: "draft", Status: "UNPUBLISHED", PublishedAt: &created,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := loadTemplatePublishes(t.Context(), db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]time.Time{}
+	for _, p := range got {
+		byID[p.TemplateID] = p.PublishedAt
+	}
+	if !byID["with-date"].Equal(created) {
+		t.Errorf("with-date = %v, want Railway createdAt", byID["with-date"])
+	}
+	if !byID["legacy"].Equal(seen) {
+		t.Errorf("legacy = %v, want first published sample", byID["legacy"])
+	}
+	if _, ok := byID["draft"]; ok {
+		t.Errorf("unpublished draft was counted")
 	}
 }
 

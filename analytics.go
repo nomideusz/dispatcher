@@ -26,6 +26,7 @@ type payoutSeriesEntry struct {
 type payoutSeriesPoint struct {
 	SampledAt time.Time          `json:"sampledAt"`
 	Values    map[string]float64 `json:"values"`
+	Published int                `json:"published"`
 }
 
 type payoutSeriesResponse struct {
@@ -61,7 +62,14 @@ func handlePayoutSeries(db *gorm.DB) http.HandlerFunc {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		writeJSON(w, http.StatusOK, buildPayoutSeries(rows))
+		resp := buildPayoutSeries(rows)
+		publishes, err := loadTemplatePublishes(r.Context(), db)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		applyPublishedCountsToSeries(resp.Points, publishes)
+		writeJSON(w, http.StatusOK, resp)
 	}
 }
 

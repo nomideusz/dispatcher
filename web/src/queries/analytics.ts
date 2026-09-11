@@ -13,6 +13,7 @@ export interface PayoutSeriesEntry {
 export interface PayoutSeriesPoint {
   sampledAt: string;
   values: Record<string, number>;
+  published: number;
 }
 
 export interface PayoutSeriesResponse {

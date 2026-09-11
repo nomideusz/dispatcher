@@ -29,6 +29,9 @@ type TemplateSnapshot struct {
 	Name       string    `json:"name"`
 	Code       string    `json:"code"`
 	Status     string    `json:"status"`
+	// PublishedAt is Railway's Template.createdAt (the API has no separate
+	// publishedAt). Nil on snapshots taken before the field was collected.
+	PublishedAt *time.Time `json:"publishedAt"`
 
 	// Complete response from Railway's templateMetrics query. Pointers keep
 	// unpublished templates (for which Railway exposes no metrics) distinct

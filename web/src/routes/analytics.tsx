@@ -128,7 +128,7 @@ export default function Analytics() {
                 <CardTitle>Added this window</CardTitle>
                 <CardDescription>
                   Kickback accrued since the start of the last {days}d, stacked
-                  by template
+                  by template. The dashed line is published templates.
                 </CardDescription>
               </CardHeader>
               <CardContent>

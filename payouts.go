@@ -43,14 +43,14 @@ func isVoidPayout(status string) bool { return voidPayoutStatuses[status] }
 
 // payoutPoint is one day of the chart. Amounts are cumulative from the start
 // of the selected window, so the line only ever climbs; Count is the running
-// number of payouts behind it. Deployments is net-new template deploys in
-// the same window (see applyWindowDeployments), for a count-vs-cash overlay.
+// number of payouts behind it. Published is how many workspace templates
+// existed as of that day (see applyPublishedCounts).
 type payoutPoint struct {
 	Date         string `json:"date"` // YYYY-MM-DD
 	CashCents    int64  `json:"cashCents"`
 	CreditsCents int64  `json:"creditsCents"`
 	Count        int    `json:"count"`
-	Deployments  int64  `json:"deployments"`
+	Published    int    `json:"published"`
 }
 
 // payoutWindow summarizes the selected range against the range of equal length
@@ -224,20 +224,13 @@ func handlePayoutHistory(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 		now := time.Now().UTC()
-		today := now.Truncate(24 * time.Hour)
-		windowStart := today.AddDate(0, 0, -(days - 1))
-		deploys := []deployObservation{}
-		err = db.WithContext(r.Context()).Raw(`
-			SELECT sampled_at, template_id, total_deployments AS deployments
-			FROM template_snapshots
-			WHERE total_deployments IS NOT NULL AND sampled_at >= ?
-			ORDER BY sampled_at`, windowStart.AddDate(0, 0, -3)).Scan(&deploys).Error
+		hist := buildPayoutHistory(payouts, lifetime, days, now)
+		publishes, err := loadTemplatePublishes(r.Context(), db)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		hist := buildPayoutHistory(payouts, lifetime, days, now)
-		applyWindowDeployments(hist.Points, deploys, windowStart)
+		applyPublishedCounts(hist.Points, publishes)
 		writeJSON(w, http.StatusOK, hist)
 	}
 }
@@ -452,66 +445,51 @@ func buildPayoutHistory(payouts []Payout, lifetime []templateLifetime, days int,
 	return resp
 }
 
-// deployObservation is one template's totalDeployments at a collector sample.
-// The withdrawals chart overlays the window's net-new deploys — the same
-// reading the weekly mail calls NetNewProjects — so cash out and usage share
-// an axis of time without pretending they share a unit.
-type deployObservation struct {
-	SampledAt   time.Time
+// templatePublish is when a workspace template first existed as a published
+// catalog item. Railway's Template type exposes createdAt, not publishedAt;
+// we store that as PublishedAt, and fall back to the first snapshot that
+// saw the template published for rows collected before the field existed.
+type templatePublish struct {
 	TemplateID  string
-	Deployments int64
+	PublishedAt time.Time
 }
 
-// applyWindowDeployments writes cumulative net-new template deployments onto
-// each chart point. Per template, the last reading at or before the window
-// start is the baseline (first in-window reading if none). Each day holds
-// that template's peak gain so a revised or dropped count cannot pull the
-// overlay down — same plateau shape as the payout line.
-func applyWindowDeployments(points []payoutPoint, observations []deployObservation, windowStart time.Time) {
-	if len(points) == 0 || len(observations) == 0 {
-		return
-	}
-	obs := slices.Clone(observations)
-	sort.SliceStable(obs, func(i, j int) bool {
-		if obs[i].SampledAt.Equal(obs[j].SampledAt) {
-			return obs[i].TemplateID < obs[j].TemplateID
-		}
-		return obs[i].SampledAt.Before(obs[j].SampledAt)
-	})
+func loadTemplatePublishes(ctx context.Context, db *gorm.DB) ([]templatePublish, error) {
+	var rows []templatePublish
+	err := db.WithContext(ctx).Raw(`
+		SELECT template_id,
+		       COALESCE(MIN(published_at), MIN(sampled_at)) AS published_at
+		FROM template_snapshots
+		WHERE status = 'PUBLISHED'
+		GROUP BY template_id`).Scan(&rows).Error
+	return rows, err
+}
 
-	baseline := map[string]int64{}
-	haveBaseline := map[string]bool{}
-	peak := map[string]int64{}
-	for _, o := range obs {
-		if !o.SampledAt.After(windowStart) {
-			baseline[o.TemplateID] = o.Deployments
-			haveBaseline[o.TemplateID] = true
+func publishedAsOf(publishes []templatePublish, at time.Time) int {
+	n := 0
+	for _, p := range publishes {
+		if !p.PublishedAt.After(at) {
+			n++
 		}
 	}
+	return n
+}
 
-	oi := 0
+// applyPublishedCounts writes how many templates were published by the end
+// of each chart day, so the dashed overlay can be read against earnings.
+func applyPublishedCounts(points []payoutPoint, publishes []templatePublish) {
 	for i := range points {
 		day, err := time.Parse(dayKeyLayout, points[i].Date)
 		if err != nil {
 			continue
 		}
-		dayEnd := day.AddDate(0, 0, 1)
-		for oi < len(obs) && obs[oi].SampledAt.Before(dayEnd) {
-			o := obs[oi]
-			if !haveBaseline[o.TemplateID] {
-				baseline[o.TemplateID] = o.Deployments
-				haveBaseline[o.TemplateID] = true
-			}
-			if delta := o.Deployments - baseline[o.TemplateID]; delta > peak[o.TemplateID] {
-				peak[o.TemplateID] = delta
-			}
-			oi++
-		}
-		var added int64
-		for _, d := range peak {
-			added += d
-		}
-		points[i].Deployments = added
+		points[i].Published = publishedAsOf(publishes, day.Add(24*time.Hour-time.Nanosecond))
+	}
+}
+
+func applyPublishedCountsToSeries(points []payoutSeriesPoint, publishes []templatePublish) {
+	for i := range points {
+		points[i].Published = publishedAsOf(publishes, points[i].SampledAt)
 	}
 }
 

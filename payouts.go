@@ -188,7 +188,8 @@ type payoutHistoryResponse struct {
 	// ByTemplate breaks the window's credit payouts down per template, largest
 	// earner first.
 	ByTemplate []payoutTemplateTotal `json:"byTemplate"`
-	// Payers lists every payer chain (see payerChain), returning first.
+	// Payers lists every payer chain (see payerChain) in rank order, biggest
+	// lifetime total first.
 	Payers []payerChain `json:"payers"`
 }
 
@@ -396,17 +397,6 @@ func buildPayoutHistory(payouts []Payout, lifetime []templateLifetime, days int,
 	for i := range resp.Payers {
 		resp.Payers[i].Rank = i + 1
 	}
-	sort.SliceStable(resp.Payers, func(i, j int) bool {
-		a, b := resp.Payers[i], resp.Payers[j]
-		rank := map[string]int{"returning": 0, "new": 1, "lapsed": 2}
-		if rank[a.Status] != rank[b.Status] {
-			return rank[a.Status] < rank[b.Status]
-		}
-		if a.Invoices != b.Invoices {
-			return a.Invoices > b.Invoices
-		}
-		return a.LastAt.After(b.LastAt)
-	})
 	for _, l := range lifetime {
 		if byTemplate[l.TemplateID] == nil {
 			byTemplate[l.TemplateID] = &payoutTemplateTotal{TemplateID: l.TemplateID, TemplateName: l.Name}

@@ -214,8 +214,8 @@ export function PayoutHistory() {
             <CardContent className="max-h-[24rem] overflow-auto">
               <table className="w-full text-sm">
                 <caption className="pb-2 text-left text-xs text-muted-foreground">
-                  Payers, one line per deployer, under a stable pseudonym derived
-                  from their first invoice. Rank is by lifetime total. Returning
+                  Payers ranked by lifetime total, one line per deployer, under a
+                  stable pseudonym derived from their first invoice. Returning
                   means they paid again on their billing date; lapsed means a due
                   invoice never came.
                 </caption>

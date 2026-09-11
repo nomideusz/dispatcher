@@ -107,7 +107,7 @@ export interface PayoutHistory {
   totalRows: number;
   /** The window's credit payouts per template, largest earner first. */
   byTemplate: PayoutTemplateTotal[];
-  /** Every payer chain, returning first. */
+  /** Every payer chain in rank order, biggest lifetime total first. */
   payers: PayerChain[];
 }
 

@@ -206,7 +206,10 @@ func templateSnapshotAt(sampledAt time.Time, template workspaceTemplate, metrics
 		Code:       template.Code,
 		Status:     template.Status,
 		// From the template list, not templateMetrics: see workspaceTemplate.
-		TotalPayout: template.TotalPayout,
+		TotalPayout:    template.TotalPayout,
+		Projects:       template.Projects,
+		RecentProjects: template.RecentProjects,
+		ActiveProjects: template.ActiveProjects,
 	}
 	if metrics == nil {
 		return snapshot
@@ -222,11 +225,9 @@ func templateSnapshotAt(sampledAt time.Time, template workspaceTemplate, metrics
 	snapshot.SupportHealth = pointerTo(metrics.SupportHealth)
 	snapshot.EligibleForSupportBonus = pointerTo(metrics.EligibleForSupportBonus)
 
-	// Keep legacy columns accurate for existing database consumers.
+	// Legacy health column mirrors the metrics value; the project columns are
+	// set above from the template list and are not deployment counts.
 	snapshot.Health = snapshot.TemplateHealth
-	snapshot.Projects = metrics.TotalDeployments
-	snapshot.RecentProjects = metrics.DeploymentsLast90Days
-	snapshot.ActiveProjects = metrics.ActiveDeployments
 	return snapshot
 }
 

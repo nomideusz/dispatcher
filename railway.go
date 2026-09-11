@@ -233,6 +233,15 @@ type workspaceTemplate struct {
 	// templateMetrics.totalEarnings can trail the ledger by many hours, so
 	// payout attribution reads this one.
 	TotalPayout float64 `json:"totalPayout"`
+	// Projects, RecentProjects and ActiveProjects count Railway projects
+	// deployed from the template (all time, last 90 days, still running).
+	// These are the counts Railway shows for a template; templateMetrics'
+	// totalDeployments/activeDeployments run roughly 1.5–3× higher (they
+	// count something else — deploy events or services) and must not be
+	// labelled as projects.
+	Projects       int64 `json:"projects"`
+	RecentProjects int64 `json:"recentProjects"`
+	ActiveProjects int64 `json:"activeProjects"`
 }
 
 const workspaceTemplatesQuery = `query ($workspaceId: String!) {
@@ -244,6 +253,9 @@ const workspaceTemplatesQuery = `query ($workspaceId: String!) {
         code
         status
         totalPayout
+        projects
+        recentProjects
+        activeProjects
       }
     }
   }

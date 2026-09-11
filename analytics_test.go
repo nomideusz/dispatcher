@@ -88,7 +88,7 @@ func TestBuildPayoutSeriesEmpty(t *testing.T) {
 	}
 }
 
-func TestAnalyticsTotalsUseAuthoritativeTemplateMetrics(t *testing.T) {
+func TestAnalyticsTotalsUseTemplateListProjectCounts(t *testing.T) {
 	db, err := gorm.Open(duckdb.Open(filepath.Join(t.TempDir(), "analytics.duckdb")), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -98,14 +98,15 @@ func TestAnalyticsTotalsUseAuthoritativeTemplateMetrics(t *testing.T) {
 	}
 	at := time.Date(2026, time.August, 30, 12, 0, 0, 0, time.UTC)
 	rows := []TemplateSnapshot{
+		// Project counts come from the template list; the metrics' deployment
+		// counts (a different, larger measure) must not leak into "projects".
 		{
-			SampledAt: at, TemplateID: "current", TotalDeployments: pointerTo(int64(20)),
-			ActiveDeployments: pointerTo(int64(8)), DeploymentsLast90Days: pointerTo(int64(5)),
+			SampledAt: at, TemplateID: "current", Projects: 20, ActiveProjects: 8, RecentProjects: 5,
+			TotalDeployments: pointerTo(int64(42)), ActiveDeployments: pointerTo(int64(28)), DeploymentsLast90Days: pointerTo(int64(42)),
 			TotalEarnings: pointerTo(125.50),
 		},
-		// A legacy row can contain values from the old, incorrect resolver but
-		// has no authoritative metrics and must not affect current totals.
-		{SampledAt: at, TemplateID: "legacy", Projects: 999, ActiveProjects: 999, RecentProjects: 999, TotalPayout: 999},
+		// A row with no earnings figure is not part of a graded sample.
+		{SampledAt: at, TemplateID: "ungraded", Projects: 999, ActiveProjects: 999, RecentProjects: 999, TotalPayout: 999},
 	}
 	if err := gorm.G[TemplateSnapshot](db).CreateInBatches(t.Context(), &rows, 100); err != nil {
 		t.Fatal(err)

@@ -232,9 +232,9 @@ func handleTemplateAnalytics(db *gorm.DB) http.HandlerFunc {
 		err = db.WithContext(r.Context()).Raw(`
 			SELECT cur.template_id, cur.name, cur.code, cur.status, cur.template_health AS health,
 			       cur.support_solved, cur.support_csat, cur.support_health,
-			       cur.total_deployments AS projects,
-			       cur.deployments_last90_days AS recent_projects,
-			       cur.active_deployments AS active_projects,
+			       cur.projects,
+			       cur.recent_projects,
+			       cur.active_projects,
 			       cur.total_earnings AS total_payout,
 			       prev.total_earnings AS payout_previous
 			FROM template_snapshots cur
@@ -299,9 +299,9 @@ func totalsAt(ctx context.Context, db *gorm.DB, at time.Time) (snapshotTotals, e
 	var totals snapshotTotals
 	err := db.WithContext(ctx).Raw(`
 		SELECT COALESCE(SUM(total_earnings), 0) AS total_payout,
-		       COALESCE(SUM(total_deployments), 0) AS projects,
-		       COALESCE(SUM(deployments_last90_days), 0) AS recent_projects,
-		       COALESCE(SUM(active_deployments), 0) AS active_projects
+		       COALESCE(SUM(projects), 0) AS projects,
+		       COALESCE(SUM(recent_projects), 0) AS recent_projects,
+		       COALESCE(SUM(active_projects), 0) AS active_projects
 		FROM template_snapshots
 		WHERE sampled_at = ? AND total_earnings IS NOT NULL`, at).Scan(&totals).Error
 	return totals, err

@@ -1,6 +1,7 @@
-import { ChevronDown, LogOut, RefreshCw, TrainFront } from "lucide-react";
+import { ChevronDown, LogOut, RefreshCw } from "lucide-react";
 import { Link, Outlet, useRevalidator } from "react-router";
 import { AutoWithdraw } from "~/components/auto-withdraw-dialog";
+import { Wordmark } from "~/components/brand";
 import { NotificationsDialog } from "~/components/notifications-dialog";
 import { Button } from "~/components/ui/button";
 import {
@@ -21,11 +22,12 @@ import {
 } from "~/components/ui/dropdown-menu";
 import { api } from "~/lib/api";
 import { useRefreshAnalytics } from "~/queries/analytics";
-import { getMe, type User } from "~/queries/me";
+import { getApiHealth, getMe, type User } from "~/queries/me";
 import type { Route } from "./+types/protected";
 
 export async function clientLoader() {
-  return { user: await getMe() };
+  const [user, apiUp] = await Promise.all([getMe(), getApiHealth()]);
+  return { user, apiUp };
 }
 
 export default function Protected({ loaderData }: Route.ComponentProps) {
@@ -34,18 +36,37 @@ export default function Protected({ loaderData }: Route.ComponentProps) {
       <main className="flex min-h-screen items-center justify-center p-6">
         <Card className="w-full max-w-sm">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TrainFront className="size-4 text-primary" />
-              Dispatcher
+            <CardTitle>
+              <Wordmark />
             </CardTitle>
             <CardDescription>
-              Template analytics for your Railway workspace
+              Kickback, health, and withdrawals for the templates you publish
+              on Railway.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Button className="w-full" render={<a href="/api/auth/redirect" />}>
-              Sign in with Railway
-            </Button>
+          <CardContent className="space-y-3">
+            {loaderData.apiUp ? (
+              <Button
+                className="w-full"
+                nativeButton={false}
+                render={<a href="/api/auth/redirect" />}
+              >
+                Sign in with Railway
+              </Button>
+            ) : (
+              <>
+                <p className="text-sm text-destructive">
+                  The API isn&apos;t running, so sign-in can&apos;t start.
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  In a second terminal from the repo root, run{" "}
+                  <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                    make dev-api
+                  </code>{" "}
+                  then refresh this page.
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
       </main>
@@ -86,11 +107,10 @@ function Header({ user }: { user: User }) {
   };
 
   return (
-    <header className="border-b bg-background">
-      <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
-        <Link to="/" className="flex items-center gap-2 font-heading font-semibold">
-          <TrainFront className="size-4 text-primary" />
-          Dispatcher
+    <header className="sticky top-0 z-20 border-b bg-background/85 backdrop-blur-sm">
+      <div className="shell flex items-center justify-between py-3">
+        <Link to="/" className="text-foreground">
+          <Wordmark />
         </Link>
         <div className="flex items-center gap-3">
           <RefreshButton />

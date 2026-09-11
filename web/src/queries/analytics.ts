@@ -72,6 +72,18 @@ export interface TemplateAnalyticsResponse {
   templates: TemplateAnalytics[];
 }
 
+/** Support health of 80%+ earns the +10% kickback bonus. No threads to
+ * grade counts as healthy. */
+export const SUPPORT_BONUS_THRESHOLD = 80;
+
+export function supportHealthOf(template: TemplateAnalytics): number {
+  return template.supportHealth ?? 100;
+}
+
+export function qualifiesForBonus(template: TemplateAnalytics): boolean {
+  return supportHealthOf(template) >= SUPPORT_BONUS_THRESHOLD;
+}
+
 export const payoutSeriesQuery = (days: number) =>
   queryOptions({
     queryKey: ["analytics", "payout", days],

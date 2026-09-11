@@ -1,56 +1,83 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowDownRight, ArrowUpRight } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import { Delta } from "~/components/delta";
+import { HealthWatch } from "~/components/health-watch";
 import { PayoutChart } from "~/components/payout-chart";
 import { PayoutHistory } from "~/components/payout-history";
+import { RangeToggle, type RangeDays } from "~/components/range-toggle";
+import { TemplateMix } from "~/components/template-mix";
 import { Button } from "~/components/ui/button";
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
-import { fmtAgo, fmtNum, fmtSignedPct, fmtUsd } from "~/lib/format";
+import { fmtAgo, fmtCents, fmtNum, fmtUsd } from "~/lib/format";
+import { cn } from "~/lib/utils";
 import {
-  type MetricChange,
   payoutSeriesQuery,
+  qualifiesForBonus,
   summaryQuery,
   type TemplateAnalytics,
   templateAnalyticsQuery,
   useRefreshAnalytics,
 } from "~/queries/analytics";
+import { payoutHistoryQuery } from "~/queries/payouts";
+import {
+  accountLabel,
+  scheduleDescription,
+  type WithdrawalAccount,
+  withdrawAccountsQuery,
+  withdrawSettingsQuery,
+} from "~/queries/withdraw";
 import type { Route } from "./+types/analytics";
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: "Dispatcher" }];
 }
 
-const RANGES = [7, 30, 90] as const;
-
 export default function Analytics() {
-  const [days, setDays] = useState<number>(30);
+  const [days, setDays] = useState<RangeDays>(30);
   const summary = useQuery(summaryQuery);
   const series = useQuery(payoutSeriesQuery(days));
   const templates = useQuery(templateAnalyticsQuery);
+  const payouts = useQuery(payoutHistoryQuery(days));
+  const accounts = useQuery(withdrawAccountsQuery);
+  const withdraw = useQuery(withdrawSettingsQuery);
 
   const hasData = summary.data != null;
   const comparedAgo =
     summary.data?.comparedTo != null
       ? fmtAgo(summary.data.comparedTo, summary.data.sampledAt)
       : null;
+  const list = templates.data?.templates ?? [];
 
   return (
-    <main className="viz mx-auto max-w-5xl space-y-6 p-6">
-      <header>
-        <h1 className="font-heading text-xl font-semibold">Analytics</h1>
-        <p className="text-sm text-muted-foreground">
-          {summary.data
-            ? `Last sampled ${fmtAgo(summary.data.sampledAt, new Date().toISOString())} ago`
-            : "Template snapshots from your workspace"}
-        </p>
+    <main className="viz shell space-y-5 py-6">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="font-heading text-xl font-semibold">Kickback</h1>
+          <p className="text-sm text-muted-foreground">
+            {summary.data
+              ? [
+                  list.length > 0
+                    ? `${fmtNum(list.length)} ${list.length === 1 ? "template" : "templates"}`
+                    : null,
+                  `${fmtNum(summary.data.activeProjects.current)} active`,
+                  summary.data.runningInstances
+                    ? `${fmtNum(summary.data.runningInstances.current)} running`
+                    : null,
+                  `sampled ${fmtAgo(summary.data.sampledAt, new Date().toISOString())} ago`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
+              : "Earnings, health, and withdrawals for the templates you publish"}
+          </p>
+        </div>
+        {hasData && <RangeToggle value={days} onChange={setDays} />}
       </header>
 
       {summary.isPending && <DashboardSkeleton />}
@@ -62,138 +89,401 @@ export default function Analytics() {
       {summary.isSuccess && !hasData && <EmptyState />}
 
       {summary.data && (
-        <section className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-          <StatTile
-            label="Total payout"
-            value={fmtUsd(summary.data.totalPayout.current)}
-            change={summary.data.totalPayout}
-            ago={comparedAgo}
+        <>
+          <MoneyBand
+            kickback={summary.data.totalPayout.current}
+            kickbackPct={summary.data.totalPayout.changePct}
+            comparedAgo={comparedAgo}
+            availableCents={accounts.data?.availableBalance}
+            availablePending={accounts.isPending}
+            withdrawnCents={payouts.data?.totals.lifetimeCents}
+            withdrawnSince={payouts.data?.totals.firstPayoutAt ?? null}
+            withdrawnPending={payouts.isPending}
+            autoEnabled={withdraw.data?.enabled}
+            autoSchedule={withdraw.data?.schedule}
+            autoAccount={
+              withdraw.data && accounts.data
+                ? accounts.data.accounts.find(
+                    (a) => a.id === withdraw.data.withdrawalAccountId,
+                  )
+                : undefined
+            }
+            autoPending={withdraw.isPending}
           />
-          <StatTile
-            label="Running instances"
-            value={fmtNum(summary.data.runningInstances.current)}
-            change={summary.data.runningInstances}
-            ago={comparedAgo}
-          />
-          <StatTile
-            label="Active projects"
-            value={fmtNum(summary.data.activeProjects.current)}
-            change={summary.data.activeProjects}
-            ago={comparedAgo}
-          />
-          <StatTile
-            label="Recent projects"
-            value={fmtNum(summary.data.recentProjects.current)}
-            change={summary.data.recentProjects}
-            ago={comparedAgo}
-          />
-          <StatTile
-            label="Total projects"
-            value={fmtNum(summary.data.projects.current)}
-            change={summary.data.projects}
-            ago={comparedAgo}
-          />
-        </section>
-      )}
 
-      {hasData && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Total payout</CardTitle>
-            <CardDescription>
-              Cumulative kickback, stacked by template
-            </CardDescription>
-            <CardAction className="flex gap-1">
-              {RANGES.map((r) => (
-                <Button
-                  key={r}
-                  size="xs"
-                  variant={r === days ? "secondary" : "ghost"}
-                  onClick={() => setDays(r)}
-                >
-                  {r}d
-                </Button>
-              ))}
-            </CardAction>
-          </CardHeader>
-          <CardContent>
-            {series.isPending ? (
-              <Skeleton className="h-64 w-full" />
-            ) : series.data && series.data.points.length > 0 ? (
-              <PayoutChart data={series.data} />
-            ) : (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                No samples in this range yet.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
+          <Attention
+            templates={list}
+            pendingCount={payouts.data?.totals.pendingCount ?? 0}
+            pendingCents={payouts.data?.totals.pendingCents ?? 0}
+            autoOff={withdraw.data != null && !withdraw.data.enabled}
+            withdrawable={
+              accounts.data != null &&
+              accounts.data.availableBalance >= accounts.data.minimumBalance &&
+              accounts.data.availableBalance > 0
+            }
+          />
 
-      {hasData && <PayoutHistory />}
+          <div className="grid gap-4 lg:grid-cols-12">
+            <Card className="lg:col-span-8">
+              <CardHeader>
+                <CardTitle>Added this window</CardTitle>
+                <CardDescription>
+                  Kickback accrued since the start of the last {days}d, stacked
+                  by template
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {series.isPending ? (
+                  <Skeleton className="h-64 w-full" />
+                ) : series.data && series.data.points.length > 0 ? (
+                  <PayoutChart data={series.data} />
+                ) : (
+                  <p className="py-8 text-center text-sm text-muted-foreground">
+                    No samples in this range yet.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
 
-      {hasData && templates.isPending && <TableCardSkeleton />}
-      {templates.data && templates.data.templates.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Templates</CardTitle>
-            <CardDescription>
-              {comparedAgo
-                ? `Latest snapshot · payout change vs ${comparedAgo} ago`
-                : "Latest snapshot"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-[10px] uppercase tracking-wide text-muted-foreground">
-                  <th />
-                  <th />
-                  <th className="pb-1 pl-3 text-right font-medium" colSpan={2} title="railway.com → Templates page">
-                    Templates page
-                  </th>
-                  <th className="pb-1 pl-3 text-right font-medium" colSpan={2} title="Template → View metrics">
-                    Metrics page
-                  </th>
-                  <th colSpan={4} />
-                </tr>
-                <tr className="border-b text-left text-xs text-muted-foreground">
-                  <th className="pb-2 font-medium">Template</th>
-                  <th className="pb-2 pl-3 text-right font-medium" title="Services the template defines">Services</th>
-                  <th className="pb-2 pl-3 text-right font-medium">Deploys</th>
-                  <th className="pb-2 pl-3 text-right font-medium">Active</th>
-                  <th className="pb-2 pl-3 text-right font-medium" title="Total number of times the template has been deployed">Deployments</th>
-                  <th className="pb-2 pl-3 text-right font-medium" title="Currently running instances of the template">Active</th>
-                  <th className="pb-2 pl-3 text-right font-medium">Support health</th>
-                  <th className="pb-2 pl-3 text-right font-medium">Deploy health</th>
-                  <th className="pb-2 pl-3 text-right font-medium">Payout</th>
-                  <th className="pb-2 pl-3 text-right font-medium">Payout change</th>
-                </tr>
-              </thead>
-              <tbody>
-                {templates.data.templates.map((t) => (
-                  <TemplateRow key={t.templateId} template={t} />
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
+            <Card className="lg:col-span-4">
+              <CardHeader>
+                <CardTitle>Mix now</CardTitle>
+                <CardDescription>Share of accrued kickback</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {templates.isPending ? (
+                  <div className="space-y-3">
+                    {Array.from({ length: 5 }, (_, i) => (
+                      <Skeleton key={i} className="h-8 w-full" />
+                    ))}
+                  </div>
+                ) : (
+                  <TemplateMix templates={list} />
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="lg:col-span-7">
+              <CardHeader>
+                <CardTitle>Templates</CardTitle>
+                <CardDescription>
+                  {comparedAgo
+                    ? `Latest snapshot · kickback vs ${comparedAgo} ago`
+                    : "Latest snapshot"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="max-h-[28rem] overflow-auto">
+                {templates.isPending ? (
+                  <div className="space-y-3">
+                    {Array.from({ length: 5 }, (_, i) => (
+                      <Skeleton key={i} className="h-8 w-full" />
+                    ))}
+                  </div>
+                ) : list.length > 0 ? (
+                  <EarnersTable templates={list} />
+                ) : (
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    No templates in the latest snapshot.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="lg:col-span-5">
+              <CardHeader>
+                <CardTitle>Support bonus</CardTitle>
+                <CardDescription>
+                  80% health unlocks an extra 10% kickback
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {templates.isPending ? (
+                  <div className="space-y-3">
+                    {Array.from({ length: 4 }, (_, i) => (
+                      <Skeleton key={i} className="h-10 w-full" />
+                    ))}
+                  </div>
+                ) : list.length > 0 ? (
+                  <HealthWatch templates={list} />
+                ) : (
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    Health appears once a snapshot lands.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
+            <div className="lg:col-span-12">
+              <PayoutHistory />
+            </div>
+          </div>
+        </>
       )}
     </main>
   );
 }
 
-// Skeletons mirror the real layout so nothing jumps when data lands.
-// EmptyState shows before the first snapshot exists (fresh sign-in) and lets
-// the user collect one now instead of waiting for the hourly cron.
+function MoneyBand({
+  kickback,
+  kickbackPct,
+  comparedAgo,
+  availableCents,
+  availablePending,
+  withdrawnCents,
+  withdrawnSince,
+  withdrawnPending,
+  autoEnabled,
+  autoSchedule,
+  autoAccount,
+  autoPending,
+}: {
+  kickback: number;
+  kickbackPct: number | null;
+  comparedAgo: string | null;
+  availableCents: number | undefined;
+  availablePending: boolean;
+  withdrawnCents: number | undefined;
+  withdrawnSince: string | null;
+  withdrawnPending: boolean;
+  autoEnabled: boolean | undefined;
+  autoSchedule: string | undefined;
+  autoAccount: WithdrawalAccount | undefined;
+  autoPending: boolean;
+}) {
+  const monthLong = new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+
+  return (
+    <section className="grid grid-cols-2 overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10 lg:grid-cols-4">
+      <BandCell
+        label="Ready to withdraw"
+        className="border-b border-r lg:border-b-0"
+      >
+        {availablePending ? (
+          <Skeleton className="h-7 w-24" />
+        ) : (
+          <BandValue
+            value={availableCents != null ? fmtCents(availableCents) : "—"}
+          />
+        )}
+        <p className="text-xs text-muted-foreground">Railway balance</p>
+      </BandCell>
+
+      <BandCell label="Accrued kickback" className="border-b lg:border-r lg:border-b-0">
+        <BandValue value={fmtUsd(kickback)} />
+        <Delta
+          pct={kickbackPct}
+          suffix={comparedAgo ? `vs ${comparedAgo} ago` : undefined}
+        />
+      </BandCell>
+
+      <BandCell label="Withdrawn" className="border-r">
+        {withdrawnPending ? (
+          <Skeleton className="h-7 w-24" />
+        ) : (
+          <BandValue
+            value={withdrawnCents != null ? fmtCents(withdrawnCents) : "—"}
+          />
+        )}
+        <p className="text-xs text-muted-foreground">
+          {withdrawnSince
+            ? `since ${monthLong.format(new Date(withdrawnSince))}`
+            : "lifetime"}
+        </p>
+      </BandCell>
+
+      <BandCell label="Auto-withdraw">
+        {autoPending ? (
+          <Skeleton className="h-7 w-16" />
+        ) : (
+          <div className="text-xl font-semibold">{autoEnabled ? "On" : "Off"}</div>
+        )}
+        <p className="truncate text-xs text-muted-foreground">
+          {autoEnabled && autoSchedule
+            ? [
+                scheduleDescription(autoSchedule),
+                autoAccount ? accountLabel(autoAccount) : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")
+            : "Withdrawals are manual"}
+        </p>
+      </BandCell>
+    </section>
+  );
+}
+
+function BandCell({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={cn("space-y-1 p-4", className)}>
+      <div className="text-xs text-muted-foreground">{label}</div>
+      {children}
+    </div>
+  );
+}
+
+function BandValue({ value }: { value: string }) {
+  return (
+    <div
+      className={`font-semibold tabular-nums ${
+        value.length > 13 ? "text-base" : value.length > 10 ? "text-xl" : "text-2xl"
+      }`}
+    >
+      {value}
+    </div>
+  );
+}
+
+function Attention({
+  templates,
+  pendingCount,
+  pendingCents,
+  autoOff,
+  withdrawable,
+}: {
+  templates: TemplateAnalytics[];
+  pendingCount: number;
+  pendingCents: number;
+  autoOff: boolean;
+  withdrawable: boolean;
+}) {
+  const atRisk = templates.filter((t) => !qualifiesForBonus(t)).length;
+  const items: { key: string; tone: "critical" | "muted"; text: string }[] = [];
+
+  if (atRisk > 0) {
+    items.push({
+      key: "health",
+      tone: "critical",
+      text: `${atRisk} ${atRisk === 1 ? "template is" : "templates are"} below the 80% support-bonus line`,
+    });
+  }
+  if (pendingCount > 0) {
+    items.push({
+      key: "pending",
+      tone: "muted",
+      text: `${fmtCents(pendingCents)} in flight · ${pendingCount} pending`,
+    });
+  }
+  if (autoOff && withdrawable) {
+    items.push({
+      key: "auto",
+      tone: "muted",
+      text: "Balance is withdrawable and auto-withdraw is off",
+    });
+  }
+  if (items.length === 0) return null;
+
+  return (
+    <ul className="flex flex-wrap gap-2">
+      {items.map((item) => (
+        <li
+          key={item.key}
+          className={cn(
+            "rounded-md px-2.5 py-1 text-xs ring-1",
+            item.tone === "critical"
+              ? "bg-destructive/10 text-(--viz-critical) ring-destructive/20"
+              : "bg-card text-muted-foreground ring-foreground/10",
+          )}
+        >
+          {item.text}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function EarnersTable({ templates }: { templates: TemplateAnalytics[] }) {
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="border-b text-left text-xs text-muted-foreground">
+          <th className="pb-2 font-medium">Template</th>
+          <th className="pb-2 pl-3 text-right font-medium">Active</th>
+          <th className="pb-2 pl-3 text-right font-medium">Running</th>
+          <th className="pb-2 pl-3 text-right font-medium">Support</th>
+          <th className="pb-2 pl-3 text-right font-medium">Deploy</th>
+          <th className="pb-2 pl-3 text-right font-medium">Kickback</th>
+          <th className="pb-2 pl-3 text-right font-medium">Change</th>
+        </tr>
+      </thead>
+      <tbody>
+        {templates.map((t) => (
+          <tr
+            key={t.templateId}
+            className="border-b border-border/50 last:border-0"
+          >
+            <td className="py-2.5 pr-4">
+              <div className="font-medium">{t.name}</div>
+              <div className="text-xs text-muted-foreground">
+                {t.status.toLowerCase()}
+                {t.projects > 0 ? ` · ${fmtNum(t.projects)} projects` : ""}
+              </div>
+            </td>
+            <td className="py-2.5 pl-3 text-right tabular-nums">
+              {fmtNum(t.activeProjects)}
+            </td>
+            <td className="py-2.5 pl-3 text-right tabular-nums">
+              {t.runningInstances == null ? "—" : fmtNum(t.runningInstances)}
+            </td>
+            <td
+              className={`py-2.5 pl-3 text-right tabular-nums ${
+                (t.supportHealth ?? 100) >= 80
+                  ? "text-(--viz-up)"
+                  : "text-(--viz-critical)"
+              }`}
+            >
+              {(t.supportHealth ?? 100).toFixed(0)}%
+            </td>
+            <td className="py-2.5 pl-3 text-right tabular-nums">
+              {t.health == null ? (
+                "—"
+              ) : (
+                <span
+                  className={
+                    t.health >= 80
+                      ? "text-(--viz-up)"
+                      : t.health < 50
+                        ? "text-(--viz-critical)"
+                        : undefined
+                  }
+                >
+                  {t.health.toFixed(0)}%
+                </span>
+              )}
+            </td>
+            <td className="whitespace-nowrap py-2.5 pl-3 text-right font-medium tabular-nums">
+              {fmtUsd(t.totalPayout)}
+            </td>
+            <td className="py-2.5 pl-3">
+              <span className="flex justify-end">
+                <Delta pct={t.payoutChangePct} />
+              </span>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function EmptyState() {
   const refresh = useRefreshAnalytics();
   return (
     <Card>
       <CardContent className="flex flex-col items-start gap-3">
         <p className="text-sm text-muted-foreground">
-          No snapshots yet. The collector runs hourly, or you can grab the
-          first one right now.
+          No snapshots yet. The collector runs hourly, or you can grab the first
+          one right now.
         </p>
         <Button onClick={() => refresh.mutate()} disabled={refresh.isPending}>
           {refresh.isPending ? "Refreshing…" : "Refresh now"}
@@ -211,188 +501,36 @@ function EmptyState() {
 function DashboardSkeleton() {
   return (
     <>
-      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <section className="grid grid-cols-2 overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10 lg:grid-cols-4">
         {Array.from({ length: 4 }, (_, i) => (
-          <Card key={i} size="sm">
-            <CardContent className="space-y-2">
-              <Skeleton className="h-3 w-20" />
-              <Skeleton className="h-7 w-24" />
-              <Skeleton className="h-3 w-28" />
-            </CardContent>
-          </Card>
+          <div key={i} className="space-y-2 p-4">
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="h-7 w-24" />
+            <Skeleton className="h-3 w-28" />
+          </div>
         ))}
       </section>
-      <Card>
-        <CardHeader>
-          <Skeleton className="h-4 w-28" />
-          <Skeleton className="h-3 w-56" />
-        </CardHeader>
-        <CardContent>
-          <Skeleton className="h-64 w-full" />
-        </CardContent>
-      </Card>
-      <TableCardSkeleton />
+      <div className="grid gap-4 lg:grid-cols-12">
+        <Card className="lg:col-span-8">
+          <CardHeader>
+            <Skeleton className="h-4 w-36" />
+            <Skeleton className="h-3 w-56" />
+          </CardHeader>
+          <CardContent>
+            <Skeleton className="h-64 w-full" />
+          </CardContent>
+        </Card>
+        <Card className="lg:col-span-4">
+          <CardHeader>
+            <Skeleton className="h-4 w-20" />
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {Array.from({ length: 5 }, (_, i) => (
+              <Skeleton key={i} className="h-8 w-full" />
+            ))}
+          </CardContent>
+        </Card>
+      </div>
     </>
-  );
-}
-
-function TableCardSkeleton() {
-  return (
-    <Card>
-      <CardHeader>
-        <Skeleton className="h-4 w-24" />
-        <Skeleton className="h-3 w-64" />
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {Array.from({ length: 5 }, (_, i) => (
-          <Skeleton key={i} className="h-8 w-full" />
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
-function StatTile({
-  label,
-  value,
-  change,
-  ago,
-}: {
-  label: string;
-  value: string;
-  change: MetricChange;
-  ago: string | null;
-}) {
-  return (
-    <Card size="sm">
-      <CardContent className="space-y-1">
-        <div className="text-xs text-muted-foreground">{label}</div>
-        {/* Full (unabbreviated) values can get long — step the size down so
-            something like $1,234,567,890 still fits the quarter-width tile. */}
-        <div
-          className={`font-semibold tabular-nums ${
-            value.length > 13
-              ? "text-base"
-              : value.length > 10
-                ? "text-xl"
-                : "text-2xl"
-          }`}
-        >
-          {value}
-        </div>
-        {change.changePct != null && ago != null ? (
-          <div className="flex items-center gap-1 text-xs">
-            <span
-              className={`flex items-center gap-0.5 font-medium ${
-                change.changePct >= 0
-                  ? "text-(--viz-up)"
-                  : "text-(--viz-down)"
-              }`}
-            >
-              {change.changePct >= 0 ? (
-                <ArrowUpRight className="size-3.5" />
-              ) : (
-                <ArrowDownRight className="size-3.5" />
-              )}
-              {fmtSignedPct(change.changePct)}
-            </span>
-            <span className="text-muted-foreground">vs {ago} ago</span>
-          </div>
-        ) : (
-          <div className="text-xs text-muted-foreground">
-            no comparison yet
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function TemplateRow({ template: t }: { template: TemplateAnalytics }) {
-  return (
-    <tr className="border-b border-border/50 last:border-0">
-      <td className="py-2.5 pr-4">
-        <div className="font-medium">{t.name}</div>
-        <div className="text-xs text-muted-foreground">{t.status.toLowerCase()}</div>
-      </td>
-      <td className="py-2.5 pl-3 text-right tabular-nums text-muted-foreground">
-        {t.services || "—"}
-      </td>
-      <td className="py-2.5 pl-3 text-right tabular-nums">
-        {fmtNum(t.projects)}
-      </td>
-      <td className="py-2.5 pl-3 text-right tabular-nums">
-        {fmtNum(t.activeProjects)}
-      </td>
-      <td className="py-2.5 pl-3 text-right tabular-nums">
-        {t.deployments == null ? "—" : fmtNum(t.deployments)}
-      </td>
-      <td className="py-2.5 pl-3 text-right tabular-nums">
-        {t.runningInstances == null ? "—" : fmtNum(t.runningInstances)}
-      </td>
-      <td className="py-2.5 pl-3 text-right tabular-nums">
-        <SupportHealth template={t} />
-      </td>
-      <td className="py-2.5 pl-3 text-right tabular-nums">
-        <TemplateHealth template={t} />
-      </td>
-      <td className="whitespace-nowrap py-2.5 pl-3 text-right font-medium tabular-nums">
-        {fmtUsd(t.totalPayout)}
-      </td>
-      <td
-        className={`py-2.5 pl-3 text-right tabular-nums ${
-          t.payoutChangePct == null
-            ? "text-muted-foreground"
-            : t.payoutChangePct >= 0
-              ? "text-(--viz-up)"
-              : "text-(--viz-down)"
-        }`}
-      >
-        {t.payoutChangePct != null ? fmtSignedPct(t.payoutChangePct) : "—"}
-      </td>
-    </tr>
-  );
-}
-
-// Deploy health from Railway (templateMetrics.templateHealth): the share of
-// recent deployments of the template that succeeded. Null means Railway has
-// not graded it (no recent deploys). It does not affect the kickback rate the
-// way support health does, but it is the first number to drop when a
-// template breaks, so it sits next to support health rather than replacing it.
-function TemplateHealth({ template: t }: { template: TemplateAnalytics }) {
-  if (t.health == null) return <span className="text-muted-foreground">—</span>;
-  const tone =
-    t.health >= 80
-      ? "text-(--viz-up)"
-      : t.health < 50
-        ? "text-(--viz-critical)"
-        : "";
-  return (
-    <span className={tone} title="Share of recent deployments of this template that succeeded">
-      {t.health.toFixed(0)}%
-    </span>
-  );
-}
-
-// Support-thread health from Railway. Null means the template has no threads
-// to grade — healthy, so it renders as 100%. 80%+ qualifies for the support
-// bonus (an extra 10% kickback), so that's the green/red line.
-function SupportHealth({ template: t }: { template: TemplateAnalytics }) {
-  const health = t.supportHealth ?? 100;
-  const parts = [];
-  if (t.supportSolved != null) parts.push(`${t.supportSolved.toFixed(0)}% solved`);
-  if (t.supportCsat != null) parts.push(`${t.supportCsat.toFixed(0)}% CSAT`);
-  if (parts.length === 0) parts.push("no support threads to grade");
-  const bonus =
-    health >= 80
-      ? "qualifies for the +10% support bonus"
-      : "below the 80% support-bonus threshold";
-  return (
-    <span
-      className={health >= 80 ? "text-(--viz-up)" : "text-(--viz-critical)"}
-      title={`${parts.join(" · ")} — ${bonus}`}
-    >
-      {health.toFixed(0)}%
-    </span>
   );
 }

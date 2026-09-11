@@ -92,9 +92,9 @@ export function PayoutHistory() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Payouts</CardTitle>
+        <CardTitle>Withdrawals</CardTitle>
         <CardDescription>
-          Withdrawals from your Railway balance, cumulative over the range
+          Cash and credits that left your Railway balance, plus payers
         </CardDescription>
         <CardAction className="flex gap-1">
           {RANGES.map((r) => (

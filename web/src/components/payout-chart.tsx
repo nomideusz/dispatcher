@@ -7,7 +7,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "~/components/ui/chart";
-import { fmtSignedPct, fmtUsd, fmtUsdTick } from "~/lib/format";
+import { fmtUsd, fmtUsdTick } from "~/lib/format";
 import type { PayoutSeriesResponse } from "~/queries/analytics";
 
 const dayFmt = new Intl.DateTimeFormat("en-US", {
@@ -31,45 +31,28 @@ function seriesColor(key: string, index: number): string {
   return key === "other" ? "var(--chart-other)" : `var(--chart-${index + 1})`;
 }
 
-/** Signed growth from the window's first sample to the hovered one, e.g.
- * "+12.4%" in green/red by direction; "—" when there is no baseline to
- * compare against. */
-function GrowthSince({ base, current }: { base: unknown; current: unknown }) {
-  const b = Number(base);
-  const c = Number(current);
-  const pct = b > 0 && Number.isFinite(c) ? ((c - b) / b) * 100 : null;
-  return (
-    <span
-      className={`min-w-12 text-right font-mono tabular-nums ${
-        pct == null
-          ? "text-muted-foreground"
-          : pct >= 0
-            ? "text-(--viz-up)"
-            : "text-(--viz-down)"
-      }`}
-    >
-      {pct == null ? "—" : fmtSignedPct(pct)}
-    </span>
-  );
-}
-
 export function PayoutChart({ data }: { data: PayoutSeriesResponse }) {
   const { series, points } = data;
+  const origin = points[0]?.values ?? {};
 
   const chartConfig = Object.fromEntries(
     series.map((s, i) => [s.key, { label: s.name, color: seriesColor(s.key, i) }]),
   ) satisfies ChartConfig;
 
+  // Lifetime totals hide the window. Plot what each template added since
+  // the first sample so 7d/30d/90d actually changes the shape.
   const rows: Record<string, number | string>[] = points.map((p) => ({
     sampledAt: p.sampledAt,
-    ...p.values,
+    ...Object.fromEntries(
+      series.map((s) => [
+        s.key,
+        Math.max(0, (p.values[s.key] ?? 0) - (origin[s.key] ?? 0)),
+      ]),
+    ),
   }));
   const stackTotal = (row: Record<string, unknown>) =>
     series.reduce((sum, s) => sum + (Number(row[s.key]) || 0), 0);
 
-  // Size the axis gutter to the largest tick label so full (non-abbreviated)
-  // dollar amounts never clip, however big the payout grows. ~7px per char
-  // at the 12px tick size, plus the 8px tick margin.
   const maxTotal = Math.max(0, ...rows.map(stackTotal));
   const yAxisWidth = Math.max(56, fmtUsdTick(maxTotal * 1.15).length * 7 + 14);
 
@@ -79,13 +62,6 @@ export function PayoutChart({ data }: { data: PayoutSeriesResponse }) {
     points.length > 1 &&
     new Date(last.sampledAt).getTime() - new Date(first.sampledAt).getTime() >
       3 * 24 * 60 * 60 * 1000;
-
-  // Tooltip deltas compare the hovered sample against the first one in the
-  // visible range, so the baseline follows the 7d/30d/90d picker.
-  const baseline = rows[0];
-  const baselineLabel = (spansDays ? dayFmt : fullFmt).format(
-    new Date(first.sampledAt),
-  );
 
   return (
     <ChartContainer config={chartConfig} className="aspect-auto h-64 w-full">
@@ -126,36 +102,17 @@ export function PayoutChart({ data }: { data: PayoutSeriesResponse }) {
                     <span className="text-muted-foreground">
                       {chartConfig[name as string]?.label ?? name}
                     </span>
-                    <span className="flex items-baseline gap-2">
-                      <span className="font-mono font-medium text-foreground tabular-nums">
-                        {fmtUsd(Number(value))}
-                      </span>
-                      <GrowthSince
-                        base={baseline?.[name as string]}
-                        current={value}
-                      />
+                    <span className="font-mono font-medium text-foreground tabular-nums">
+                      {fmtUsd(Number(value))}
                     </span>
                   </div>
-                  {index === series.length - 1 && (
-                    <>
-                      {series.length > 1 && (
-                        <div className="mt-0.5 flex basis-full items-center justify-between gap-4 border-t border-border/50 pt-1.5 leading-none">
-                          <span className="text-muted-foreground">Total</span>
-                          <span className="flex items-baseline gap-2">
-                            <span className="font-mono font-medium text-foreground tabular-nums">
-                              {fmtUsd(stackTotal(item.payload))}
-                            </span>
-                            <GrowthSince
-                              base={stackTotal(baseline)}
-                              current={stackTotal(item.payload)}
-                            />
-                          </span>
-                        </div>
-                      )}
-                      <div className="basis-full text-right text-[10px] leading-none text-muted-foreground">
-                        Change since {baselineLabel}
-                      </div>
-                    </>
+                  {index === series.length - 1 && series.length > 1 && (
+                    <div className="mt-0.5 flex basis-full items-center justify-between gap-4 border-t border-border/50 pt-1.5 leading-none">
+                      <span className="text-muted-foreground">Added</span>
+                      <span className="font-mono font-medium text-foreground tabular-nums">
+                        {fmtUsd(stackTotal(item.payload))}
+                      </span>
+                    </div>
                   )}
                 </>
               )}
@@ -171,7 +128,7 @@ export function PayoutChart({ data }: { data: PayoutSeriesResponse }) {
             stroke={seriesColor(s.key, i)}
             strokeWidth={2}
             fill={seriesColor(s.key, i)}
-            fillOpacity={0.1}
+            fillOpacity={0.22}
             dot={false}
             activeDot={{ r: 4, stroke: "var(--card)", strokeWidth: 2 }}
           />

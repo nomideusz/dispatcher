@@ -145,6 +145,7 @@ export default function Analytics() {
                   <th className="pb-2 pl-3 text-right font-medium">Projects</th>
                   <th className="pb-2 pl-3 text-right font-medium">Active</th>
                   <th className="pb-2 pl-3 text-right font-medium">Health</th>
+                  <th className="pb-2 pl-3 text-right font-medium">Support</th>
                   <th className="pb-2 pl-3 text-right font-medium">Payout</th>
                   <th className="pb-2 pl-3 text-right font-medium">Payout change</th>
                 </tr>
@@ -301,6 +302,9 @@ function TemplateRow({ template: t }: { template: TemplateAnalytics }) {
         {fmtNum(t.activeProjects)}
       </td>
       <td className="py-2.5 pl-3 text-right tabular-nums">
+        <TemplateHealth template={t} />
+      </td>
+      <td className="py-2.5 pl-3 text-right tabular-nums">
         <SupportHealth template={t} />
       </td>
       <td className="whitespace-nowrap py-2.5 pl-3 text-right font-medium tabular-nums">
@@ -318,6 +322,25 @@ function TemplateRow({ template: t }: { template: TemplateAnalytics }) {
         {t.payoutChangePct != null ? fmtSignedPct(t.payoutChangePct) : "—"}
       </td>
     </tr>
+  );
+}
+
+// Template health from Railway: the share of recent deployments of the
+// template that succeeded. Null means Railway has not graded it (no recent
+// deploys). This is the number Railway shows on the template page, and the
+// one that drops when deploys start failing.
+function TemplateHealth({ template: t }: { template: TemplateAnalytics }) {
+  if (t.health == null) return <span className="text-muted-foreground">—</span>;
+  const tone =
+    t.health >= 80
+      ? "text-(--viz-up)"
+      : t.health < 50
+        ? "text-(--viz-critical)"
+        : "";
+  return (
+    <span className={tone} title="Share of recent deployments of this template that succeeded">
+      {t.health.toFixed(0)}%
+    </span>
   );
 }
 

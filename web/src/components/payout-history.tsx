@@ -131,10 +131,9 @@ export function PayoutHistory() {
                   trailing 30 days whatever the range: Railway pays out one row
                   per billed service, so a burst of rows is one deployer&apos;s
                   invoice, and one billing cycle of invoices counts each paying
-                  deployer once. Invoices, rows and amount follow the selected
-                  range; lifetime is the template&apos;s all-time payout, which
-                  is how templates that only earned before tracking still
-                  appear.
+                  deployer once. Amount follows the selected range; lifetime is
+                  the template&apos;s all-time payout, which is how templates
+                  that only earned before tracking still appear.
                 </caption>
                 <thead>
                   <tr className="border-b text-left text-xs text-muted-foreground">
@@ -142,8 +141,9 @@ export function PayoutHistory() {
                     <th className="pb-2 pl-3 text-right font-medium">Payers 30d</th>
                     <th className="pb-2 pl-3 text-right font-medium">vs prev. 30d</th>
                     <th className="pb-2 pl-3 text-right font-medium">$/payer</th>
-                    <th className="pb-2 pl-3 text-right font-medium">Invoices {days}d</th>
-                    <th className="pb-2 pl-3 text-right font-medium">Rows</th>
+                    {days <= 7 && (
+                      <th className="pb-2 pl-3 text-right font-medium">Invoices {days}d</th>
+                    )}
                     <th className="pb-2 pl-3 text-right font-medium">Amount</th>
                     <th className="pb-2 pl-3 text-right font-medium">Lifetime</th>
                   </tr>
@@ -177,8 +177,9 @@ export function PayoutHistory() {
                       <td className="py-2 pl-3 text-right tabular-nums">
                         {t.payers > 0 ? fmtCents(Math.round(t.payerCents / t.payers)) : "—"}
                       </td>
-                      <td className="py-2 pl-3 text-right tabular-nums">{fmtNum(t.invoices)}</td>
-                      <td className="py-2 pl-3 text-right tabular-nums">{fmtNum(t.count)}</td>
+                      {days <= 7 && (
+                        <td className="py-2 pl-3 text-right tabular-nums">{fmtNum(t.invoices)}</td>
+                      )}
                       <td className="py-2 pl-3 text-right tabular-nums">{fmtCents(t.cents)}</td>
                       <td className="py-2 pl-3 text-right tabular-nums text-muted-foreground">
                         {t.lifetimeCents > 0 ? fmtCents(t.lifetimeCents) : "—"}

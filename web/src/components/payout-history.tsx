@@ -31,6 +31,25 @@ const dayFmt = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
   year: "numeric",
 });
+// Hover detail for date cells: billing rhythm is a time-of-day fingerprint, so
+// the exact minute matters when reading payer chains. Local time plus UTC.
+const timeFmt = new Intl.DateTimeFormat("en-US", {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+const utcFmt = new Intl.DateTimeFormat("en-US", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  timeZone: "UTC",
+});
+function DateCell({ iso, className }: { iso: string; className: string }) {
+  const d = new Date(iso);
+  return (
+    <td className={className} title={`${timeFmt.format(d)} (${utcFmt.format(d)} UTC)`}>
+      {dayFmt.format(d)}
+    </td>
+  );
+}
 const monthLong = new Intl.DateTimeFormat("en-US", {
   month: "long",
   year: "numeric",
@@ -330,11 +349,13 @@ function PayerRow({ chain }: { chain: PayerChain }) {
         {chain.templateName}
       </td>
       <td className={`py-2 pl-3 ${tone}`}>{chain.status}</td>
-      <td className="whitespace-nowrap py-2 pl-3 tabular-nums">{dayFmt.format(new Date(chain.firstAt))}</td>
-      <td className="whitespace-nowrap py-2 pl-3 tabular-nums">{dayFmt.format(new Date(chain.lastAt))}</td>
-      <td className="whitespace-nowrap py-2 pl-3 tabular-nums text-muted-foreground">
-        {chain.status === "lapsed" ? "—" : dayFmt.format(new Date(chain.nextDueAt))}
-      </td>
+      <DateCell iso={chain.firstAt} className="whitespace-nowrap py-2 pl-3 tabular-nums" />
+      <DateCell iso={chain.lastAt} className="whitespace-nowrap py-2 pl-3 tabular-nums" />
+      {chain.status === "lapsed" ? (
+        <td className="whitespace-nowrap py-2 pl-3 tabular-nums text-muted-foreground">—</td>
+      ) : (
+        <DateCell iso={chain.nextDueAt} className="whitespace-nowrap py-2 pl-3 tabular-nums text-muted-foreground" />
+      )}
       <td className="py-2 pl-3 text-right tabular-nums">{fmtNum(chain.invoices)}</td>
       <td className="py-2 pl-3 text-right tabular-nums">{fmtCents(chain.lastCents)}</td>
       <td className="py-2 pl-3 text-right tabular-nums">{fmtCents(chain.totalCents)}</td>
@@ -345,9 +366,7 @@ function PayerRow({ chain }: { chain: PayerChain }) {
 function PayoutRow({ payout }: { payout: Payout }) {
   return (
     <tr className="border-b border-border/50 last:border-0">
-      <td className="whitespace-nowrap py-2.5 pr-4 tabular-nums">
-        {dayFmt.format(new Date(payout.createdAt))}
-      </td>
+      <DateCell iso={payout.createdAt} className="whitespace-nowrap py-2.5 pr-4 tabular-nums" />
       <td
         className={
           PSEUDO_TEMPLATE_IDS.has(payout.templateId) || !payout.templateName

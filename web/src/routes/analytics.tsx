@@ -146,11 +146,24 @@ export default function Analytics() {
           <CardContent className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
+                <tr className="text-left text-[10px] uppercase tracking-wide text-muted-foreground">
+                  <th />
+                  <th />
+                  <th className="pb-1 pl-3 text-right font-medium" colSpan={2} title="railway.com → Templates page">
+                    Templates page
+                  </th>
+                  <th className="pb-1 pl-3 text-right font-medium" colSpan={2} title="Template → View metrics">
+                    Metrics page
+                  </th>
+                  <th colSpan={4} />
+                </tr>
                 <tr className="border-b text-left text-xs text-muted-foreground">
                   <th className="pb-2 font-medium">Template</th>
-                  <th className="pb-2 pl-3 text-right font-medium">Projects</th>
+                  <th className="pb-2 pl-3 text-right font-medium" title="Services the template defines">Services</th>
+                  <th className="pb-2 pl-3 text-right font-medium">Deploys</th>
                   <th className="pb-2 pl-3 text-right font-medium">Active</th>
-                  <th className="pb-2 pl-3 text-right font-medium">Running</th>
+                  <th className="pb-2 pl-3 text-right font-medium" title="Total number of times the template has been deployed">Deployments</th>
+                  <th className="pb-2 pl-3 text-right font-medium" title="Currently running instances of the template">Active</th>
                   <th className="pb-2 pl-3 text-right font-medium">Health</th>
                   <th className="pb-2 pl-3 text-right font-medium">Support</th>
                   <th className="pb-2 pl-3 text-right font-medium">Payout</th>
@@ -302,16 +315,19 @@ function TemplateRow({ template: t }: { template: TemplateAnalytics }) {
         <div className="font-medium">{t.name}</div>
         <div className="text-xs text-muted-foreground">{t.status.toLowerCase()}</div>
       </td>
+      <td className="py-2.5 pl-3 text-right tabular-nums text-muted-foreground">
+        {t.services || "—"}
+      </td>
       <td className="py-2.5 pl-3 text-right tabular-nums">
         {fmtNum(t.projects)}
       </td>
       <td className="py-2.5 pl-3 text-right tabular-nums">
         {fmtNum(t.activeProjects)}
       </td>
-      <td
-        className="py-2.5 pl-3 text-right tabular-nums"
-        title="Currently running instances of this template (Railway metrics)"
-      >
+      <td className="py-2.5 pl-3 text-right tabular-nums">
+        {t.deployments == null ? "—" : fmtNum(t.deployments)}
+      </td>
+      <td className="py-2.5 pl-3 text-right tabular-nums">
         {t.runningInstances == null ? "—" : fmtNum(t.runningInstances)}
       </td>
       <td className="py-2.5 pl-3 text-right tabular-nums">

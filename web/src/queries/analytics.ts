@@ -54,9 +54,13 @@ export interface TemplateAnalytics {
   projects: number;
   recentProjects: number;
   activeProjects: number;
-  /** Currently running instances (templateMetrics); null before metrics
-   * were collected. */
+  /** Metrics page: "Active" = currently running instances, "Deployments" =
+   * total number of times the template has been deployed. Null before
+   * metrics were collected. */
   runningInstances: number | null;
+  deployments: number | null;
+  /** Services the template defines; 0 on old snapshots. */
+  services: number;
   totalPayout: number;
   payoutPrevious: number | null;
   payoutChangePct: number | null;

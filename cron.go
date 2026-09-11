@@ -210,6 +210,7 @@ func templateSnapshotAt(sampledAt time.Time, template workspaceTemplate, metrics
 		Projects:       template.Projects,
 		RecentProjects: template.RecentProjects,
 		ActiveProjects: template.ActiveProjects,
+		Services:       template.serviceCount(),
 	}
 	if metrics == nil {
 		return snapshot

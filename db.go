@@ -43,6 +43,10 @@ type TemplateSnapshot struct {
 	SupportHealth           *float64 `json:"supportHealth"`
 	EligibleForSupportBonus *bool    `json:"eligibleForSupportBonus"`
 
+	// Services is how many services the template defines, from its
+	// serializedConfig; 0 on snapshots taken before it was recorded.
+	Services int64 `json:"services"`
+
 	// Legacy columns retained for existing databases and external queries. New
 	// snapshots mirror the authoritative templateMetrics values into them.
 	Health         *float64 `json:"health"`

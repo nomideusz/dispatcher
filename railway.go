@@ -242,7 +242,16 @@ type workspaceTemplate struct {
 	Projects       int64 `json:"projects"`
 	RecentProjects int64 `json:"recentProjects"`
 	ActiveProjects int64 `json:"activeProjects"`
+	// SerializedConfig is only read for its service count, which is what
+	// lets the two "active" figures be compared: templateMetrics'
+	// activeDeployments looks like it counts running services, the
+	// templates page counts projects.
+	SerializedConfig struct {
+		Services map[string]json.RawMessage `json:"services"`
+	} `json:"serializedConfig"`
 }
+
+func (t workspaceTemplate) serviceCount() int64 { return int64(len(t.SerializedConfig.Services)) }
 
 const workspaceTemplatesQuery = `query ($workspaceId: String!) {
   workspaceTemplates(workspaceId: $workspaceId) {
@@ -256,6 +265,7 @@ const workspaceTemplatesQuery = `query ($workspaceId: String!) {
         projects
         recentProjects
         activeProjects
+        serializedConfig
       }
     }
   }

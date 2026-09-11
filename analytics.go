@@ -209,9 +209,14 @@ type templateAnalytics struct {
 	SupportHealth  *float64 `json:"supportHealth"`
 	Projects       int64    `json:"projects"`
 	RecentProjects int64    `json:"recentProjects"`
-	// RunningInstances is templateMetrics.activeDeployments; nil on
-	// snapshots taken before metrics were collected.
+	// RunningInstances is templateMetrics.activeDeployments and Deployments
+	// templateMetrics.totalDeployments ("total number of times your template
+	// has been deployed"); nil on snapshots taken before metrics were
+	// collected. Services is the template's service count, so the reader can
+	// test whether running instances count services rather than projects.
 	RunningInstances *int64   `json:"runningInstances"`
+	Deployments      *int64   `json:"deployments"`
+	Services         int64    `json:"services"`
 	ActiveProjects   int64    `json:"activeProjects"`
 	TotalPayout      float64  `json:"totalPayout"`
 	PayoutPrevious   *float64 `json:"payoutPrevious"`
@@ -252,6 +257,8 @@ func handleTemplateAnalytics(db *gorm.DB) http.HandlerFunc {
 			       cur.recent_projects,
 			       cur.active_projects,
 			       cur.active_deployments AS running_instances,
+			       cur.total_deployments AS deployments,
+			       cur.services,
 			       cur.total_earnings AS total_payout,
 			       prev.total_earnings AS payout_previous
 			FROM template_snapshots cur

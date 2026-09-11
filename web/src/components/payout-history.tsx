@@ -59,8 +59,24 @@ const monthLong = new Intl.DateTimeFormat("en-US", {
  * of controls rather than two unrelated pickers. */
 const RANGES = [7, 30, 90] as const;
 
+/** Two readings of the same payer list: who matters (rank by lifetime
+ * total, the server's order) and who is alive (returning, then new, then
+ * lapsed; more invoices first; most recent first). */
+type PayerSort = "rank" | "status";
+const STATUS_ORDER: Record<PayerChain["status"], number> = { returning: 0, new: 1, lapsed: 2 };
+function sortPayers(payers: PayerChain[], by: PayerSort): PayerChain[] {
+  if (by === "rank") return payers;
+  return [...payers].sort(
+    (a, b) =>
+      STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
+      b.invoices - a.invoices ||
+      b.lastAt.localeCompare(a.lastAt),
+  );
+}
+
 export function PayoutHistory() {
   const [days, setDays] = useState<number>(30);
+  const [payerSort, setPayerSort] = useState<PayerSort>("rank");
   const history = useQuery(payoutHistoryQuery(days));
   const data = history.data;
 
@@ -214,10 +230,26 @@ export function PayoutHistory() {
             <CardContent className="max-h-[24rem] overflow-auto">
               <table className="w-full text-sm">
                 <caption className="pb-2 text-left text-xs text-muted-foreground">
-                  Payers ranked by lifetime total, one line per deployer, under a
-                  stable pseudonym derived from their first invoice. Returning
-                  means they paid again on their billing date; lapsed means a due
-                  invoice never came.
+                  <span className="flex flex-wrap items-center justify-between gap-2">
+                    <span>
+                      Payers, one line per deployer, under a stable pseudonym
+                      derived from their first invoice. Rank is by lifetime
+                      total. Returning means they paid again on their billing
+                      date; lapsed means a due invoice never came.
+                    </span>
+                    <span className="flex gap-1">
+                      {(["rank", "status"] as const).map((s) => (
+                        <Button
+                          key={s}
+                          size="xs"
+                          variant={s === payerSort ? "secondary" : "ghost"}
+                          onClick={() => setPayerSort(s)}
+                        >
+                          {s === "rank" ? "By total" : "By status"}
+                        </Button>
+                      ))}
+                    </span>
+                  </span>
                 </caption>
                 <thead>
                   <tr className="border-b text-left text-xs text-muted-foreground">
@@ -234,7 +266,7 @@ export function PayoutHistory() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.payers.map((c) => (
+                  {sortPayers(data.payers, payerSort).map((c) => (
                     <PayerRow key={`${c.templateId}-${c.firstAt}`} chain={c} />
                   ))}
                 </tbody>

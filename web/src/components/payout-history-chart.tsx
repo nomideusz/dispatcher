@@ -1,4 +1,4 @@
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+import { Bar, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts";
 import {
   type ChartConfig,
   ChartContainer,
@@ -32,35 +32,38 @@ function dayDate(date: string): Date {
  * paid out from the start of the range up to that day, so the line only ever
  * climbs and a payout-free stretch reads as a plateau rather than a drop.
  *
- * Published-template count shares the time axis, not the money scale — a
- * second axis is the honest comparison. The dashed stroke is the pattern
- * that says "count, not dollars". */
+ * Catalog size shares the time axis, not the money scale. Bars are published
+ * templates; the dashed line is the services those templates define. */
 export function PayoutHistoryChart({ points }: { points: PayoutPoint[] }) {
   const hasCredits = points.some((p) => p.creditsCents > 0);
-  const hasPublished = points.some((p) => p.published > 0);
+  const hasCatalog = points.some((p) => p.published > 0 || p.services > 0);
   const lastMoneyIndex = hasCredits ? 1 : 0;
 
   const chartConfig = {
     cashCents: { label: "Cash", color: "var(--chart-1)" },
     creditsCents: { label: "Railway credits", color: "var(--chart-2)" },
     published: { label: "Published templates", color: "var(--chart-other)" },
+    services: { label: "Services", color: "var(--chart-3)" },
   } satisfies ChartConfig;
 
   const peak = Math.max(
     0,
     ...points.map((p) => p.cashCents + (hasCredits ? p.creditsCents : 0)),
   );
-  const publishedPeak = Math.max(0, ...points.map((p) => p.published));
+  const countPeak = Math.max(
+    0,
+    ...points.map((p) => Math.max(p.published, p.services)),
+  );
   // Size the gutter to the widest tick so full dollar amounts never clip.
   const yAxisWidth = Math.max(56, fmtUsdTick(peak / 100).length * 7 + 14);
-  const countAxisWidth = Math.max(36, fmtNum(publishedPeak).length * 7 + 14);
+  const countAxisWidth = Math.max(36, fmtNum(countPeak).length * 7 + 14);
 
   return (
     <ChartContainer config={chartConfig} className="aspect-auto h-64 w-full">
-      <LineChart
+      <ComposedChart
         accessibilityLayer
         data={points}
-        margin={{ top: 8, right: hasPublished ? 8 : 12 }}
+        margin={{ top: 8, right: hasCatalog ? 8 : 12 }}
       >
         <CartesianGrid vertical={false} />
         <XAxis
@@ -79,7 +82,7 @@ export function PayoutHistoryChart({ points }: { points: PayoutPoint[] }) {
           domain={[0, "auto"]}
           tickFormatter={(cents: number) => fmtUsdTick(cents / 100)}
         />
-        {hasPublished && (
+        {hasCatalog && (
           <YAxis
             yAxisId="count"
             orientation="right"
@@ -97,13 +100,14 @@ export function PayoutHistoryChart({ points }: { points: PayoutPoint[] }) {
                 fullFmt.format(dayDate(payload?.[0]?.payload?.date ?? ""))
               }
               formatter={(value, name, item, index) => {
-                const isCount = name === "published";
+                const isCount = name === "published" || name === "services";
+                const isBar = name === "published";
                 return (
                   <>
                     <div
-                      className={`h-2.5 w-1 shrink-0 rounded-[2px] ${isCount ? "border border-current bg-transparent" : ""}`}
+                      className={`h-2.5 w-1 shrink-0 rounded-[2px] ${name === "services" ? "border border-current bg-transparent" : ""}`}
                       style={
-                        isCount
+                        name === "services"
                           ? { color: item.color, borderStyle: "dashed" }
                           : { background: item.color }
                       }
@@ -119,10 +123,7 @@ export function PayoutHistoryChart({ points }: { points: PayoutPoint[] }) {
                           : fmtCents(Number(value))}
                       </span>
                     </div>
-                    {/* Close the last money row with what the running total is
-                        made of: one big payout and six small ones read
-                        identically from the line alone. */}
-                    {index === lastMoneyIndex && !isCount && (
+                    {index === lastMoneyIndex && !isCount && !isBar && (
                       <div className="mt-0.5 flex basis-full items-center justify-between gap-4 border-t border-border/50 pt-1.5 leading-none">
                         <span className="text-muted-foreground">
                           {item.payload.count}{" "}
@@ -145,6 +146,16 @@ export function PayoutHistoryChart({ points }: { points: PayoutPoint[] }) {
             />
           }
         />
+        {hasCatalog && (
+          <Bar
+            yAxisId="count"
+            dataKey="published"
+            fill="var(--color-published)"
+            fillOpacity={0.4}
+            maxBarSize={14}
+            radius={[2, 2, 0, 0]}
+          />
+        )}
         <Line
           yAxisId="money"
           dataKey="cashCents"
@@ -165,22 +176,22 @@ export function PayoutHistoryChart({ points }: { points: PayoutPoint[] }) {
             activeDot={{ r: 4, stroke: "var(--card)", strokeWidth: 2 }}
           />
         )}
-        {hasPublished && (
+        {hasCatalog && (
           <Line
             yAxisId="count"
-            dataKey="published"
+            dataKey="services"
             type="stepAfter"
-            stroke="var(--color-published)"
+            stroke="var(--color-services)"
             strokeWidth={2}
             strokeDasharray="5 4"
             dot={false}
             activeDot={{ r: 4, stroke: "var(--card)", strokeWidth: 2 }}
           />
         )}
-        {(hasCredits || hasPublished) && (
+        {(hasCredits || hasCatalog) && (
           <ChartLegend content={<ChartLegendContent />} />
         )}
-      </LineChart>
+      </ComposedChart>
     </ChartContainer>
   );
 }

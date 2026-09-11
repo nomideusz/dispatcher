@@ -44,13 +44,15 @@ func isVoidPayout(status string) bool { return voidPayoutStatuses[status] }
 // payoutPoint is one day of the chart. Amounts are cumulative from the start
 // of the selected window, so the line only ever climbs; Count is the running
 // number of payouts behind it. Published is how many workspace templates
-// existed as of that day (see applyPublishedCounts).
+// existed as of that day, and Services is the services those templates
+// define (see applyPublishedCounts).
 type payoutPoint struct {
 	Date         string `json:"date"` // YYYY-MM-DD
 	CashCents    int64  `json:"cashCents"`
 	CreditsCents int64  `json:"creditsCents"`
 	Count        int    `json:"count"`
 	Published    int    `json:"published"`
+	Services     int    `json:"services"`
 }
 
 // payoutWindow summarizes the selected range against the range of equal length
@@ -452,44 +454,47 @@ func buildPayoutHistory(payouts []Payout, lifetime []templateLifetime, days int,
 type templatePublish struct {
 	TemplateID  string
 	PublishedAt time.Time
+	Services    int64
 }
 
 func loadTemplatePublishes(ctx context.Context, db *gorm.DB) ([]templatePublish, error) {
 	var rows []templatePublish
 	err := db.WithContext(ctx).Raw(`
 		SELECT template_id,
-		       COALESCE(MIN(published_at), MIN(sampled_at)) AS published_at
+		       COALESCE(MIN(published_at), MIN(sampled_at)) AS published_at,
+		       MAX(services) AS services
 		FROM template_snapshots
 		WHERE status = 'PUBLISHED'
 		GROUP BY template_id`).Scan(&rows).Error
 	return rows, err
 }
 
-func publishedAsOf(publishes []templatePublish, at time.Time) int {
-	n := 0
+func catalogAsOf(publishes []templatePublish, at time.Time) (published, services int) {
 	for _, p := range publishes {
 		if !p.PublishedAt.After(at) {
-			n++
+			published++
+			services += int(p.Services)
 		}
 	}
-	return n
+	return
 }
 
-// applyPublishedCounts writes how many templates were published by the end
-// of each chart day, so the dashed overlay can be read against earnings.
+// applyPublishedCounts writes catalog size onto each chart day: how many
+// templates were published by then, and how many services those templates
+// define. Services uses the latest known count from publish day onward.
 func applyPublishedCounts(points []payoutPoint, publishes []templatePublish) {
 	for i := range points {
 		day, err := time.Parse(dayKeyLayout, points[i].Date)
 		if err != nil {
 			continue
 		}
-		points[i].Published = publishedAsOf(publishes, day.Add(24*time.Hour-time.Nanosecond))
+		points[i].Published, points[i].Services = catalogAsOf(publishes, day.Add(24*time.Hour-time.Nanosecond))
 	}
 }
 
 func applyPublishedCountsToSeries(points []payoutSeriesPoint, publishes []templatePublish) {
 	for i := range points {
-		points[i].Published = publishedAsOf(publishes, points[i].SampledAt)
+		points[i].Published, points[i].Services = catalogAsOf(publishes, points[i].SampledAt)
 	}
 }
 

@@ -1,4 +1,4 @@
-import { Area, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts";
+import { Area, Bar, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts";
 import {
   type ChartConfig,
   ChartContainer,
@@ -35,20 +35,23 @@ export function PayoutChart({ data }: { data: PayoutSeriesResponse }) {
   const { series, points } = data;
   const origin = points[0]?.values ?? {};
 
-  const hasPublished = points.some((p) => p.published > 0);
+  const hasCatalog = points.some((p) => p.published > 0 || p.services > 0);
   const chartConfig: ChartConfig = {
     ...Object.fromEntries(
       series.map((s, i) => [s.key, { label: s.name, color: seriesColor(s.key, i) }]),
     ),
     published: { label: "Published templates", color: "var(--chart-other)" },
+    services: { label: "Services", color: "var(--chart-3)" },
   };
 
   // Lifetime totals hide the window. Plot what each template added since
-  // the first sample so 7d/30d/90d actually changes the shape. Published
-  // count stays absolute so catalog size can be read against earnings.
+  // the first sample so 7d/30d/90d actually changes the shape. Catalog
+  // counts stay absolute so template and service size can be read against
+  // earnings.
   const rows: Record<string, number | string>[] = points.map((p) => ({
     sampledAt: p.sampledAt,
     published: p.published,
+    services: p.services,
     ...Object.fromEntries(
       series.map((s) => [
         s.key,
@@ -60,9 +63,12 @@ export function PayoutChart({ data }: { data: PayoutSeriesResponse }) {
     series.reduce((sum, s) => sum + (Number(row[s.key]) || 0), 0);
 
   const maxTotal = Math.max(0, ...rows.map(stackTotal));
-  const publishedPeak = Math.max(0, ...points.map((p) => p.published));
+  const countPeak = Math.max(
+    0,
+    ...points.map((p) => Math.max(p.published, p.services)),
+  );
   const yAxisWidth = Math.max(56, fmtUsdTick(maxTotal * 1.15).length * 7 + 14);
-  const countAxisWidth = Math.max(36, fmtNum(publishedPeak).length * 7 + 14);
+  const countAxisWidth = Math.max(36, fmtNum(countPeak).length * 7 + 14);
 
   const first = points[0];
   const last = points[points.length - 1];
@@ -73,7 +79,7 @@ export function PayoutChart({ data }: { data: PayoutSeriesResponse }) {
 
   return (
     <ChartContainer config={chartConfig} className="aspect-auto h-64 w-full">
-      <ComposedChart data={rows} margin={{ top: 8, right: hasPublished ? 8 : 12 }}>
+      <ComposedChart data={rows} margin={{ top: 8, right: hasCatalog ? 8 : 12 }}>
         <CartesianGrid vertical={false} />
         <XAxis
           dataKey="sampledAt"
@@ -93,7 +99,7 @@ export function PayoutChart({ data }: { data: PayoutSeriesResponse }) {
           domain={[0, "auto"]}
           tickFormatter={(v: number) => fmtUsdTick(v)}
         />
-        {hasPublished && (
+        {hasCatalog && (
           <YAxis
             yAxisId="count"
             orientation="right"
@@ -113,13 +119,13 @@ export function PayoutChart({ data }: { data: PayoutSeriesResponse }) {
                 )
               }
               formatter={(value, name, item, index) => {
-                const isCount = name === "published";
+                const isCount = name === "published" || name === "services";
                 return (
                   <>
                     <div
-                      className={`h-2.5 w-1 shrink-0 rounded-[2px] ${isCount ? "border border-current bg-transparent" : ""}`}
+                      className={`h-2.5 w-1 shrink-0 rounded-[2px] ${name === "services" ? "border border-current bg-transparent" : ""}`}
                       style={
-                        isCount
+                        name === "services"
                           ? { color: item.color, borderStyle: "dashed" }
                           : { background: item.color }
                       }
@@ -148,6 +154,16 @@ export function PayoutChart({ data }: { data: PayoutSeriesResponse }) {
             />
           }
         />
+        {hasCatalog && (
+          <Bar
+            yAxisId="count"
+            dataKey="published"
+            fill="var(--color-published)"
+            fillOpacity={0.4}
+            maxBarSize={14}
+            radius={[2, 2, 0, 0]}
+          />
+        )}
         {series.map((s, i) => (
           <Area
             key={s.key}
@@ -163,19 +179,19 @@ export function PayoutChart({ data }: { data: PayoutSeriesResponse }) {
             activeDot={{ r: 4, stroke: "var(--card)", strokeWidth: 2 }}
           />
         ))}
-        {hasPublished && (
+        {hasCatalog && (
           <Line
             yAxisId="count"
-            dataKey="published"
+            dataKey="services"
             type="stepAfter"
-            stroke="var(--color-published)"
+            stroke="var(--color-services)"
             strokeWidth={2}
             strokeDasharray="5 4"
             dot={false}
             activeDot={{ r: 4, stroke: "var(--card)", strokeWidth: 2 }}
           />
         )}
-        {(series.length > 1 || hasPublished) && (
+        {(series.length > 1 || hasCatalog) && (
           <ChartLegend content={<ChartLegendContent />} />
         )}
       </ComposedChart>

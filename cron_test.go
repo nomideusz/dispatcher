@@ -83,12 +83,12 @@ func TestLoadTemplatePublishesPrefersCreatedAtOverFirstSeen(t *testing.T) {
 	created := time.Date(2025, time.January, 15, 0, 0, 0, 0, time.UTC)
 	seen := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
 	if err := gorm.G[TemplateSnapshot](db).Create(t.Context(), &TemplateSnapshot{
-		SampledAt: seen, TemplateID: "with-date", Status: "PUBLISHED", PublishedAt: &created,
+		SampledAt: seen, TemplateID: "with-date", Status: "PUBLISHED", PublishedAt: &created, Services: 3,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := gorm.G[TemplateSnapshot](db).Create(t.Context(), &TemplateSnapshot{
-		SampledAt: seen, TemplateID: "legacy", Status: "PUBLISHED",
+		SampledAt: seen, TemplateID: "legacy", Status: "PUBLISHED", Services: 1,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -111,6 +111,13 @@ func TestLoadTemplatePublishesPrefersCreatedAtOverFirstSeen(t *testing.T) {
 	}
 	if !byID["legacy"].Equal(seen) {
 		t.Errorf("legacy = %v, want first published sample", byID["legacy"])
+	}
+	svc := map[string]int64{}
+	for _, p := range got {
+		svc[p.TemplateID] = p.Services
+	}
+	if svc["with-date"] != 3 || svc["legacy"] != 1 {
+		t.Errorf("services = %v, want with-date 3 and legacy 1", svc)
 	}
 	if _, ok := byID["draft"]; ok {
 		t.Errorf("unpublished draft was counted")

@@ -193,23 +193,25 @@ func TestApplyPublishedCountsStepsOnPublishDates(t *testing.T) {
 	at := func(d, h int) time.Time { return time.Date(2026, 8, d, h, 0, 0, 0, time.UTC) }
 
 	applyPublishedCounts(got.Points, []templatePublish{
-		{TemplateID: "a", PublishedAt: at(20, 12)},
-		{TemplateID: "b", PublishedAt: at(26, 15)},
-		{TemplateID: "c", PublishedAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)},
+		{TemplateID: "a", PublishedAt: at(20, 12), Services: 3},
+		{TemplateID: "b", PublishedAt: at(26, 15), Services: 1},
+		{TemplateID: "c", PublishedAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), Services: 4},
 	})
 
-	want := map[string]int{
-		"2026-08-24": 1,
-		"2026-08-25": 1,
-		"2026-08-26": 2,
-		"2026-08-27": 2,
-		"2026-08-28": 2,
-		"2026-08-29": 2,
-		"2026-08-30": 2,
+	wantPub := map[string]int{
+		"2026-08-24": 1, "2026-08-25": 1, "2026-08-26": 2,
+		"2026-08-27": 2, "2026-08-28": 2, "2026-08-29": 2, "2026-08-30": 2,
+	}
+	wantSvc := map[string]int{
+		"2026-08-24": 3, "2026-08-25": 3, "2026-08-26": 4,
+		"2026-08-27": 4, "2026-08-28": 4, "2026-08-29": 4, "2026-08-30": 4,
 	}
 	for _, p := range got.Points {
-		if p.Published != want[p.Date] {
-			t.Errorf("%s published = %d, want %d", p.Date, p.Published, want[p.Date])
+		if p.Published != wantPub[p.Date] {
+			t.Errorf("%s published = %d, want %d", p.Date, p.Published, wantPub[p.Date])
+		}
+		if p.Services != wantSvc[p.Date] {
+			t.Errorf("%s services = %d, want %d", p.Date, p.Services, wantSvc[p.Date])
 		}
 	}
 }

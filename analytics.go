@@ -27,6 +27,7 @@ type payoutSeriesPoint struct {
 	SampledAt time.Time          `json:"sampledAt"`
 	Values    map[string]float64 `json:"values"`
 	Published int                `json:"published"`
+	Services  int                `json:"services"`
 }
 
 type payoutSeriesResponse struct {

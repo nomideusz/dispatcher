@@ -95,8 +95,8 @@ export function PayoutHistory() {
         <CardHeader>
           <CardTitle>Withdrawals</CardTitle>
           <CardDescription>
-            Cash and credits out. The dashed line is how many templates were
-            published by that day.
+            Cash and credits out. Bars are published templates; the dashed
+            line is their services.
           </CardDescription>
           <CardAction className="flex gap-1">
             {RANGES.map((r) => (

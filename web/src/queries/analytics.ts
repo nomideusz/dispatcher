@@ -14,6 +14,7 @@ export interface PayoutSeriesPoint {
   sampledAt: string;
   values: Record<string, number>;
   published: number;
+  services: number;
 }
 
 export interface PayoutSeriesResponse {

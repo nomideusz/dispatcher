@@ -69,9 +69,29 @@ export interface PayoutTemplateTotal {
   payers: number;
   payersPrevious: number;
   payerCents: number;
+  /** Payer chains as of now: one invoice so far / paid again on cycle /
+   * a return fell due within the trailing cycle and never came. */
+  new: number;
+  returning: number;
+  lapsed: number;
   /** All-time payout from the latest snapshot; lists templates whose
    * earnings predate tracking. */
   lifetimeCents: number;
+}
+
+/** One deployer's run of invoices for one template, linked by billing
+ * rhythm: invoices exactly a calendar month or 30 days apart, within
+ * minutes, are the same deployer. */
+export interface PayerChain {
+  templateId: string;
+  templateName: string;
+  firstAt: string;
+  lastAt: string;
+  nextDueAt: string;
+  invoices: number;
+  totalCents: number;
+  lastCents: number;
+  status: "new" | "returning" | "lapsed";
 }
 
 export interface PayoutHistory {
@@ -83,6 +103,8 @@ export interface PayoutHistory {
   totalRows: number;
   /** The window's credit payouts per template, largest earner first. */
   byTemplate: PayoutTemplateTotal[];
+  /** Every payer chain, returning first. */
+  payers: PayerChain[];
 }
 
 /** Served from Dispatcher's own database — the collector mirrors Railway's

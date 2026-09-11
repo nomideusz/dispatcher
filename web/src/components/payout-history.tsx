@@ -20,6 +20,7 @@ import {
 import { Skeleton } from "~/components/ui/skeleton";
 import { fmtCents, fmtNum, fmtSignedPct } from "~/lib/format";
 import {
+  type PayerChain,
   type Payout,
   PSEUDO_TEMPLATE_IDS,
   payoutHistoryQuery,
@@ -131,15 +132,20 @@ export function PayoutHistory() {
                   trailing 30 days whatever the range: Railway pays out one row
                   per billed service, so a burst of rows is one deployer&apos;s
                   invoice, and one billing cycle of invoices counts each paying
-                  deployer once. Amount follows the selected range; lifetime is
-                  the template&apos;s all-time payout, which is how templates
-                  that only earned before tracking still appear.
+                  deployer once. New, returning and lapsed follow each payer by
+                  billing rhythm: invoices of one template exactly a month or 30
+                  days apart, to within minutes, are the same deployer. Amount
+                  follows the selected range; lifetime is the template&apos;s
+                  all-time payout, which is how templates that only earned
+                  before tracking still appear.
                 </caption>
                 <thead>
                   <tr className="border-b text-left text-xs text-muted-foreground">
                     <th className="pb-2 font-medium">Template</th>
                     <th className="pb-2 pl-3 text-right font-medium">Payers 30d</th>
-                    <th className="pb-2 pl-3 text-right font-medium">vs prev. 30d</th>
+                    <th className="pb-2 pl-3 text-right font-medium">New</th>
+                    <th className="pb-2 pl-3 text-right font-medium">Returning</th>
+                    <th className="pb-2 pl-3 text-right font-medium">Lapsed</th>
                     <th className="pb-2 pl-3 text-right font-medium">$/payer</th>
                     {days <= 7 && (
                       <th className="pb-2 pl-3 text-right font-medium">Invoices {days}d</th>
@@ -161,18 +167,12 @@ export function PayoutHistory() {
                         {t.templateName}
                       </td>
                       <td className="py-2 pl-3 text-right tabular-nums">{fmtNum(t.payers)}</td>
-                      <td
-                        className={`py-2 pl-3 text-right tabular-nums ${
-                          t.payers > t.payersPrevious
-                            ? "text-(--viz-up)"
-                            : t.payers < t.payersPrevious
-                              ? "text-(--viz-down)"
-                              : "text-muted-foreground"
-                        }`}
-                      >
-                        {t.payers === t.payersPrevious
-                          ? "="
-                          : `${t.payers > t.payersPrevious ? "+" : ""}${t.payers - t.payersPrevious}`}
+                      <td className="py-2 pl-3 text-right tabular-nums">{t.new || "—"}</td>
+                      <td className={`py-2 pl-3 text-right tabular-nums ${t.returning ? "text-(--viz-up)" : ""}`}>
+                        {t.returning || "—"}
+                      </td>
+                      <td className={`py-2 pl-3 text-right tabular-nums ${t.lapsed ? "text-(--viz-down)" : ""}`}>
+                        {t.lapsed || "—"}
                       </td>
                       <td className="py-2 pl-3 text-right tabular-nums">
                         {t.payers > 0 ? fmtCents(Math.round(t.payerCents / t.payers)) : "—"}
@@ -185,6 +185,34 @@ export function PayoutHistory() {
                         {t.lifetimeCents > 0 ? fmtCents(t.lifetimeCents) : "—"}
                       </td>
                     </tr>
+                  ))}
+                </tbody>
+              </table>
+            </CardContent>
+          )}
+
+          {data.payers.length > 0 && (
+            <CardContent className="max-h-[24rem] overflow-auto">
+              <table className="w-full text-sm">
+                <caption className="pb-2 text-left text-xs text-muted-foreground">
+                  Payers, one line per deployer. Returning means they paid again
+                  on their billing date; lapsed means a due invoice never came.
+                </caption>
+                <thead>
+                  <tr className="border-b text-left text-xs text-muted-foreground">
+                    <th className="pb-2 font-medium">Template</th>
+                    <th className="pb-2 pl-3 font-medium">Status</th>
+                    <th className="pb-2 pl-3 font-medium">First</th>
+                    <th className="pb-2 pl-3 font-medium">Last</th>
+                    <th className="pb-2 pl-3 font-medium">Next due</th>
+                    <th className="pb-2 pl-3 text-right font-medium">Invoices</th>
+                    <th className="pb-2 pl-3 text-right font-medium">Last amount</th>
+                    <th className="pb-2 pl-3 text-right font-medium">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.payers.map((c) => (
+                    <PayerRow key={`${c.templateId}-${c.firstAt}`} chain={c} />
                   ))}
                 </tbody>
               </table>
@@ -280,6 +308,37 @@ function Figure({
       <div className="text-xl font-semibold">{value}</div>
       {note && <div className="text-xs text-muted-foreground">{note}</div>}
     </div>
+  );
+}
+
+function PayerRow({ chain }: { chain: PayerChain }) {
+  const tone =
+    chain.status === "returning"
+      ? "text-(--viz-up)"
+      : chain.status === "lapsed"
+        ? "text-(--viz-down)"
+        : "text-muted-foreground";
+  return (
+    <tr className="border-b border-border/50 last:border-0">
+      <td
+        className={
+          PSEUDO_TEMPLATE_IDS.has(chain.templateId)
+            ? "py-2 text-muted-foreground"
+            : "py-2"
+        }
+      >
+        {chain.templateName}
+      </td>
+      <td className={`py-2 pl-3 ${tone}`}>{chain.status}</td>
+      <td className="whitespace-nowrap py-2 pl-3 tabular-nums">{dayFmt.format(new Date(chain.firstAt))}</td>
+      <td className="whitespace-nowrap py-2 pl-3 tabular-nums">{dayFmt.format(new Date(chain.lastAt))}</td>
+      <td className="whitespace-nowrap py-2 pl-3 tabular-nums text-muted-foreground">
+        {chain.status === "lapsed" ? "—" : dayFmt.format(new Date(chain.nextDueAt))}
+      </td>
+      <td className="py-2 pl-3 text-right tabular-nums">{fmtNum(chain.invoices)}</td>
+      <td className="py-2 pl-3 text-right tabular-nums">{fmtCents(chain.lastCents)}</td>
+      <td className="py-2 pl-3 text-right tabular-nums">{fmtCents(chain.totalCents)}</td>
+    </tr>
   );
 }
 

@@ -131,12 +131,14 @@ func TestBuildPayoutHistoryBreaksTheWindowDownByTemplate(t *testing.T) {
 	}
 	got := buildPayoutHistory(payouts, lifetime, 30, now)
 	want := []payoutTemplateTotal{
-		{TemplateID: "twenty", TemplateName: "Twenty CRM", Count: 5, Cents: 345, Invoices: 2, InvoicesPrevious: 1, Payers: 2, PayersPrevious: 1, PayerCents: 345, LifetimeCents: 5239},
-		{TemplateID: "owncast", TemplateName: "Owncast", Count: 1, Cents: 204, Invoices: 1, Payers: 1, PayerCents: 204},
-		{TemplateID: "pending", TemplateName: "pending", Count: 1, Cents: 5, Invoices: 1, Payers: 1, PayerCents: 5},
-		{TemplateID: unattributedTemplateID, TemplateName: unattributedTemplateID, Count: 1, Cents: 3, Invoices: 1, Payers: 1, PayerCents: 3},
+		// twenty's 40-days-ago and 10-days-ago invoices are exactly 30 days apart: one returning payer; the fresh one is new.
+		{TemplateID: "twenty", TemplateName: "Twenty CRM", Count: 5, Cents: 345, Invoices: 2, InvoicesPrevious: 1, Payers: 2, PayersPrevious: 1, PayerCents: 345, New: 1, Returning: 1, LifetimeCents: 5239},
+		{TemplateID: "owncast", TemplateName: "Owncast", Count: 1, Cents: 204, Invoices: 1, Payers: 1, PayerCents: 204, New: 1},
+		{TemplateID: "pending", TemplateName: "pending", Count: 1, Cents: 5, Invoices: 1, Payers: 1, PayerCents: 5, New: 1},
+		{TemplateID: unattributedTemplateID, TemplateName: unattributedTemplateID, Count: 1, Cents: 3, Invoices: 1, Payers: 1, PayerCents: 3, New: 1},
 		{TemplateID: "azuracast", TemplateName: "AzuraCast", LifetimeCents: 986},
-		{TemplateID: "dify", TemplateName: "Dify", InvoicesPrevious: 1, PayersPrevious: 1},
+		// dify's only invoice fell due 10 days ago and nothing came: lapsed this cycle.
+		{TemplateID: "dify", TemplateName: "Dify", InvoicesPrevious: 1, PayersPrevious: 1, Lapsed: 1},
 	}
 	if len(got.ByTemplate) != len(want) {
 		t.Fatalf("byTemplate = %+v, want %+v", got.ByTemplate, want)
@@ -240,5 +242,46 @@ func TestDiffPayoutsOnlyWritesWhatChanged(t *testing.T) {
 	}
 	if len(updates) != 1 || updates[0].ID != pending.ID || updates[0].Status != "COMPLETED" {
 		t.Errorf("updates = %+v, want only the pending row settling", updates)
+	}
+}
+
+func TestChainPayersLinksInvoicesOnBillingCycle(t *testing.T) {
+	at := func(s string) time.Time {
+		v, err := time.Parse("2006-01-02 15:04", s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	invs := []invoice{
+		{Start: at("2026-07-25 00:08"), Cents: 197}, {Start: at("2026-08-25 00:07"), Cents: 417}, // calendar month, -1 min
+		{Start: at("2026-08-11 15:11"), Cents: 371}, {Start: at("2026-09-10 14:58"), Cents: 261}, // 30 days, -13 min
+		{Start: at("2026-08-03 14:46"), Cents: 210}, {Start: at("2026-09-02 12:58"), Cents: 836}, // 1h48m off: different deployers
+	}
+	now := at("2026-09-11 12:00")
+	chains := chainPayers("twenty", "Twenty", invs, now)
+	byFirst := map[string]payerChain{}
+	for _, c := range chains {
+		byFirst[c.FirstAt.Format("01-02 15:04")] = c
+	}
+	if len(chains) != 4 {
+		t.Fatalf("want 4 chains (2 returning, 2 singles), got %d: %+v", len(chains), chains)
+	}
+	if c := byFirst["07-25 00:08"]; c.Invoices != 2 || c.Status != "returning" || c.TotalCents != 614 || c.LastCents != 417 {
+		t.Errorf("calendar-month pair not chained: %+v", c)
+	}
+	if c := byFirst["08-11 15:11"]; c.Invoices != 2 || c.Status != "returning" {
+		t.Errorf("30-day pair not chained: %+v", c)
+	}
+	// Aug 3 was due Sep 3 and nothing came within grace by Sep 11: lapsed. Sep 2 is a new payer.
+	if c := byFirst["08-03 14:46"]; c.Invoices != 1 || c.Status != "lapsed" || !c.NextDueAt.Equal(at("2026-09-03 14:46")) {
+		t.Errorf("unmatched old invoice should be lapsed: %+v", c)
+	}
+	if c := byFirst["09-02 12:58"]; c.Invoices != 1 || c.Status != "new" {
+		t.Errorf("unmatched recent invoice should be new: %+v", c)
+	}
+	// Within grace the same chain is still "new", not lapsed.
+	if c := chainPayers("t", "T", invs[4:5], at("2026-09-05 12:00"))[0]; c.Status != "new" {
+		t.Errorf("want new within grace, got %s", c.Status)
 	}
 }

@@ -110,11 +110,50 @@ type payoutTemplateTotal struct {
 	Payers         int   `json:"payers"`
 	PayersPrevious int   `json:"payersPrevious"`
 	PayerCents     int64 `json:"payerCents"`
+	// New, Returning and Lapsed count payer chains (see chainPayers) as of
+	// now: new = one invoice so far, returning = paid again on cycle, lapsed
+	// = a return fell due within the trailing cycle and never came.
+	New       int `json:"new"`
+	Returning int `json:"returning"`
+	Lapsed    int `json:"lapsed"`
 	// LifetimeCents is the template's all-time payout from the latest
 	// snapshot. It is what lists a template whose earnings all predate
 	// tracking, and it keeps the breakdown honest against the "before
 	// tracking" line.
 	LifetimeCents int64 `json:"lifetimeCents"`
+}
+
+// payerChain is one deployer's run of invoices for one template, linked by
+// billing rhythm: Railway invoices a customer on a fixed cadence at a fixed
+// time of day, so two invoices of the same template exactly one calendar month
+// or thirty days apart, within payerCycleTolerance, are the same deployer
+// (observed: Jul 25 00:08 → Aug 25 00:07, Aug 2 15:13 → Sep 2 15:14, and a
+// 30-day pair 13 minutes off, while unrelated invoices were hours off). A
+// missed cycle ends the chain; paying again later starts a new one.
+type payerChain struct {
+	TemplateID   string    `json:"templateId"`
+	TemplateName string    `json:"templateName"`
+	FirstAt      time.Time `json:"firstAt"`
+	LastAt       time.Time `json:"lastAt"`
+	NextDueAt    time.Time `json:"nextDueAt"`
+	Invoices     int       `json:"invoices"`
+	TotalCents   int64     `json:"totalCents"`
+	LastCents    int64     `json:"lastCents"`
+	// Status is "new" (one invoice, next not yet due), "returning" (paid on
+	// cycle at least once, next not yet due) or "lapsed" (a due invoice never
+	// came, allowing payerLapseGrace).
+	Status string `json:"status"`
+}
+
+const (
+	payerCycleTolerance = 20 * time.Minute
+	payerLapseGrace     = 3 * 24 * time.Hour
+)
+
+// invoice is one deployer's batch of service rows for one template.
+type invoice struct {
+	Start time.Time
+	Cents int64
 }
 
 // templateLifetime is one template's all-time payout as of the latest
@@ -145,6 +184,8 @@ type payoutHistoryResponse struct {
 	// ByTemplate breaks the window's credit payouts down per template, largest
 	// earner first.
 	ByTemplate []payoutTemplateTotal `json:"byTemplate"`
+	// Payers lists every payer chain (see payerChain), returning first.
+	Payers []payerChain `json:"payers"`
 }
 
 // handlePayoutHistory serves the payout dashboard straight from DuckDB.
@@ -189,6 +230,7 @@ func buildPayoutHistory(payouts []Payout, lifetime []templateLifetime, days int,
 		Points:     []payoutPoint{},
 		Payouts:    []Payout{},
 		ByTemplate: []payoutTemplateTotal{},
+		Payers:     []payerChain{},
 		Window:     payoutWindow{Days: days},
 		TotalRows:  len(payouts),
 	}
@@ -216,6 +258,7 @@ func buildPayoutHistory(payouts []Payout, lifetime []templateLifetime, days int,
 	perDayCredits := map[string]int64{}
 	perDayCount := map[string]int{}
 	byTemplate := map[string]*payoutTemplateTotal{}
+	invoices := map[string][]invoice{} // per template key, newest first; Start = earliest row of the batch
 	cycleStart := today.AddDate(0, 0, -(payerCycleDays - 1))
 	previousCycleStart := cycleStart.AddDate(0, 0, -payerCycleDays)
 	lastCreditAt := map[string]time.Time{} // per template key, for batch detection
@@ -288,6 +331,12 @@ func buildPayoutHistory(payouts []Payout, lifetime []templateLifetime, days int,
 		}
 		t := byTemplate[key]
 		isNew := newInvoice(key, at)
+		if isNew {
+			invoices[key] = append(invoices[key], invoice{Start: at, Cents: p.AmountCents})
+		} else {
+			last := &invoices[key][len(invoices[key])-1]
+			last.Start, last.Cents = at, last.Cents+p.AmountCents
+		}
 		switch {
 		case !at.Before(windowStart):
 			t.Count++
@@ -317,6 +366,33 @@ func buildPayoutHistory(payouts []Payout, lifetime []templateLifetime, days int,
 		pct := float64(resp.Window.TotalCents-resp.Window.PreviousCents) / float64(resp.Window.PreviousCents) * 100
 		resp.Window.ChangePct = &pct
 	}
+	for key, t := range byTemplate {
+		chains := chainPayers(key, t.TemplateName, invoices[key], now)
+		for _, c := range chains {
+			switch c.Status {
+			case "new":
+				t.New++
+			case "returning":
+				t.Returning++
+			case "lapsed":
+				if !c.NextDueAt.Before(cycleStart) {
+					t.Lapsed++
+				}
+			}
+		}
+		resp.Payers = append(resp.Payers, chains...)
+	}
+	sort.Slice(resp.Payers, func(i, j int) bool {
+		a, b := resp.Payers[i], resp.Payers[j]
+		rank := map[string]int{"returning": 0, "new": 1, "lapsed": 2}
+		if rank[a.Status] != rank[b.Status] {
+			return rank[a.Status] < rank[b.Status]
+		}
+		if a.Invoices != b.Invoices {
+			return a.Invoices > b.Invoices
+		}
+		return a.LastAt.After(b.LastAt)
+	})
 	for _, l := range lifetime {
 		if byTemplate[l.TemplateID] == nil {
 			byTemplate[l.TemplateID] = &payoutTemplateTotal{TemplateID: l.TemplateID, TemplateName: l.Name}
@@ -353,6 +429,52 @@ func buildPayoutHistory(payouts []Payout, lifetime []templateLifetime, days int,
 		})
 	}
 	return resp
+}
+
+// onCycle reports whether `next` falls one billing cycle after `prev`: exactly
+// one calendar month or exactly thirty days later, within payerCycleTolerance.
+func onCycle(prev, next time.Time) bool {
+	for _, due := range []time.Time{prev.AddDate(0, 1, 0), prev.Add(payerCycleDays * 24 * time.Hour)} {
+		if d := next.Sub(due); d > -payerCycleTolerance && d < payerCycleTolerance {
+			return true
+		}
+	}
+	return false
+}
+
+// chainPayers links a template's invoices into payer chains (see payerChain)
+// and grades each chain as of now. invoices may be in any order.
+func chainPayers(templateID, name string, invs []invoice, now time.Time) []payerChain {
+	sorted := append([]invoice(nil), invs...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Start.Before(sorted[j].Start) })
+	chains := []*payerChain{}
+	for _, inv := range sorted {
+		var best *payerChain
+		for _, c := range chains {
+			if onCycle(c.LastAt, inv.Start) && (best == nil || c.LastAt.After(best.LastAt)) {
+				best = c
+			}
+		}
+		if best == nil {
+			chains = append(chains, &payerChain{TemplateID: templateID, TemplateName: name, FirstAt: inv.Start, LastAt: inv.Start, Invoices: 1, TotalCents: inv.Cents, LastCents: inv.Cents})
+			continue
+		}
+		best.LastAt, best.Invoices, best.TotalCents, best.LastCents = inv.Start, best.Invoices+1, best.TotalCents+inv.Cents, inv.Cents
+	}
+	out := make([]payerChain, 0, len(chains))
+	for _, c := range chains {
+		c.NextDueAt = c.LastAt.AddDate(0, 1, 0)
+		switch {
+		case now.After(c.NextDueAt.Add(payerLapseGrace)):
+			c.Status = "lapsed"
+		case c.Invoices > 1:
+			c.Status = "returning"
+		default:
+			c.Status = "new"
+		}
+		out = append(out, *c)
+	}
+	return out
 }
 
 // payoutRowID is the primary key a Railway record is stored under. Cash

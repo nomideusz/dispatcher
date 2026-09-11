@@ -134,7 +134,7 @@ export function NotificationsDialog() {
     <>
       <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
         <Bell />
-        Notifications
+        <span className="hidden sm:inline">Notifications</span>
       </Button>
       <Dialog open={open} onOpenChange={handleOpen}>
         <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-xl">

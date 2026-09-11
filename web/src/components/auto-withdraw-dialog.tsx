@@ -47,7 +47,12 @@ export function AutoWithdraw() {
   return (
     <>
       <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
-        {enabled ? "Auto-withdraw · On" : "Auto-withdraw"}
+        <span className="sm:hidden">{enabled ? "Auto · On" : "Auto"}</span>
+        <span className="hidden sm:inline">
+          {enabled
+            ? `Auto-withdraw · ${SCHEDULE_PRESETS.find((p) => p.spec === schedule)?.label ?? "Custom"}`
+            : "Auto-withdraw"}
+        </span>
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

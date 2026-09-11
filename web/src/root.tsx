@@ -82,8 +82,8 @@ export default function App() {
 export function HydrateFallback() {
   return (
     <>
-      <header className="border-b bg-background">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
+      <header className="sticky top-0 z-20 border-b bg-background/85 backdrop-blur-sm">
+        <div className="shell flex items-center justify-between py-3">
           <Skeleton className="h-5 w-24" />
           <div className="flex items-center gap-3">
             <Skeleton className="size-6 rounded-full" />
@@ -91,17 +91,20 @@ export function HydrateFallback() {
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-5xl space-y-6 p-6">
+      <main className="shell space-y-5 py-6">
         <div className="space-y-2">
           <Skeleton className="h-6 w-28" />
-          <Skeleton className="h-4 w-48" />
+          <Skeleton className="h-4 w-56" />
         </div>
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="grid grid-cols-2 overflow-hidden rounded-xl lg:grid-cols-4">
           {Array.from({ length: 4 }, (_, i) => (
-            <Skeleton key={i} className="h-24 w-full rounded-xl" />
+            <Skeleton key={i} className="h-24 w-full rounded-none" />
           ))}
         </div>
-        <Skeleton className="h-80 w-full rounded-xl" />
+        <div className="grid gap-4 lg:grid-cols-12">
+          <Skeleton className="h-80 w-full rounded-xl lg:col-span-8" />
+          <Skeleton className="h-80 w-full rounded-xl lg:col-span-4" />
+        </div>
       </main>
     </>
   );

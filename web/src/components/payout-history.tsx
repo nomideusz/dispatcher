@@ -1,24 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
-import {
-  ArrowDownRight,
-  ArrowUpRight,
-  CircleAlert,
-  CircleCheck,
-  Clock,
-} from "lucide-react";
-import { useState } from "react";
+import { CircleAlert, CircleCheck, Clock } from "lucide-react";
 import { PayoutHistoryChart } from "~/components/payout-history-chart";
-import { Button } from "~/components/ui/button";
+import { Delta } from "~/components/delta";
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
-import { fmtCents, fmtNum, fmtSignedPct } from "~/lib/format";
+import { fmtCents, fmtNum } from "~/lib/format";
 import { type Payout, payoutHistoryQuery } from "~/queries/payouts";
 
 const dayFmt = new Intl.DateTimeFormat("en-US", {
@@ -26,39 +18,18 @@ const dayFmt = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
   year: "numeric",
 });
-const monthLong = new Intl.DateTimeFormat("en-US", {
-  month: "long",
-  year: "numeric",
-});
 
-/** Matches the ranges on the Total payout chart, so the two read as one pair
- * of controls rather than two unrelated pickers. */
-const RANGES = [7, 30, 90] as const;
-
-export function PayoutHistory() {
-  const [days, setDays] = useState<number>(30);
+export function PayoutHistory({ days }: { days: number }) {
   const history = useQuery(payoutHistoryQuery(days));
   const data = history.data;
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Payouts</CardTitle>
+        <CardTitle>Withdrawals</CardTitle>
         <CardDescription>
-          Withdrawals from your Railway balance, cumulative over the range
+          Cash and credits that left your Railway balance · last {days}d
         </CardDescription>
-        <CardAction className="flex gap-1">
-          {RANGES.map((r) => (
-            <Button
-              key={r}
-              size="xs"
-              variant={r === days ? "secondary" : "ghost"}
-              onClick={() => setDays(r)}
-            >
-              {r}d
-            </Button>
-          ))}
-        </CardAction>
       </CardHeader>
 
       {history.isPending && (
@@ -88,41 +59,35 @@ export function PayoutHistory() {
       )}
 
       {data && data.totalRows > 0 && (
-        <>
-          <CardContent className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
-            <WindowFigure days={days} data={data} />
-            <Figure
-              label="Total paid out"
-              value={fmtCents(data.totals.lifetimeCents)}
-              note={
-                data.totals.firstPayoutAt
-                  ? `since ${monthLong.format(new Date(data.totals.firstPayoutAt))}`
-                  : undefined
-              }
-            />
-            {data.totals.pendingCount > 0 && (
-              <Figure
-                label="In flight"
-                value={fmtCents(data.totals.pendingCents)}
-                note={`${data.totals.pendingCount} pending`}
-              />
-            )}
-          </CardContent>
-
-          <CardContent>
+        <div className="grid lg:grid-cols-12">
+          <CardContent className="space-y-4 lg:col-span-7">
+            <div className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
+              <WindowFigure days={days} data={data} />
+              {data.totals.pendingCount > 0 && (
+                <div>
+                  <div className="text-xs text-muted-foreground">In flight</div>
+                  <div className="text-xl font-semibold">
+                    {fmtCents(data.totals.pendingCents)}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {data.totals.pendingCount} pending
+                  </div>
+                </div>
+              )}
+            </div>
             {data.window.count > 0 ? (
               <PayoutHistoryChart points={data.points} />
             ) : (
               <p className="py-8 text-center text-sm text-muted-foreground">
-                No payouts in the last {days} days.
+                No withdrawals in the last {days} days.
               </p>
             )}
           </CardContent>
 
-          <CardContent className="overflow-x-auto">
+          <CardContent className="overflow-x-auto lg:col-span-5 lg:border-l">
             <table className="w-full text-sm">
               <caption className="sr-only">
-                The {data.payouts.length} most recent payouts, newest first
+                The {data.payouts.length} most recent withdrawals, newest first
               </caption>
               <thead>
                 <tr className="border-b text-left text-xs text-muted-foreground">
@@ -141,18 +106,16 @@ export function PayoutHistory() {
             {data.totalRows > data.payouts.length && (
               <p className="pt-3 text-xs text-muted-foreground">
                 Showing the {data.payouts.length} most recent of{" "}
-                {fmtNum(data.totalRows)} payouts.
+                {fmtNum(data.totalRows)} withdrawals.
               </p>
             )}
           </CardContent>
-        </>
+        </div>
       )}
     </Card>
   );
 }
 
-/** The headline for the selected range, with the same "vs previous period"
- * treatment the dashboard's stat tiles use. */
 function WindowFigure({
   days,
   data,
@@ -163,49 +126,15 @@ function WindowFigure({
   const { totalCents, changePct, count } = data.window;
   return (
     <div>
-      <div className="text-xs text-muted-foreground">Paid out · last {days}d</div>
+      <div className="text-xs text-muted-foreground">This window</div>
       <div className="text-xl font-semibold">{fmtCents(totalCents)}</div>
       {changePct != null ? (
-        <div className="flex items-center gap-1 text-xs">
-          <span
-            className={`flex items-center gap-0.5 font-medium ${
-              changePct >= 0 ? "text-(--viz-up)" : "text-(--viz-down)"
-            }`}
-          >
-            {changePct >= 0 ? (
-              <ArrowUpRight className="size-3.5" />
-            ) : (
-              <ArrowDownRight className="size-3.5" />
-            )}
-            {fmtSignedPct(changePct)}
-          </span>
-          <span className="text-muted-foreground">vs previous {days}d</span>
-        </div>
+        <Delta pct={changePct} suffix={`vs previous ${days}d`} />
       ) : (
         <div className="text-xs text-muted-foreground">
-          {count} {count === 1 ? "payout" : "payouts"}
+          {count} {count === 1 ? "withdrawal" : "withdrawals"}
         </div>
       )}
-    </div>
-  );
-}
-
-/** Inline stat figure. Proportional (not tabular) digits — these sit alone,
- * not in a column, and equal-width digits read loose at this size. */
-function Figure({
-  label,
-  value,
-  note,
-}: {
-  label: string;
-  value: string;
-  note?: string;
-}) {
-  return (
-    <div>
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-xl font-semibold">{value}</div>
-      {note && <div className="text-xs text-muted-foreground">{note}</div>}
     </div>
   );
 }

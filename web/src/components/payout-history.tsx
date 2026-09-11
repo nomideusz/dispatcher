@@ -59,13 +59,21 @@ const monthLong = new Intl.DateTimeFormat("en-US", {
  * of controls rather than two unrelated pickers. */
 const RANGES = [7, 30, 90] as const;
 
-/** Two readings of the same payer list: who matters (rank by lifetime
- * total, the server's order) and who is alive (returning, then new, then
- * lapsed; more invoices first; most recent first). */
-type PayerSort = "rank" | "status";
+/** Three readings of the same payer list: who matters (rank by lifetime
+ * total, the server's order), who is alive (returning, then new, then
+ * lapsed; more invoices first; most recent first), and who is due next
+ * (soonest next-due first; lapsed last, since nothing is expected). */
+type PayerSort = "rank" | "status" | "due";
 const STATUS_ORDER: Record<PayerChain["status"], number> = { returning: 0, new: 1, lapsed: 2 };
 function sortPayers(payers: PayerChain[], by: PayerSort): PayerChain[] {
   if (by === "rank") return payers;
+  if (by === "due") {
+    return [...payers].sort(
+      (a, b) =>
+        Number(a.status === "lapsed") - Number(b.status === "lapsed") ||
+        a.nextDueAt.localeCompare(b.nextDueAt),
+    );
+  }
   return [...payers].sort(
     (a, b) =>
       STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
@@ -73,6 +81,7 @@ function sortPayers(payers: PayerChain[], by: PayerSort): PayerChain[] {
       b.lastAt.localeCompare(a.lastAt),
   );
 }
+const PAYER_SORT_LABELS: Record<PayerSort, string> = { rank: "By total", status: "By status", due: "By next due" };
 
 export function PayoutHistory() {
   const [days, setDays] = useState<number>(30);
@@ -238,14 +247,14 @@ export function PayoutHistory() {
                       date; lapsed means a due invoice never came.
                     </span>
                     <span className="flex gap-1">
-                      {(["rank", "status"] as const).map((s) => (
+                      {(["rank", "status", "due"] as const).map((s) => (
                         <Button
                           key={s}
                           size="xs"
                           variant={s === payerSort ? "secondary" : "ghost"}
                           onClick={() => setPayerSort(s)}
                         >
-                          {s === "rank" ? "By total" : "By status"}
+                          {PAYER_SORT_LABELS[s]}
                         </Button>
                       ))}
                     </span>

@@ -1,4 +1,4 @@
-import { Area, Bar, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts";
+import { Area, Bar, CartesianGrid, ComposedChart, XAxis, YAxis } from "recharts";
 import {
   type ChartConfig,
   ChartContainer,
@@ -41,17 +41,17 @@ export function PayoutChart({ data }: { data: PayoutSeriesResponse }) {
       series.map((s, i) => [s.key, { label: s.name, color: seriesColor(s.key, i) }]),
     ),
     published: { label: "Published templates", color: "var(--chart-other)" },
-    services: { label: "Services", color: "var(--chart-3)" },
+    serviceExtra: { label: "Services", color: "var(--chart-3)" },
   };
 
   // Lifetime totals hide the window. Plot what each template added since
   // the first sample so 7d/30d/90d actually changes the shape. Catalog
-  // counts stay absolute so template and service size can be read against
-  // earnings.
+  // counts stay absolute: one stacked bar, templates under extra services.
   const rows: Record<string, number | string>[] = points.map((p) => ({
     sampledAt: p.sampledAt,
     published: p.published,
     services: p.services,
+    serviceExtra: Math.max(0, p.services - p.published),
     ...Object.fromEntries(
       series.map((s) => [
         s.key,
@@ -119,23 +119,25 @@ export function PayoutChart({ data }: { data: PayoutSeriesResponse }) {
                 )
               }
               formatter={(value, name, item, index) => {
-                const isCount = name === "published" || name === "services";
+                const isCount = name === "published" || name === "serviceExtra";
                 return (
                   <>
                     <div
-                      className={`h-2.5 w-1 shrink-0 rounded-[2px] ${name === "services" ? "border border-current bg-transparent" : ""}`}
-                      style={
-                        name === "services"
-                          ? { color: item.color, borderStyle: "dashed" }
-                          : { background: item.color }
-                      }
+                      className="h-2.5 w-1 shrink-0 rounded-[2px]"
+                      style={{ background: item.color }}
                     />
                     <div className="flex flex-1 items-center justify-between gap-4 leading-none">
                       <span className="text-muted-foreground">
                         {chartConfig[name as string]?.label ?? name}
                       </span>
                       <span className="font-mono font-medium text-foreground tabular-nums">
-                        {isCount ? fmtNum(Number(value)) : fmtUsd(Number(value))}
+                        {isCount
+                          ? fmtNum(
+                              name === "serviceExtra"
+                                ? Number(item.payload.services)
+                                : Number(value),
+                            )
+                          : fmtUsd(Number(value))}
                       </span>
                     </div>
                     {index === series.length - 1 &&
@@ -157,9 +159,20 @@ export function PayoutChart({ data }: { data: PayoutSeriesResponse }) {
         {hasCatalog && (
           <Bar
             yAxisId="count"
+            stackId="catalog"
             dataKey="published"
             fill="var(--color-published)"
-            fillOpacity={0.4}
+            fillOpacity={0.55}
+            maxBarSize={14}
+          />
+        )}
+        {hasCatalog && (
+          <Bar
+            yAxisId="count"
+            stackId="catalog"
+            dataKey="serviceExtra"
+            fill="var(--color-serviceExtra)"
+            fillOpacity={0.7}
             maxBarSize={14}
             radius={[2, 2, 0, 0]}
           />
@@ -179,18 +192,6 @@ export function PayoutChart({ data }: { data: PayoutSeriesResponse }) {
             activeDot={{ r: 4, stroke: "var(--card)", strokeWidth: 2 }}
           />
         ))}
-        {hasCatalog && (
-          <Line
-            yAxisId="count"
-            dataKey="services"
-            type="stepAfter"
-            stroke="var(--color-services)"
-            strokeWidth={2}
-            strokeDasharray="5 4"
-            dot={false}
-            activeDot={{ r: 4, stroke: "var(--card)", strokeWidth: 2 }}
-          />
-        )}
         {(series.length > 1 || hasCatalog) && (
           <ChartLegend content={<ChartLegendContent />} />
         )}

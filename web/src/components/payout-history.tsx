@@ -95,7 +95,7 @@ export function PayoutHistory() {
         <CardHeader>
           <CardTitle>Withdrawals</CardTitle>
           <CardDescription>
-            Cash and credits out. Stacked bars are published templates under
+            Cash and credits out. Faint bars are published templates under
             their services.
           </CardDescription>
           <CardAction className="flex gap-1">

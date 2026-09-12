@@ -43,7 +43,7 @@ export function PayoutHistoryChart({ points }: { points: PayoutPoint[] }) {
     cashCents: { label: "Cash", color: "var(--chart-1)" },
     creditsCents: { label: "Railway credits", color: "var(--chart-2)" },
     published: { label: "Published templates", color: "var(--chart-other)" },
-    serviceExtra: { label: "Services", color: "var(--chart-3)" },
+    serviceExtra: { label: "Services", color: "var(--muted-foreground)" },
   } satisfies ChartConfig;
 
   const rows = points.map((p) => ({
@@ -95,6 +95,7 @@ export function PayoutHistoryChart({ points }: { points: PayoutPoint[] }) {
             width={countAxisWidth}
             domain={[0, "auto"]}
             tickFormatter={(n: number) => fmtNum(n)}
+            tick={{ fill: "var(--muted-foreground)", fillOpacity: 0.55 }}
           />
         )}
         <ChartTooltip
@@ -155,8 +156,8 @@ export function PayoutHistoryChart({ points }: { points: PayoutPoint[] }) {
             stackId="catalog"
             dataKey="published"
             fill="var(--color-published)"
-            fillOpacity={0.55}
-            maxBarSize={14}
+            fillOpacity={0.16}
+            maxBarSize={8}
           />
         )}
         {hasCatalog && (
@@ -165,8 +166,8 @@ export function PayoutHistoryChart({ points }: { points: PayoutPoint[] }) {
             stackId="catalog"
             dataKey="serviceExtra"
             fill="var(--color-serviceExtra)"
-            fillOpacity={0.7}
-            maxBarSize={14}
+            fillOpacity={0.22}
+            maxBarSize={8}
             radius={[2, 2, 0, 0]}
           />
         )}
@@ -190,9 +191,7 @@ export function PayoutHistoryChart({ points }: { points: PayoutPoint[] }) {
             activeDot={{ r: 4, stroke: "var(--card)", strokeWidth: 2 }}
           />
         )}
-        {(hasCredits || hasCatalog) && (
-          <ChartLegend content={<ChartLegendContent />} />
-        )}
+        {hasCredits && <ChartLegend content={<ChartLegendContent />} />}
       </ComposedChart>
     </ChartContainer>
   );

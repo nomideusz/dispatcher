@@ -1,4 +1,4 @@
-import { Area, Bar, CartesianGrid, ComposedChart, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import {
   type ChartConfig,
   ChartContainer,
@@ -7,7 +7,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "~/components/ui/chart";
-import { fmtNum, fmtUsd, fmtUsdTick } from "~/lib/format";
+import { fmtUsd, fmtUsdTick } from "~/lib/format";
 import type { PayoutSeriesResponse } from "~/queries/analytics";
 
 const dayFmt = new Intl.DateTimeFormat("en-US", {
@@ -35,23 +35,14 @@ export function PayoutChart({ data }: { data: PayoutSeriesResponse }) {
   const { series, points } = data;
   const origin = points[0]?.values ?? {};
 
-  const hasCatalog = points.some((p) => p.published > 0 || p.services > 0);
-  const chartConfig: ChartConfig = {
-    ...Object.fromEntries(
-      series.map((s, i) => [s.key, { label: s.name, color: seriesColor(s.key, i) }]),
-    ),
-    published: { label: "Published templates", color: "var(--chart-other)" },
-    serviceExtra: { label: "Services", color: "var(--chart-3)" },
-  };
+  const chartConfig = Object.fromEntries(
+    series.map((s, i) => [s.key, { label: s.name, color: seriesColor(s.key, i) }]),
+  ) satisfies ChartConfig;
 
   // Lifetime totals hide the window. Plot what each template added since
-  // the first sample so 7d/30d/90d actually changes the shape. Catalog
-  // counts stay absolute: one stacked bar, templates under extra services.
+  // the first sample so 7d/30d/90d actually changes the shape.
   const rows: Record<string, number | string>[] = points.map((p) => ({
     sampledAt: p.sampledAt,
-    published: p.published,
-    services: p.services,
-    serviceExtra: Math.max(0, p.services - p.published),
     ...Object.fromEntries(
       series.map((s) => [
         s.key,
@@ -63,12 +54,7 @@ export function PayoutChart({ data }: { data: PayoutSeriesResponse }) {
     series.reduce((sum, s) => sum + (Number(row[s.key]) || 0), 0);
 
   const maxTotal = Math.max(0, ...rows.map(stackTotal));
-  const countPeak = Math.max(
-    0,
-    ...points.map((p) => Math.max(p.published, p.services)),
-  );
   const yAxisWidth = Math.max(56, fmtUsdTick(maxTotal * 1.15).length * 7 + 14);
-  const countAxisWidth = Math.max(36, fmtNum(countPeak).length * 7 + 14);
 
   const first = points[0];
   const last = points[points.length - 1];
@@ -79,7 +65,7 @@ export function PayoutChart({ data }: { data: PayoutSeriesResponse }) {
 
   return (
     <ChartContainer config={chartConfig} className="aspect-auto h-64 w-full">
-      <ComposedChart data={rows} margin={{ top: 8, right: hasCatalog ? 8 : 12 }}>
+      <AreaChart data={rows} margin={{ top: 8, right: 12 }}>
         <CartesianGrid vertical={false} />
         <XAxis
           dataKey="sampledAt"
@@ -92,24 +78,12 @@ export function PayoutChart({ data }: { data: PayoutSeriesResponse }) {
           }
         />
         <YAxis
-          yAxisId="money"
           tickLine={false}
           axisLine={false}
           width={yAxisWidth}
           domain={[0, "auto"]}
           tickFormatter={(v: number) => fmtUsdTick(v)}
         />
-        {hasCatalog && (
-          <YAxis
-            yAxisId="count"
-            orientation="right"
-            tickLine={false}
-            axisLine={false}
-            width={countAxisWidth}
-            domain={[0, "auto"]}
-            tickFormatter={(n: number) => fmtNum(n)}
-          />
-        )}
         <ChartTooltip
           content={
             <ChartTooltipContent
@@ -118,69 +92,36 @@ export function PayoutChart({ data }: { data: PayoutSeriesResponse }) {
                   new Date(payload?.[0]?.payload?.sampledAt ?? String(label)),
                 )
               }
-              formatter={(value, name, item, index) => {
-                const isCount = name === "published" || name === "serviceExtra";
-                return (
-                  <>
-                    <div
-                      className="h-2.5 w-1 shrink-0 rounded-[2px]"
-                      style={{ background: item.color }}
-                    />
-                    <div className="flex flex-1 items-center justify-between gap-4 leading-none">
-                      <span className="text-muted-foreground">
-                        {chartConfig[name as string]?.label ?? name}
-                      </span>
+              formatter={(value, name, item, index) => (
+                <>
+                  <div
+                    className="h-2.5 w-1 shrink-0 rounded-[2px]"
+                    style={{ background: item.color }}
+                  />
+                  <div className="flex flex-1 items-center justify-between gap-4 leading-none">
+                    <span className="text-muted-foreground">
+                      {chartConfig[name as string]?.label ?? name}
+                    </span>
+                    <span className="font-mono font-medium text-foreground tabular-nums">
+                      {fmtUsd(Number(value))}
+                    </span>
+                  </div>
+                  {index === series.length - 1 && series.length > 1 && (
+                    <div className="mt-0.5 flex basis-full items-center justify-between gap-4 border-t border-border/50 pt-1.5 leading-none">
+                      <span className="text-muted-foreground">Added</span>
                       <span className="font-mono font-medium text-foreground tabular-nums">
-                        {isCount
-                          ? fmtNum(
-                              name === "serviceExtra"
-                                ? Number(item.payload.services)
-                                : Number(value),
-                            )
-                          : fmtUsd(Number(value))}
+                        {fmtUsd(stackTotal(item.payload))}
                       </span>
                     </div>
-                    {index === series.length - 1 &&
-                      !isCount &&
-                      series.length > 1 && (
-                        <div className="mt-0.5 flex basis-full items-center justify-between gap-4 border-t border-border/50 pt-1.5 leading-none">
-                          <span className="text-muted-foreground">Added</span>
-                          <span className="font-mono font-medium text-foreground tabular-nums">
-                            {fmtUsd(stackTotal(item.payload))}
-                          </span>
-                        </div>
-                      )}
-                  </>
-                );
-              }}
+                  )}
+                </>
+              )}
             />
           }
         />
-        {hasCatalog && (
-          <Bar
-            yAxisId="count"
-            stackId="catalog"
-            dataKey="published"
-            fill="var(--color-published)"
-            fillOpacity={0.55}
-            maxBarSize={14}
-          />
-        )}
-        {hasCatalog && (
-          <Bar
-            yAxisId="count"
-            stackId="catalog"
-            dataKey="serviceExtra"
-            fill="var(--color-serviceExtra)"
-            fillOpacity={0.7}
-            maxBarSize={14}
-            radius={[2, 2, 0, 0]}
-          />
-        )}
         {series.map((s, i) => (
           <Area
             key={s.key}
-            yAxisId="money"
             dataKey={s.key}
             stackId="payout"
             type="monotone"
@@ -192,10 +133,8 @@ export function PayoutChart({ data }: { data: PayoutSeriesResponse }) {
             activeDot={{ r: 4, stroke: "var(--card)", strokeWidth: 2 }}
           />
         ))}
-        {(series.length > 1 || hasCatalog) && (
-          <ChartLegend content={<ChartLegendContent />} />
-        )}
-      </ComposedChart>
+        {series.length > 1 && <ChartLegend content={<ChartLegendContent />} />}
+      </AreaChart>
     </ChartContainer>
   );
 }

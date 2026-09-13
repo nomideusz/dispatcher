@@ -311,9 +311,14 @@ func TestChainPayersLinksInvoicesOnBillingCycle(t *testing.T) {
 	if c := byFirst["09-02 12:58"]; c.Invoices != 1 || c.Status != "new" {
 		t.Errorf("unmatched recent invoice should be new: %+v", c)
 	}
-	// Within grace the same chain is still "new", not lapsed.
-	if c := chainPayers("t", "T", invs[4:5], at("2026-09-05 12:00"))[0]; c.Status != "new" {
+	// Within grace (a day past due) the same chain is still "new", not lapsed.
+	if c := chainPayers("t", "T", invs[4:5], at("2026-09-04 12:00"))[0]; c.Status != "new" {
 		t.Errorf("want new within grace, got %s", c.Status)
+	}
+	// Two days past due the payer has churned: billing lands within minutes
+	// of cadence, so nothing more is coming.
+	if c := chainPayers("t", "T", invs[4:5], at("2026-09-05 12:00"))[0]; c.Status != "lapsed" {
+		t.Errorf("want lapsed past grace, got %s", c.Status)
 	}
 }
 

@@ -155,7 +155,12 @@ type payerChain struct {
 
 const (
 	payerCycleTolerance = 20 * time.Minute
-	payerLapseGrace     = 3 * 24 * time.Hour
+	// payerLapseGrace is how long after NextDueAt a missing invoice still
+	// counts as "not yet due". Railway bills on a fixed cadence at a fixed
+	// time of day (observed pairs land within minutes), and the collector
+	// mirrors hourly, so a payer a day past due has churned — waiting
+	// longer just hides churn behind "new".
+	payerLapseGrace = 24 * time.Hour
 )
 
 // invoice is one deployer's batch of service rows for one template.

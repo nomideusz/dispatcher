@@ -394,8 +394,13 @@ func TestAccrualsCountAsEarningsNotWithdrawals(t *testing.T) {
 	if len(hist.Payouts) != 3 {
 		t.Errorf("ledger should list both accruals and the withdrawal, got %d rows", len(hist.Payouts))
 	}
-	// The Sep 10 accrual lands 30 days and 4h49m after the Aug 11 credit:
-	// the same deployer, read through totalPayout's lag.
+	// An accrual seen before the invoice fell due cannot be its billing.
+	credit := invoice{Start: at("2026-08-11 15:11"), Earliest: at("2026-08-11 15:11")}
+	if onCycle(credit, invoice{Start: at("2026-09-10 14:00"), Earliest: at("2026-09-10 04:00")}) {
+		t.Error("linked an accrual seen before the credit's next invoice fell due")
+	}
+	// The Sep 10 accrual's billing window (Sep 10 10:00–20:00) holds the
+	// 30-day due time of the Aug 11 credit: the same deployer.
 	want := payoutTemplateTotal{TemplateID: "twenty", TemplateName: "Twenty CRM", Count: 2, Cents: 574, Invoices: 2, InvoicesPrevious: 1, Payers: 2, PayersPrevious: 1, PayerCents: 574, New: 1, Returning: 1}
 	if len(hist.ByTemplate) != 1 || hist.ByTemplate[0] != want {
 		t.Errorf("byTemplate = %+v, want %+v", hist.ByTemplate, want)

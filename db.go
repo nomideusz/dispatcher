@@ -86,6 +86,9 @@ type Payout struct {
 	TemplateName string    `json:"templateName"`
 	AccountID    string    `json:"-"`
 	SyncedAt     time.Time `json:"-"`
+	// billedAfter is when an accrual's billing window opens (see
+	// loadAccruals); unexported, so neither stored nor served.
+	billedAfter time.Time
 }
 
 // autoWithdrawSettingsID is the fixed primary key of the singleton settings

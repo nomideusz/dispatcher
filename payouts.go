@@ -157,20 +157,17 @@ type payerChain struct {
 	// cycle at least once, next not yet due) or "lapsed" (a due invoice never
 	// came, allowing payerLapseGrace).
 	Status string `json:"status"`
-	// lastAccrued is whether LastAt came from an accrual (see onCycle's
-	// tolerance in chainPayers).
-	lastAccrued bool
+	// lastEarliest is the last invoice's Earliest (see invoice).
+	lastEarliest time.Time
 }
 
 const (
 	payerCycleTolerance = 20 * time.Minute
-	// payerAccrualTolerance is onCycle's window when either invoice is an
-	// accrual: totalPayout moves 12 min to 8 h after Railway bills (measured
-	// against credit payouts, Aug–Sep 2026), so an accrual's time is the
-	// billing time plus that lag.
-	// ponytail: a window this wide can hand one deployer's invoice to another
-	// on a busy template; only ledger timestamps (credit payouts) avoid it.
-	payerAccrualTolerance = 9 * time.Hour
+	// totalPayoutLag bounds how long after Railway bills a kickback the
+	// template's totalPayout moves: 12 min to 8 h 10 min for every credit
+	// payout, Aug–Sep 2026. A rise between two snapshots was billed after
+	// the earlier one less this lag.
+	totalPayoutLag = 9 * time.Hour
 	// payerLapseGrace is how long after NextDueAt a missing invoice still
 	// counts as "not yet due". Railway bills on a fixed cadence at a fixed
 	// time of day (observed pairs land within minutes), and the collector
@@ -183,9 +180,11 @@ const (
 type invoice struct {
 	Start time.Time
 	Cents int64
-	// Accrued is set when Start is a snapshot time rather than a ledger
-	// time, which puts it up to hours after the actual billing.
-	Accrued bool
+	// Earliest is the earliest the billing can have happened: Start for
+	// ledger rows, which carry the exact time, and for an accrual the
+	// snapshot before it less totalPayoutLag (Start is then the snapshot
+	// that saw it).
+	Earliest time.Time
 }
 
 // templateLifetime is one template's all-time payout as of the latest
@@ -334,6 +333,10 @@ func buildPayoutHistory(payouts []Payout, lifetime []templateLifetime, days int,
 		}
 		credits := p.Kind == "credits"
 		accrual := p.Kind == payoutKindAccrual
+		earliest := at
+		if accrual {
+			earliest = p.billedAfter
+		}
 
 		// Accruals are earned, not withdrawn: they stay out of the
 		// withdrawal totals and chart.
@@ -386,10 +389,13 @@ func buildPayoutHistory(payouts []Payout, lifetime []templateLifetime, days int,
 		t := byTemplate[key]
 		isNew := newInvoice(key, at)
 		if isNew {
-			invoices[key] = append(invoices[key], invoice{Start: at, Cents: p.AmountCents, Accrued: accrual})
+			invoices[key] = append(invoices[key], invoice{Start: at, Cents: p.AmountCents, Earliest: earliest})
 		} else {
 			last := &invoices[key][len(invoices[key])-1]
-			last.Start, last.Cents, last.Accrued = at, last.Cents+p.AmountCents, last.Accrued || accrual
+			last.Start, last.Cents = at, last.Cents+p.AmountCents
+			if earliest.Before(last.Earliest) {
+				last.Earliest = earliest
+			}
 		}
 		switch {
 		case !at.Before(windowStart):
@@ -488,14 +494,14 @@ func buildPayoutHistory(payouts []Payout, lifetime []templateLifetime, days int,
 // instead of out as credit payouts. Railway writes no ledger row for those
 // (it stopped when payouts switched to cash on 2026-09-11), so they come off
 // the snapshots: each rise in a template's totalPayout with no credit payout
-// shortly before it is one accrual, stamped with the snapshot that saw it.
-// A credit's ledger row lands 12 min to 8 h before totalPayout moves, hence
-// the 12 h lookback from the previous snapshot.
+// in its billing window is one accrual, stamped with the snapshot that saw
+// it. The window opens totalPayoutLag before the previous snapshot.
 func loadAccruals(ctx context.Context, db *gorm.DB) ([]Payout, error) {
 	rows := []struct {
 		TemplateID string
 		Name       string
 		SampledAt  time.Time
+		PreviousAt time.Time
 		Cents      int64
 	}{}
 	err := db.WithContext(ctx).Raw(`
@@ -506,11 +512,11 @@ func loadAccruals(ctx context.Context, db *gorm.DB) ([]Payout, error) {
 			FROM template_snapshots
 			WINDOW w AS (PARTITION BY template_id ORDER BY sampled_at)
 		)
-		SELECT template_id, name, sampled_at, cents FROM deltas d
+		SELECT template_id, name, sampled_at, previous_at, cents FROM deltas d
 		WHERE cents > 0 AND NOT EXISTS (
 			SELECT 1 FROM payouts p
-			WHERE p.kind = 'credits' AND p.created_at > d.previous_at - INTERVAL 12 HOUR AND p.created_at <= d.sampled_at)`).
-		Scan(&rows).Error
+			WHERE p.kind = 'credits' AND p.created_at > d.previous_at - to_seconds(?) AND p.created_at <= d.sampled_at)`,
+		totalPayoutLag.Seconds()).Scan(&rows).Error
 	accruals := make([]Payout, 0, len(rows))
 	for _, r := range rows {
 		at := r.SampledAt.UTC()
@@ -523,6 +529,7 @@ func loadAccruals(ctx context.Context, db *gorm.DB) ([]Payout, error) {
 			Destination:  "Available balance",
 			TemplateID:   r.TemplateID,
 			TemplateName: r.Name,
+			billedAfter:  r.PreviousAt.UTC().Add(-totalPayoutLag),
 		})
 	}
 	return accruals, err
@@ -579,11 +586,17 @@ func applyPublishedCountsToSeries(points []payoutSeriesPoint, publishes []templa
 	}
 }
 
-// onCycle reports whether `next` falls one billing cycle after `prev`: exactly
-// one calendar month or exactly thirty days later, within tolerance.
-func onCycle(prev, next time.Time, tolerance time.Duration) bool {
-	for _, due := range []time.Time{prev.AddDate(0, 1, 0), prev.Add(payerCycleDays * 24 * time.Hour)} {
-		if d := next.Sub(due); d > -tolerance && d < tolerance {
+// onCycle reports whether `next` can fall one billing cycle after `prev`:
+// exactly one calendar month or exactly thirty days later, within
+// payerCycleTolerance. An accrual only bounds its billing time to a window
+// (see invoice), so the cycle is checked across windows.
+func onCycle(prev, next invoice) bool {
+	for _, cycle := range []func(time.Time) time.Time{
+		func(t time.Time) time.Time { return t.AddDate(0, 1, 0) },
+		func(t time.Time) time.Time { return t.Add(payerCycleDays * 24 * time.Hour) },
+	} {
+		dueFrom, dueTo := cycle(prev.Earliest).Add(-payerCycleTolerance), cycle(prev.Start).Add(payerCycleTolerance)
+		if next.Start.After(dueFrom) && next.Earliest.Before(dueTo) {
 			return true
 		}
 	}
@@ -598,20 +611,19 @@ func chainPayers(templateID, name string, invs []invoice, now time.Time) []payer
 	chains := []*payerChain{}
 	for _, inv := range sorted {
 		var best *payerChain
+		if inv.Earliest.IsZero() {
+			inv.Earliest = inv.Start
+		}
 		for _, c := range chains {
-			tolerance := payerCycleTolerance
-			if c.lastAccrued || inv.Accrued {
-				tolerance = payerAccrualTolerance
-			}
-			if onCycle(c.LastAt, inv.Start, tolerance) && (best == nil || c.LastAt.After(best.LastAt)) {
+			if onCycle(invoice{Start: c.LastAt, Earliest: c.lastEarliest}, inv) && (best == nil || c.LastAt.After(best.LastAt)) {
 				best = c
 			}
 		}
 		if best == nil {
-			chains = append(chains, &payerChain{TemplateID: templateID, TemplateName: name, FirstAt: inv.Start, LastAt: inv.Start, Invoices: 1, TotalCents: inv.Cents, LastCents: inv.Cents, lastAccrued: inv.Accrued})
+			chains = append(chains, &payerChain{TemplateID: templateID, TemplateName: name, FirstAt: inv.Start, LastAt: inv.Start, Invoices: 1, TotalCents: inv.Cents, LastCents: inv.Cents, lastEarliest: inv.Earliest})
 			continue
 		}
-		best.LastAt, best.Invoices, best.TotalCents, best.LastCents, best.lastAccrued = inv.Start, best.Invoices+1, best.TotalCents+inv.Cents, inv.Cents, inv.Accrued
+		best.LastAt, best.Invoices, best.TotalCents, best.LastCents, best.lastEarliest = inv.Start, best.Invoices+1, best.TotalCents+inv.Cents, inv.Cents, inv.Earliest
 	}
 	out := make([]payerChain, 0, len(chains))
 	for _, c := range chains {

@@ -77,7 +77,7 @@ type Payout struct {
 	CreatedAt   time.Time `json:"createdAt"`
 	AmountCents int64     `json:"amountCents"`
 	Status      string    `json:"status"`
-	Kind        string    `json:"kind"`        // "cash" | "credits"
+	Kind        string    `json:"kind"`        // "cash" | "credits"; "accrual" rows are derived, never stored (see loadAccruals)
 	Destination string    `json:"destination"` // "Bank ••8149", "Railway credits"
 	// TemplateID/TemplateName are filled in by attributePayouts once a credit
 	// payout has been matched to the template that earned it. Empty while the

@@ -174,8 +174,9 @@ export function PayoutHistory() {
           <CardHeader>
             <CardTitle>By template</CardTitle>
             <CardDescription>
-              Credit payouts by template. Payers estimated over the trailing 30
-              days. Amount follows the selected range; lifetime is all-time.
+              Kickbacks by template, paid as credits or accrued to the balance.
+              Payers estimated over the trailing 30 days. Amount follows the
+              selected range; lifetime is all-time.
             </CardDescription>
           </CardHeader>
           <CardContent className="overflow-x-auto">
@@ -285,7 +286,8 @@ export function PayoutHistory() {
           <CardHeader>
             <CardTitle>Ledger</CardTitle>
             <CardDescription>
-              Payouts in the last {days} days, newest first
+              Payouts and balance accruals in the last {days} days, newest
+              first
             </CardDescription>
           </CardHeader>
           <CardContent className="max-h-[32rem] overflow-auto">
@@ -307,7 +309,7 @@ export function PayoutHistory() {
             </table>
             {data.totalRows > data.payouts.length && (
               <p className="pt-3 text-xs text-muted-foreground">
-                {fmtNum(data.payouts.length)} payouts in the last {days} days;{" "}
+                {fmtNum(data.payouts.length)} entries in the last {days} days;{" "}
                 {fmtNum(data.totalRows - data.payouts.length)} more before that.
               </p>
             )}

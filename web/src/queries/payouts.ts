@@ -3,16 +3,18 @@ import { api } from "~/lib/api";
 
 /** One withdrawal, mirrored from Railway into Dispatcher's database by the
  * collector. Credit payouts have no Railway id and are always reported as
- * COMPLETED — they settle the moment they exist. */
+ * COMPLETED — they settle the moment they exist. An "accrual" is a kickback
+ * that went to the withdrawable balance instead (payouts set to cash): read
+ * off the template snapshots, earned but not paid out. */
 export interface Payout {
   id: string;
   createdAt: string;
   amountCents: number;
   status: string;
-  kind: "cash" | "credits";
-  /** "Bank ••8149" / "Card ••4242" / "Railway credits". */
+  kind: "cash" | "credits" | "accrual";
+  /** "Bank ••8149" / "Card ••4242" / "Railway credits" / "Available balance". */
   destination: string;
-  /** Template that earned this credit payout, matched from snapshot deltas.
+  /** Template that earned this credit payout or accrual, from snapshot deltas.
    * Empty while the match is pending, "unknown" if it never resolved,
    * "untracked" if the payout predates the first snapshot. */
   templateId: string;
@@ -52,7 +54,8 @@ export interface PayoutTotals {
   lastPayoutAt: string | null;
 }
 
-/** One template's share of the window's credit payouts. Payouts still
+/** One template's share of the window's kickbacks: credit payouts and
+ * accruals. Payouts still
  * awaiting attribution group under templateId "pending", ones the matcher
  * gave up on under "unknown", ones older than the first snapshot under
  * "untracked". */
@@ -109,7 +112,7 @@ export interface PayoutHistory {
   /** Every row inside the selected window; totalRows is how many exist in all. */
   payouts: Payout[];
   totalRows: number;
-  /** The window's credit payouts per template, largest earner first. */
+  /** The window's kickbacks per template, largest earner first. */
   byTemplate: PayoutTemplateTotal[];
   /** Every payer chain in rank order, biggest lifetime total first. */
   payers: PayerChain[];

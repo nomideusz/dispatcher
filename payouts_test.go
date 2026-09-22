@@ -1,8 +1,13 @@
 package main
 
 import (
+	"context"
+	"path/filepath"
 	"testing"
 	"time"
+
+	duckdb "github.com/vogo/duckdb/v2"
+	"gorm.io/gorm"
 )
 
 // cashRecord builds a Withdrawal-arm Railway record with a bank destination.
@@ -333,5 +338,66 @@ func TestPayerNameIsStableAndDistinct(t *testing.T) {
 	}
 	if a == "" || len(a) < 5 {
 		t.Errorf("odd name %q", a)
+	}
+}
+
+func TestAccrualsCountAsEarningsNotWithdrawals(t *testing.T) {
+	db, err := gorm.Open(duckdb.Open(filepath.Join(t.TempDir(), "accruals.duckdb")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&TemplateSnapshot{}, &Payout{}); err != nil {
+		t.Fatal(err)
+	}
+	at := func(s string) time.Time {
+		v, err := time.Parse("2006-01-02 15:04", s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	snap := func(s string, earned float64) TemplateSnapshot {
+		return TemplateSnapshot{SampledAt: at(s), TemplateID: "twenty", Name: "Twenty CRM", Status: "PUBLISHED", TotalPayout: earned}
+	}
+	// Aug 11 the credit payout explains the rise hours later. After the
+	// switch to cash, rises come with no ledger row: those are accruals.
+	if err := db.Create(&[]TemplateSnapshot{
+		snap("2026-08-11 15:00", 40.00), snap("2026-08-11 18:00", 43.71),
+		snap("2026-09-10 19:00", 43.71), snap("2026-09-10 20:00", 45.00),
+		snap("2026-09-14 14:00", 45.00), snap("2026-09-14 15:00", 49.45), snap("2026-09-14 16:00", 49.45),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	payouts := []Payout{
+		{ID: "c1", CreatedAt: at("2026-08-11 15:11"), AmountCents: 371, Status: "COMPLETED", Kind: "credits", TemplateID: "twenty", TemplateName: "Twenty CRM"},
+		cashPayout(at("2026-09-20 10:00"), 10000, "PENDING"),
+	}
+	if err := db.Create(&payouts).Error; err != nil {
+		t.Fatal(err)
+	}
+	accruals, err := loadAccruals(context.Background(), db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]int64{}
+	for _, a := range accruals {
+		got[a.CreatedAt.Format("01-02 15:04")] = a.AmountCents
+	}
+	if len(got) != 2 || got["09-10 20:00"] != 129 || got["09-14 15:00"] != 445 {
+		t.Fatalf("accruals = %v, want 129 on 09-10 and 445 on 09-14", got)
+	}
+
+	hist := buildPayoutHistory(append(payouts, accruals...), nil, 30, at("2026-09-22 20:00"))
+	if hist.Totals.LifetimeCents != 10371 || hist.Totals.Count != 2 || hist.Window.TotalCents != 10000 {
+		t.Errorf("withdrawal figures must leave accruals out: totals %+v, window %+v", hist.Totals, hist.Window)
+	}
+	if len(hist.Payouts) != 3 {
+		t.Errorf("ledger should list both accruals and the withdrawal, got %d rows", len(hist.Payouts))
+	}
+	// The Sep 10 accrual lands 30 days and 4h49m after the Aug 11 credit:
+	// the same deployer, read through totalPayout's lag.
+	want := payoutTemplateTotal{TemplateID: "twenty", TemplateName: "Twenty CRM", Count: 2, Cents: 574, Invoices: 2, InvoicesPrevious: 1, Payers: 2, PayersPrevious: 1, PayerCents: 574, New: 1, Returning: 1}
+	if len(hist.ByTemplate) != 1 || hist.ByTemplate[0] != want {
+		t.Errorf("byTemplate = %+v, want %+v", hist.ByTemplate, want)
 	}
 }

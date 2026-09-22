@@ -28,6 +28,8 @@ make build     # npm run build, then go build (frontend embedded)
 
 Note: `go build` embeds `web/build/client`, so the frontend must be built first — `make build` handles the order.
 
+On Railway, Dispatcher reports on the workspace that owns its project (`RAILWAY_PROJECT_ID`, injected by Railway). Hosted anywhere else, set `RAILWAY_WORKSPACE_ID` to the workspace id instead.
+
 ## Database
 
 GORM with DuckDB (via `github.com/vogo/duckdb/v2`). Data lives in `dispatcher.duckdb` next to the binary (override with `DB_PATH`); `db.go` holds the models and connection, and `AutoMigrate` runs on startup. Building needs CGO (DuckDB links a C library) — already the Go default.

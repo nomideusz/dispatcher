@@ -140,7 +140,7 @@ func collectTemplateSnapshots(db *gorm.DB) error {
 	if err != nil {
 		return err
 	}
-	workspaceID, err := getProjectWorkspaceID(ctx, token)
+	workspaceID, err := getWorkspaceID(ctx, token)
 	if err != nil {
 		return err
 	}

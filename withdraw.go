@@ -138,7 +138,7 @@ func workspaceCustomer(ctx context.Context, db *gorm.DB) (token, customerID stri
 	if err != nil {
 		return "", "", err
 	}
-	workspaceID, err := getProjectWorkspaceID(ctx, token)
+	workspaceID, err := getWorkspaceID(ctx, token)
 	if err != nil {
 		return "", "", err
 	}

@@ -182,31 +182,46 @@ type authUser struct {
 }
 
 // getAuthUser validates the access token and returns the Railway user behind
-// it. The user must belong to the workspace that owns the project this app
-// is deployed in (RAILWAY_PROJECT_ID).
+// it. The user must belong to the workspace Dispatcher reports on (see
+// getWorkspaceID). This runs on every API request, so the project lookup
+// rides in the same round trip.
 func getAuthUser(ctx context.Context, accessToken string) (authUser, error) {
-	projectID := os.Getenv("RAILWAY_PROJECT_ID")
 	var data struct {
 		Project struct {
 			WorkspaceID string `json:"workspaceId"`
 		} `json:"project"`
 		Me authUser `json:"me"`
 	}
-	query := "query ($id: String!) { project(id: $id) { workspaceId } me { id avatar email name workspaces { id } } }"
-	if err := graphqlRequest(ctx, railwayGraphQLURL, accessToken, query, map[string]any{"id": projectID}, &data); err != nil {
+	const me = "me { id avatar email name workspaces { id } }"
+	workspaceID := os.Getenv("RAILWAY_WORKSPACE_ID")
+	query, vars := "query { "+me+" }", map[string]any(nil)
+	if workspaceID == "" {
+		query = "query ($id: String!) { project(id: $id) { workspaceId } " + me + " }"
+		vars = map[string]any{"id": os.Getenv("RAILWAY_PROJECT_ID")}
+	}
+	if err := graphqlRequest(ctx, railwayGraphQLURL, accessToken, query, vars, &data); err != nil {
 		return authUser{}, err
 	}
+	if workspaceID == "" {
+		workspaceID = data.Project.WorkspaceID
+	}
 	for _, ws := range data.Me.Workspaces {
-		if ws.ID != "" && ws.ID == data.Project.WorkspaceID {
+		if ws.ID != "" && ws.ID == workspaceID {
 			return data.Me, nil
 		}
 	}
-	return authUser{}, fmt.Errorf("no access to the workspace owning project %s", projectID)
+	return authUser{}, fmt.Errorf("no access to workspace %q", workspaceID)
 }
 
-// getProjectWorkspaceID resolves the workspace that owns the project this app
-// is deployed in (RAILWAY_PROJECT_ID).
-func getProjectWorkspaceID(ctx context.Context, accessToken string) (string, error) {
+// getWorkspaceID resolves the workspace Dispatcher reports on:
+// RAILWAY_WORKSPACE_ID when set, else the workspace owning the project it is
+// deployed in (RAILWAY_PROJECT_ID, which Railway injects). Hosted elsewhere,
+// set the workspace: a project kept only as an anchor can be deleted, and
+// every lookup then fails with "Project not found".
+func getWorkspaceID(ctx context.Context, accessToken string) (string, error) {
+	if id := os.Getenv("RAILWAY_WORKSPACE_ID"); id != "" {
+		return id, nil
+	}
 	var data struct {
 		Project struct {
 			WorkspaceID string `json:"workspaceId"`

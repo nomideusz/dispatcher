@@ -128,4 +128,5 @@ export const payoutHistoryQuery = (days: number) =>
       api
         .get("payouts", { searchParams: { days }, signal })
         .json<PayoutHistory>(),
+    placeholderData: (previous) => previous,
   });

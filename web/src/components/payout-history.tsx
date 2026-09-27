@@ -1,12 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import {
-  ArrowDownRight,
-  ArrowUpRight,
   CircleAlert,
   CircleCheck,
   Clock,
 } from "lucide-react";
 import { useState } from "react";
+import { Delta } from "~/components/delta";
 import { PayoutHistoryChart } from "~/components/payout-history-chart";
 import { Button } from "~/components/ui/button";
 import {
@@ -18,10 +17,11 @@ import {
   CardTitle,
 } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
-import { fmtCents, fmtNum, fmtSignedPct } from "~/lib/format";
+import { dayDate, fmtCents, fmtNum } from "~/lib/format";
 import {
   type PayerChain,
   type Payout,
+  type PayoutHistory as PayoutHistoryData,
   PSEUDO_TEMPLATE_IDS,
   payoutHistoryQuery,
 } from "~/queries/payouts";
@@ -55,10 +55,6 @@ const monthLong = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
 });
 
-/** Matches the ranges on the Total payout chart, so the two read as one pair
- * of controls rather than two unrelated pickers. */
-const RANGES = [7, 30, 90] as const;
-
 /** Three readings of the same payer list: who matters (rank by lifetime
  * total, the server's order), who is alive (returning, then new, then
  * lapsed; more invoices first; most recent first), and who is due next
@@ -83,11 +79,16 @@ function sortPayers(payers: PayerChain[], by: PayerSort): PayerChain[] {
 }
 const PAYER_SORT_LABELS: Record<PayerSort, string> = { rank: "By total", status: "By status", due: "By next due" };
 
-export function PayoutHistory() {
-  const [days, setDays] = useState<number>(30);
+/** Money out of Railway, who is paying, and the raw ledger, for the range
+ * the dashboard header picks. Per-template totals live in the templates
+ * table. */
+export function PayoutHistory({ days }: { days: number }) {
   const [payerSort, setPayerSort] = useState<PayerSort>("rank");
+  const [ledgerOpen, setLedgerOpen] = useState(false);
   const history = useQuery(payoutHistoryQuery(days));
   const data = history.data;
+  const statusCount = (s: PayerChain["status"]) =>
+    data?.payers.filter((c) => c.status === s).length ?? 0;
 
   return (
     <>
@@ -95,21 +96,9 @@ export function PayoutHistory() {
         <CardHeader>
           <CardTitle>Withdrawals</CardTitle>
           <CardDescription>
-            Cash and credits out. Faint bars are published templates under
-            their services.
+            Cash and Railway credits paid out, cumulative over the range.
+            Kickback that stays in the balance shows above, as earned.
           </CardDescription>
-          <CardAction className="flex gap-1">
-            {RANGES.map((r) => (
-              <Button
-                key={r}
-                size="xs"
-                variant={r === days ? "secondary" : "ghost"}
-                onClick={() => setDays(r)}
-              >
-                {r}d
-              </Button>
-            ))}
-          </CardAction>
         </CardHeader>
 
         {history.isPending && (
@@ -160,8 +149,11 @@ export function PayoutHistory() {
               {data.window.count > 0 ? (
                 <PayoutHistoryChart points={data.points} />
               ) : (
-                <p className="py-8 text-center text-sm text-muted-foreground">
-                  No payouts in the last {days} days.
+                <p className="text-sm text-muted-foreground">
+                  Nothing paid out in the last {days} days
+                  {data.totals.lastPayoutAt &&
+                    ` — the last payout was ${dayFmt.format(new Date(data.totals.lastPayoutAt))}`}
+                  . Kickback is accruing in the Railway balance instead.
                 </p>
               )}
             </CardContent>
@@ -169,78 +161,15 @@ export function PayoutHistory() {
         )}
       </Card>
 
-      {data && data.totalRows > 0 && data.byTemplate.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>By template</CardTitle>
-            <CardDescription>
-              Kickbacks by template, paid as credits or accrued to the balance.
-              Payers estimated over the trailing 30 days. Amount follows the
-              selected range; lifetime is all-time.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs text-muted-foreground">
-                  <th className="pb-2 font-medium">Template</th>
-                  <th className="pb-2 pl-3 text-right font-medium">Payers 30d</th>
-                  <th className="pb-2 pl-3 text-right font-medium">New</th>
-                  <th className="pb-2 pl-3 text-right font-medium">Returning</th>
-                  <th className="pb-2 pl-3 text-right font-medium">Lapsed</th>
-                  <th className="pb-2 pl-3 text-right font-medium">$/payer</th>
-                  {days <= 7 && (
-                    <th className="pb-2 pl-3 text-right font-medium">Invoices {days}d</th>
-                  )}
-                  <th className="pb-2 pl-3 text-right font-medium">Amount</th>
-                  <th className="pb-2 pl-3 text-right font-medium">Lifetime</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.byTemplate.map((t) => (
-                  <tr key={t.templateId} className="border-b border-border/50 last:border-0">
-                    <td
-                      className={
-                        PSEUDO_TEMPLATE_IDS.has(t.templateId)
-                          ? "py-2 text-muted-foreground"
-                          : "py-2"
-                      }
-                    >
-                      {t.templateName}
-                    </td>
-                    <td className="py-2 pl-3 text-right tabular-nums">{fmtNum(t.payers)}</td>
-                    <td className="py-2 pl-3 text-right tabular-nums">{t.new || "—"}</td>
-                    <td className={`py-2 pl-3 text-right tabular-nums ${t.returning ? "text-(--viz-up)" : ""}`}>
-                      {t.returning || "—"}
-                    </td>
-                    <td className={`py-2 pl-3 text-right tabular-nums ${t.lapsed ? "text-(--viz-down)" : ""}`}>
-                      {t.lapsed || "—"}
-                    </td>
-                    <td className="py-2 pl-3 text-right tabular-nums">
-                      {t.payers > 0 ? fmtCents(Math.round(t.payerCents / t.payers)) : "—"}
-                    </td>
-                    {days <= 7 && (
-                      <td className="py-2 pl-3 text-right tabular-nums">{fmtNum(t.invoices)}</td>
-                    )}
-                    <td className="py-2 pl-3 text-right tabular-nums">{fmtCents(t.cents)}</td>
-                    <td className="py-2 pl-3 text-right tabular-nums text-muted-foreground">
-                      {t.lifetimeCents > 0 ? fmtCents(t.lifetimeCents) : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
-      )}
-
       {data && data.payers.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Payers</CardTitle>
             <CardDescription>
-              One line per deployer, under a stable pseudonym. Returning paid
-              again on their billing date; lapsed missed a due invoice.
+              {fmtNum(statusCount("returning"))} returning ·{" "}
+              {fmtNum(statusCount("new"))} new · {fmtNum(statusCount("lapsed"))}{" "}
+              lapsed. One line per deployer, under a stable pseudonym: returning
+              paid again on their billing date, lapsed missed a due invoice.
             </CardDescription>
             <CardAction className="flex gap-1">
               {(["rank", "status", "due"] as const).map((s) => (
@@ -286,10 +215,16 @@ export function PayoutHistory() {
           <CardHeader>
             <CardTitle>Ledger</CardTitle>
             <CardDescription>
-              Payouts and balance accruals in the last {days} days, newest
-              first
+              {fmtNum(data.payouts.length)} payouts and balance accruals in the
+              last {days} days, newest first
             </CardDescription>
+            <CardAction>
+              <Button size="xs" variant="ghost" onClick={() => setLedgerOpen((o) => !o)}>
+                {ledgerOpen ? "Hide" : "Show"}
+              </Button>
+            </CardAction>
           </CardHeader>
+          {ledgerOpen && (
           <CardContent className="max-h-[32rem] overflow-auto">
             <table className="w-full text-sm">
               <thead>
@@ -314,6 +249,7 @@ export function PayoutHistory() {
               </p>
             )}
           </CardContent>
+          )}
         </Card>
       )}
     </>
@@ -322,34 +258,20 @@ export function PayoutHistory() {
 
 /** The headline for the selected range, with the same "vs previous period"
  * treatment the dashboard's stat tiles use. */
-function WindowFigure({
-  days,
-  data,
-}: {
-  days: number;
-  data: { window: { totalCents: number; changePct: number | null; count: number } };
-}) {
-  const { totalCents, changePct, count } = data.window;
+function WindowFigure({ days, data }: { days: number; data: PayoutHistoryData }) {
+  const { totalCents, count } = data.window;
+  // Only against a previous range that payouts had already begun by.
+  const previousStart = dayDate(data.points[0]?.date ?? "").getTime() - days * 86_400_000;
+  const changePct =
+    data.totals.firstPayoutAt && Date.parse(data.totals.firstPayoutAt) <= previousStart
+      ? data.window.changePct
+      : null;
   return (
     <div>
       <div className="text-xs text-muted-foreground">Paid out · last {days}d</div>
       <div className="text-xl font-semibold">{fmtCents(totalCents)}</div>
       {changePct != null ? (
-        <div className="flex items-center gap-1 text-xs">
-          <span
-            className={`flex items-center gap-0.5 font-medium ${
-              changePct >= 0 ? "text-(--viz-up)" : "text-(--viz-down)"
-            }`}
-          >
-            {changePct >= 0 ? (
-              <ArrowUpRight className="size-3.5" />
-            ) : (
-              <ArrowDownRight className="size-3.5" />
-            )}
-            {fmtSignedPct(changePct)}
-          </span>
-          <span className="text-muted-foreground">vs previous {days}d</span>
-        </div>
+        <Delta pct={changePct} suffix={`vs previous ${days}d`} />
       ) : (
         <div className="text-xs text-muted-foreground">
           {count} {count === 1 ? "payout" : "payouts"}

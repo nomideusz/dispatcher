@@ -76,6 +76,27 @@ stays `pending` and is retried after each snapshot, and is marked `unknown`
 after two days. Cash withdrawals are lump sums of the balance and are never
 attributed.
 
+### What Railway's counts mean
+
+Railway reuses "active" and "deploys" for different things; the dashboard's
+funnel card explains them in place. Checked against live data:
+
+- **Deployments** (`templateMetrics.totalDeployments`, the metrics page's
+  "Deployments"): every deploy, the author's own tests and redeploys into
+  existing projects included. Only goes up.
+- **Projects** (`Template.projects`, the public page's "Total deploys"):
+  projects other users created from the template, all time.
+- **Active projects** (`Template.activeProjects`): those projects still live.
+- **Running** (`templateMetrics.activeDeployments`, the metrics page's
+  "Active"): running service instances, not projects, so a four-service
+  project counts up to four.
+
+`/api/analytics/timeline?days=N` buckets all of it by UTC day: kickback and
+new projects from snapshot deltas (plus credit payouts from before tracking
+began), the latest counts per day (null where the collector has no sample),
+and per template the last deploy, first and last paid dates, and a day-by-day
+activity list.
+
 Background collection, auto-withdraw, weekly summaries, and notification delivery assume the app runs as a single process. Running multiple replicas can duplicate cron work and notifications.
 
 ## CLI

@@ -45,3 +45,43 @@ export function fmtAgo(fromIso: string, toIso: string): string {
   if (hours < 48) return `${hours}h`;
   return `${Math.round(hours / 24)}d`;
 }
+
+/** "2026-08-14" is a UTC day, so parse it as UTC midnight — parsing it locally
+ * would slide a westward timezone back a day. */
+export function dayDate(date: string): Date {
+  return new Date(`${date}T00:00:00Z`);
+}
+
+const shortDay = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  timeZone: "UTC",
+});
+const longDay = new Intl.DateTimeFormat("en-US", {
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+/** "Sep 7" for a UTC day key or an ISO instant. */
+export function fmtDay(v: string): string {
+  return shortDay.format(v.length === 10 ? dayDate(v) : new Date(v));
+}
+
+/** "Sun, Sep 7, 2026" for a UTC day key. */
+export function fmtLongDay(date: string): string {
+  return longDay.format(dayDate(date));
+}
+
+/** UTC day key of an ISO instant. */
+export function dayKey(iso: string): string {
+  return new Date(iso).toISOString().slice(0, 10);
+}
+
+/** Template names run long ("Chromium | Your Browser in the Cloud"); the part
+ * before the first " | " is the name people know it by. */
+export function shortName(name: string): string {
+  return name.split(" | ")[0];
+}

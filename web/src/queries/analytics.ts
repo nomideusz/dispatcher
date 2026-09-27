@@ -5,115 +5,109 @@ import {
 } from "@tanstack/react-query";
 import { api } from "~/lib/api";
 
-export interface PayoutSeriesEntry {
-  key: string;
-  name: string;
-}
-
-export interface PayoutSeriesPoint {
-  sampledAt: string;
-  values: Record<string, number>;
+/** One UTC day. earnedCents and newProjects are what the day's snapshots saw
+ * arrive; the counts are the day's last sample, null on a day without one
+ * (before tracking or during a collection gap). published/services are the
+ * catalog as of the end of the day. */
+export interface TimelinePoint {
+  date: string;
+  earnedCents: number;
+  newProjects: number;
+  projects: number | null;
+  activeProjects: number | null;
+  /** templateMetrics.activeDeployments — Railway's metrics page "Active":
+   * running instances, not projects. Null before metrics were collected. */
+  running: number | null;
   published: number;
   services: number;
 }
 
-export interface PayoutSeriesResponse {
-  series: PayoutSeriesEntry[];
-  points: PayoutSeriesPoint[];
+export interface TimelineActivity {
+  date: string;
+  earnedCents: number;
+  newProjects: number;
 }
 
-export interface MetricChange {
-  current: number;
-  previous: number | null;
-  changePct: number | null;
-}
-
-export interface AnalyticsSummary {
-  sampledAt: string;
-  comparedTo: string | null;
-  totalPayout: MetricChange;
-  projects: MetricChange;
-  recentProjects: MetricChange;
-  activeProjects: MetricChange;
-  /** templateMetrics.activeDeployments: Railway's "currently running
-   * instances of this template". Runs well above active projects and tracks
-   * live use better; compared only when the comparison sample has metrics. */
-  runningInstances: MetricChange;
-}
-
-export interface TemplateAnalytics {
+export interface TimelineTemplate {
   templateId: string;
   name: string;
   code: string;
-  status: string;
-  health: number | null;
-  /** Support-thread percentages (0-100); all null when there are no threads
-   * to grade, which counts as healthy. supportHealth >= 80 earns the support
-   * bonus (+10% kickback). */
-  supportSolved: number | null;
-  supportCsat: number | null;
-  supportHealth: number | null;
-  projects: number;
-  recentProjects: number;
-  activeProjects: number;
-  /** Metrics page: "Active" = currently running instances, "Deployments" =
-   * total number of times the template has been deployed. Null before
-   * metrics were collected. */
-  runningInstances: number | null;
-  deployments: number | null;
-  /** Services the template defines; 0 on old snapshots. */
+  /** Railway's Template.createdAt; the API has no separate publish date. */
+  publishedAt: string | null;
+  firstSeenAt: string;
   services: number;
-  totalPayout: number;
-  payoutPrevious: number | null;
-  payoutChangePct: number | null;
+  /** Projects other users created from the template (the public page's
+   * "Total deploys"); activeProjects are the ones still live. */
+  projects: number;
+  activeProjects: number;
+  running: number | null;
+  /** templateMetrics.totalDeployments: every deploy, the author's included. */
+  deployments: number | null;
+  /** Deploy health and support health, 0–100. Support health of 80+ earns
+   * the +10% kickback bonus; null (no threads to grade) counts as healthy. */
+  health: number | null;
+  supportHealth: number | null;
+  /** templateMetrics.earningsLast30Days, in dollars. */
+  earned30d: number | null;
+  lifetimeCents: number;
+  /** In the selected range; activity is the same, day by day. */
+  earnedCents: number;
+  newProjects: number;
+  activity: TimelineActivity[];
+  /** The snapshot that saw the latest new project, and the one before it:
+   * the project arrived in between (days apart across a collection gap). */
+  lastDeployAt: string | null;
+  lastDeployAfter: string | null;
+  firstPaidAt: string | null;
+  lastPaidAt: string | null;
 }
 
-export interface TemplateAnalyticsResponse {
+export interface TimelineResponse {
   sampledAt: string;
-  comparedTo: string | null;
-  templates: TemplateAnalytics[];
+  trackedSince: string;
+  window: {
+    days: number;
+    earnedCents: number;
+    previousEarnedCents: number;
+    newProjects: number;
+    /** Null when the previous range began before tracking did. */
+    previousNewProjects: number | null;
+  };
+  /** Stretches of more than a day without a sample; what arrived during one
+   * lands on its `to` day. A gap ending near now means the collector stopped. */
+  gaps: { from: string; to: string }[];
+  points: TimelinePoint[];
+  templates: TimelineTemplate[];
 }
 
 /** Support health of 80%+ earns the +10% kickback bonus. No threads to
  * grade counts as healthy. */
 export const SUPPORT_BONUS_THRESHOLD = 80;
 
-export function supportHealthOf(template: TemplateAnalytics): number {
-  return template.supportHealth ?? 100;
+export function qualifiesForBonus(t: TimelineTemplate): boolean {
+  return (t.supportHealth ?? 100) >= SUPPORT_BONUS_THRESHOLD;
 }
 
-export function qualifiesForBonus(template: TemplateAnalytics): boolean {
-  return supportHealthOf(template) >= SUPPORT_BONUS_THRESHOLD;
-}
-
-export const payoutSeriesQuery = (days: number) =>
+export const timelineQuery = (days: number) =>
   queryOptions({
-    queryKey: ["analytics", "payout", days],
+    queryKey: ["analytics", "timeline", days],
     queryFn: ({ signal }) =>
       api
-        .get("analytics/payout", { searchParams: { days }, signal })
-        .json<PayoutSeriesResponse>(),
+        .get("analytics/timeline", { searchParams: { days }, signal })
+        .json<TimelineResponse | null>(),
+    // Keep the previous range on screen while the next one loads.
+    placeholderData: (previous) => previous,
   });
 
-export const summaryQuery = queryOptions({
-  queryKey: ["analytics", "summary"],
-  queryFn: ({ signal }) =>
-    api.get("analytics/summary", { signal }).json<AnalyticsSummary | null>(),
-});
-
-export const templateAnalyticsQuery = queryOptions({
-  queryKey: ["analytics", "templates"],
-  queryFn: ({ signal }) =>
-    api
-      .get("analytics/templates", { signal })
-      .json<TemplateAnalyticsResponse | null>(),
-});
-
-/** Collect a fresh snapshot server-side, then refetch everything analytics. */
+/** Collect a fresh snapshot server-side, then refetch everything it feeds. */
 export function useRefreshAnalytics() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.post("analytics/refresh"),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["analytics"] }),
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: ["analytics"] }),
+        qc.invalidateQueries({ queryKey: ["payouts"] }),
+      ]),
   });
 }

@@ -332,8 +332,10 @@ function DetailBlock({
       </div>
       {shown.length > 0 && (
         <ul className="space-y-0.5 pl-4.5 text-xs text-muted-foreground">
-          {shown.map(([name, v]) => (
-            <li key={name} className="flex justify-between gap-3">
+          {/* Index keys: short names collide (eight "Linux Desktop" templates), and
+              duplicate keys make React leave stale rows behind on every hover. */}
+          {shown.map(([name, v], i) => (
+            <li key={i} className="flex justify-between gap-3">
               <span className="truncate">{name}</span>
               <span className="tabular-nums">{v}</span>
             </li>

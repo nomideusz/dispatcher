@@ -127,7 +127,7 @@ export function TemplatesTable({
         ))}
       </div>
 
-      <div className="max-h-[36rem] overflow-auto">
+      <div className="scroll-fade max-h-[36rem] overflow-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b text-left text-xs text-muted-foreground">

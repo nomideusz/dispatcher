@@ -49,7 +49,7 @@ export default function Analytics() {
     <main className="viz shell space-y-5 py-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-heading text-xl font-semibold">Kickback</h1>
+          <h1 className="font-heading text-2xl font-semibold tracking-tight">Kickback</h1>
           <p className="text-sm text-muted-foreground">
             {data
               ? `Sampled ${fmtAgo(data.sampledAt, new Date().toISOString())} ago · tracking since ${fmtDay(data.trackedSince)}`

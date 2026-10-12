@@ -22,6 +22,8 @@ type Dot = TimelineTemplate & {
   earned: number;
   payers: number | undefined;
   label?: string;
+  /** Same name, drawn left of the dot: near the right edge it would clip. */
+  labelLeft?: string;
 };
 
 /** One dot per template: live projects across, money up, services as size.
@@ -52,9 +54,10 @@ export function TemplateScatter({
     ...[...dots].sort((a, b) => b.activeProjects - a.activeProjects).slice(0, 5),
   ]) {
     const [x, y] = pos(d);
-    if (d.label || placed.some(([px, py]) => Math.abs(px - x) < 0.18 && Math.abs(py - y) < 0.06)) continue;
+    if (d.label || d.labelLeft || placed.some(([px, py]) => Math.abs(px - x) < 0.18 && Math.abs(py - y) < 0.06)) continue;
     placed.push([x, y]);
-    d.label = shortName(d.name);
+    if (x > 0.8) d.labelLeft = shortName(d.name);
+    else d.label = shortName(d.name);
   }
   const diagonal = Math.min(xTop, yTop);
   const maxServices = Math.max(1, ...dots.map((d) => d.services));
@@ -140,6 +143,13 @@ export function TemplateScatter({
               <LabelList
                 dataKey="label"
                 position="right"
+                offset={8}
+                fill="var(--foreground)"
+                fontSize={11}
+              />
+              <LabelList
+                dataKey="labelLeft"
+                position="left"
                 offset={8}
                 fill="var(--foreground)"
                 fontSize={11}

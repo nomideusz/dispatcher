@@ -163,6 +163,37 @@ html.dark {
   --viz-critical: #d85c5a;
 }
 
+/* Browser surfaces carry the brand too: purple selection, themed
+   scrollbars, and native controls in the accent. */
+::selection {
+  background: color-mix(in oklab, var(--primary) 28%, transparent);
+}
+html {
+  accent-color: var(--primary);
+  scrollbar-color: color-mix(in oklab, var(--foreground) 22%, transparent) transparent;
+}
+
+/* A scroll box that clips mid-row reads as broken. Fade the bottom edge
+   while there is more below, and drop the fade once scrolled to the end.
+   Browsers without scroll timelines get the plain box. */
+@property --scroll-fade {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes scroll-fade-out {
+  from { --scroll-fade: 2.5rem; }
+  90% { --scroll-fade: 2.5rem; }
+  to { --scroll-fade: 0px; }
+}
+@supports (animation-timeline: scroll()) {
+  .scroll-fade {
+    mask-image: linear-gradient(to bottom, #000 calc(100% - var(--scroll-fade)), transparent);
+    animation: scroll-fade-out linear both;
+    animation-timeline: scroll(self);
+  }
+}
+
 /* Railway's dashboard-canvas dot grid, kept faint so cards stay the focus. */
 .rail-dots {
   background-image: radial-gradient(

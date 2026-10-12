@@ -323,7 +323,7 @@ function DetailBlock({
   const shown = items.slice(0, 5);
   return (
     <div className="space-y-1">
-      <div className="flex items-baseline justify-between gap-3">
+      <div className="flex items-center justify-between gap-3">
         <span className="flex items-center gap-2">
           <Swatch color={color} />
           {label}
@@ -358,7 +358,7 @@ function DetailRow({
   value: number | null;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-3">
+    <div className="flex items-center justify-between gap-3">
       <span className="flex items-center gap-2">
         {color ? <Swatch color={color} line /> : <span className="w-3" />}
         {label}

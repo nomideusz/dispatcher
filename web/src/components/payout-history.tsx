@@ -184,7 +184,7 @@ export function PayoutHistory({ days }: { days: number }) {
               ))}
             </CardAction>
           </CardHeader>
-          <CardContent className="max-h-[32rem] overflow-auto">
+          <CardContent className="scroll-fade max-h-[32rem] overflow-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-muted-foreground">
@@ -225,7 +225,7 @@ export function PayoutHistory({ days }: { days: number }) {
             </CardAction>
           </CardHeader>
           {ledgerOpen && (
-          <CardContent className="max-h-[32rem] overflow-auto">
+          <CardContent className="scroll-fade max-h-[32rem] overflow-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-muted-foreground">

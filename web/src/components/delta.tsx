@@ -17,7 +17,7 @@ export function Delta({
   }
   const up = pct >= 0;
   return (
-    <span className="flex items-center gap-1 text-xs">
+    <span className="flex flex-wrap items-center gap-x-1 text-xs">
       <span
         className={`flex items-center gap-0.5 font-medium ${
           up ? "text-(--viz-up)" : "text-(--viz-down)"
@@ -30,7 +30,7 @@ export function Delta({
         )}
         {fmtSignedPct(pct)}
       </span>
-      {suffix && <span className="text-muted-foreground">{suffix}</span>}
+      {suffix && <span className="whitespace-nowrap text-muted-foreground">{suffix}</span>}
     </span>
   );
 }

@@ -1,5 +1,6 @@
-import { ArrowDown, ArrowUp, CircleAlert } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, CircleAlert } from "lucide-react";
 import { useState } from "react";
+import { TemplateProjects } from "~/components/template-projects";
 import { Button } from "~/components/ui/button";
 import { fmtCents, fmtDay, fmtLongDay, fmtNum, fmtUsd } from "~/lib/format";
 import {
@@ -175,80 +176,110 @@ function TemplateRow({
   scale: Scale;
   lifetimeTotal: number;
 }) {
+  const [open, setOpen] = useState(false);
+  const panelId = `template-projects-${r.templateId}`;
   const muted = "py-2 pl-3 text-right tabular-nums text-muted-foreground";
   const cell = "py-2 pl-3 text-right tabular-nums";
   const p = r.payers;
   return (
-    <tr className="border-b border-border/50 last:border-0">
-      <td className="max-w-64 py-2 pr-3">
-        {r.code ? (
-          <a
-            href={`https://railway.com/deploy/${r.code}`}
-            target="_blank"
-            rel="noreferrer"
-            className="block truncate font-medium hover:underline"
-            title={r.name}
-          >
-            {r.name}
-          </a>
-        ) : (
-          <div className="truncate font-medium" title={r.name}>
-            {r.name}
+    <>
+      <tr className={open ? "bg-muted/40" : "border-b border-border/50 last:border-0"}>
+        <td className="max-w-64 py-2 pr-3">
+          <div className="flex items-start gap-1">
+            {/* The name links to Railway, so expanding gets its own control. */}
+            <button
+              type="button"
+              aria-expanded={open}
+              aria-controls={panelId}
+              aria-label={`${open ? "Hide" : "Show"} projects over time for ${r.name}`}
+              onClick={() => setOpen((o) => !o)}
+              className="-ml-1 mt-0.5 shrink-0 rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <ChevronRight className={`size-4 transition-transform ${open ? "rotate-90" : ""}`} />
+            </button>
+            <div className="min-w-0">
+              {r.code ? (
+                <a
+                  href={`https://railway.com/deploy/${r.code}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block truncate font-medium hover:underline"
+                  title={r.name}
+                >
+                  {r.name}
+                </a>
+              ) : (
+                <div className="truncate font-medium" title={r.name}>
+                  {r.name}
+                </div>
+              )}
+              <div className="text-xs text-muted-foreground">
+                {r.services} {r.services === 1 ? "service" : "services"}
+              </div>
+            </div>
           </div>
-        )}
-        <div className="text-xs text-muted-foreground">
-          {r.services} {r.services === 1 ? "service" : "services"}
-        </div>
-      </td>
-      <td className="py-2 pl-3">
-        <ActivityStrip r={r} scale={scale} />
-      </td>
-      <td className={r.newProjects ? cell : muted}>{r.newProjects ? fmtNum(r.newProjects) : "—"}</td>
-      <td className={cell}>{fmtNum(r.projects)}</td>
-      <td className={cell}>{fmtNum(r.activeProjects)}</td>
-      <td className={muted}>{r.running == null ? "—" : fmtNum(r.running)}</td>
-      <td className={`${muted} whitespace-nowrap`}>
-        {r.publishedAt ? fmtDay(r.publishedAt) : "—"}
-      </td>
-      <td className={`${muted} whitespace-nowrap`}>
-        <LastDeploy at={r.lastDeployAt} after={r.lastDeployAfter} />
-      </td>
-      <td className={r.earnedCents ? `${cell} font-medium` : muted}>
-        {r.earnedCents ? fmtCents(r.earnedCents) : "—"}
-      </td>
-      <td className={r.perActive ? cell : muted}>{r.perActive ? fmtUsd(r.perActive) : "—"}</td>
-      <td
-        className={p?.payers ? cell : muted}
-        title={p ? `${p.new} new · ${p.returning} returning · ${p.lapsed} lapsed` : undefined}
-      >
-        {p?.payers ? fmtNum(p.payers) : "—"}
-      </td>
-      <td className={cell}>
-        {r.lifetimeCents > 0 ? (
-          <div className="flex flex-col items-end gap-1">
-            {fmtCents(r.lifetimeCents)}
-            <span className="h-1 w-14 rounded-full bg-muted">
-              <span
-                className="float-right block h-full rounded-full bg-(--chart-1)"
-                style={{ width: `${Math.max(2, (r.lifetimeCents / lifetimeTotal) * 100)}%` }}
-              />
-            </span>
-          </div>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        )}
-      </td>
-      <td className={`${muted} whitespace-nowrap`}>
-        {r.firstPaidAt && r.lastPaidAt
-          ? fmtDay(r.firstPaidAt) === fmtDay(r.lastPaidAt)
-            ? fmtDay(r.lastPaidAt)
-            : `${fmtDay(r.firstPaidAt)} – ${fmtDay(r.lastPaidAt)}`
-          : "—"}
-      </td>
-      <td className={`${cell} whitespace-nowrap`}>
-        <Health r={r} />
-      </td>
-    </tr>
+        </td>
+        <td className="py-2 pl-3">
+          <ActivityStrip r={r} scale={scale} />
+        </td>
+        <td className={r.newProjects ? cell : muted}>{r.newProjects ? fmtNum(r.newProjects) : "—"}</td>
+        <td className={cell}>{fmtNum(r.projects)}</td>
+        <td className={cell}>{fmtNum(r.activeProjects)}</td>
+        <td className={muted}>{r.running == null ? "—" : fmtNum(r.running)}</td>
+        <td className={`${muted} whitespace-nowrap`}>
+          {r.publishedAt ? fmtDay(r.publishedAt) : "—"}
+        </td>
+        <td className={`${muted} whitespace-nowrap`}>
+          <LastDeploy at={r.lastDeployAt} after={r.lastDeployAfter} />
+        </td>
+        <td className={r.earnedCents ? `${cell} font-medium` : muted}>
+          {r.earnedCents ? fmtCents(r.earnedCents) : "—"}
+        </td>
+        <td className={r.perActive ? cell : muted}>{r.perActive ? fmtUsd(r.perActive) : "—"}</td>
+        <td
+          className={p?.payers ? cell : muted}
+          title={p ? `${p.new} new · ${p.returning} returning · ${p.lapsed} lapsed` : undefined}
+        >
+          {p?.payers ? fmtNum(p.payers) : "—"}
+        </td>
+        <td className={cell}>
+          {r.lifetimeCents > 0 ? (
+            <div className="flex flex-col items-end gap-1">
+              {fmtCents(r.lifetimeCents)}
+              <span className="h-1 w-14 rounded-full bg-muted">
+                <span
+                  className="float-right block h-full rounded-full bg-(--chart-1)"
+                  style={{ width: `${Math.max(2, (r.lifetimeCents / lifetimeTotal) * 100)}%` }}
+                />
+              </span>
+            </div>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </td>
+        <td className={`${muted} whitespace-nowrap`}>
+          {r.firstPaidAt && r.lastPaidAt
+            ? fmtDay(r.firstPaidAt) === fmtDay(r.lastPaidAt)
+              ? fmtDay(r.lastPaidAt)
+              : `${fmtDay(r.firstPaidAt)} – ${fmtDay(r.lastPaidAt)}`
+            : "—"}
+        </td>
+        <td className={`${cell} whitespace-nowrap`}>
+          <Health r={r} />
+        </td>
+      </tr>
+      {open && (
+        <tr id={panelId} className="border-b border-border/50 bg-muted/40 last:border-0">
+          {/* Sticky to the scroller's left edge so the charts stay in view
+              while the wide table is scrolled sideways. */}
+          <td colSpan={14} className="p-0">
+            <div className="sticky left-0 w-[min(56rem,calc(100vw-4rem))] px-5 pt-2 pb-6">
+              <TemplateProjects templateId={r.templateId} />
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 

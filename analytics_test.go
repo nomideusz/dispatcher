@@ -120,3 +120,41 @@ func TestAnalyticsTotalsUseTemplateListProjectCounts(t *testing.T) {
 		t.Fatalf("totals = %+v", got)
 	}
 }
+
+func TestTemplateProjectPointsSkipsImportedRowsAndOtherTemplates(t *testing.T) {
+	db, err := gorm.Open(duckdb.Open(filepath.Join(t.TempDir(), "projects.duckdb")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&TemplateSnapshot{}); err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Date(2026, time.September, 10, 12, 0, 0, 0, time.UTC)
+	at := func(h int) time.Time { return t0.Add(time.Duration(h) * time.Hour) }
+	rows := []TemplateSnapshot{
+		{SampledAt: at(-48), TemplateID: "a", Status: "PUBLISHED", Projects: 1}, // before the window
+		{SampledAt: at(0), TemplateID: "a", Status: "PUBLISHED", Projects: 10, RecentProjects: 6, ActiveProjects: 4},
+		{SampledAt: at(1), TemplateID: "a", Status: "IMPORTED"}, // backfill zeros
+		{SampledAt: at(1), TemplateID: "b", Status: "PUBLISHED", Projects: 99},
+		{SampledAt: at(2), TemplateID: "a", Status: "PUBLISHED", Projects: 15, RecentProjects: 9, ActiveProjects: 4,
+			TotalDeployments: pointerTo(int64(40))},
+	}
+	if err := gorm.G[TemplateSnapshot](db).CreateInBatches(t.Context(), &rows, 100); err != nil {
+		t.Fatal(err)
+	}
+
+	points, err := templateProjectPoints(t.Context(), db, "a", at(-1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(points) != 2 || points[0].Projects != 10 || points[1].Projects != 15 {
+		t.Fatalf("points = %+v", points)
+	}
+	c := buildProjectChanges(points)
+	if c.Projects.Current != 15 || *c.Projects.Previous != 10 || c.ActiveProjects.Current != 4 || *c.RecentProjects.Previous != 6 {
+		t.Fatalf("change = %+v", c)
+	}
+	if buildProjectChanges(nil) != nil {
+		t.Fatal("empty window should have no change")
+	}
+}

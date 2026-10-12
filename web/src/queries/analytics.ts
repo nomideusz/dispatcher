@@ -99,6 +99,46 @@ export const timelineQuery = (days: number) =>
     placeholderData: (previous) => previous,
   });
 
+export interface MetricChange {
+  current: number;
+  previous: number | null;
+  changePct: number | null;
+}
+
+export interface ProjectPoint {
+  sampledAt: string;
+  projects: number;
+  /** Projects deployed in the 90 days before the sample. */
+  recentProjects: number;
+  activeProjects: number;
+}
+
+export interface TemplateProjects {
+  days: number;
+  /** Newest sample in the window against the oldest; null when the window
+   * holds no samples. */
+  change: {
+    projects: MetricChange;
+    recentProjects: MetricChange;
+    activeProjects: MetricChange;
+  } | null;
+  points: ProjectPoint[];
+}
+
+export const templateProjectsQuery = (templateId: string, days: number) =>
+  queryOptions({
+    queryKey: ["analytics", "projects", templateId, days],
+    queryFn: ({ signal }) =>
+      api
+        .get(`analytics/templates/${encodeURIComponent(templateId)}/projects`, {
+          searchParams: { days },
+          signal,
+        })
+        .json<TemplateProjects>(),
+    // Hold the previous range on screen while the next one loads.
+    placeholderData: (previous) => previous,
+  });
+
 /** Collect a fresh snapshot server-side, then refetch everything it feeds. */
 export function useRefreshAnalytics() {
   const qc = useQueryClient();

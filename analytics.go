@@ -292,6 +292,83 @@ func handleTemplateAnalytics(db *gorm.DB) http.HandlerFunc {
 	}
 }
 
+type projectPoint struct {
+	SampledAt      time.Time `json:"sampledAt"`
+	Projects       int64     `json:"projects"`
+	RecentProjects int64     `json:"recentProjects"`
+	ActiveProjects int64     `json:"activeProjects"`
+}
+
+// projectChanges compares the newest sample in the window with the oldest,
+// so the change reads "since the start of the selected range".
+type projectChanges struct {
+	Projects       metricChange `json:"projects"`
+	RecentProjects metricChange `json:"recentProjects"`
+	ActiveProjects metricChange `json:"activeProjects"`
+}
+
+type templateProjectsResponse struct {
+	Days int `json:"days"`
+	// Change is null while the window holds no samples.
+	Change *projectChanges `json:"change"`
+	Points []projectPoint  `json:"points"`
+}
+
+// handleTemplateProjects returns one template's total, recent (last 90 days)
+// and active project counts over time; ?days=N bounds the window (default 30).
+func handleTemplateProjects(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		days := 30
+		if v, err := strconv.Atoi(r.URL.Query().Get("days")); err == nil && v >= 1 && v <= 365 {
+			days = v
+		}
+		points, err := templateProjectPoints(r.Context(), db, r.PathValue("template"), time.Now().UTC().AddDate(0, 0, -days))
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, templateProjectsResponse{Days: days, Change: buildProjectChanges(points), Points: points})
+	}
+}
+
+// templateProjectPoints reads the template-list project counts, which hold
+// Railway's real figures across the whole history (the templateMetrics
+// deployment counts run 1.5–3× higher). Only PUBLISHED rows count: IMPORTED
+// backfill rows carry zeros that would chart as a crash to nothing.
+func templateProjectPoints(ctx context.Context, db *gorm.DB, templateID string, since time.Time) ([]projectPoint, error) {
+	points := []projectPoint{}
+	err := db.WithContext(ctx).Raw(`
+		SELECT sampled_at, projects, recent_projects, active_projects
+		FROM template_snapshots
+		WHERE template_id = ? AND sampled_at >= ? AND status = 'PUBLISHED'
+		ORDER BY sampled_at`, templateID, since).Scan(&points).Error
+	return points, err
+}
+
+func buildProjectChanges(points []projectPoint) *projectChanges {
+	if len(points) == 0 {
+		return nil
+	}
+	totals := func(p projectPoint) snapshotTotals {
+		return snapshotTotals{
+			Projects:       float64(p.Projects),
+			RecentProjects: float64(p.RecentProjects),
+			ActiveProjects: float64(p.ActiveProjects),
+		}
+	}
+	current := totals(points[len(points)-1])
+	var first *snapshotTotals
+	if len(points) > 1 {
+		t := totals(points[0])
+		first = &t
+	}
+	return &projectChanges{
+		Projects:       changeOf(current.Projects, first, func(t snapshotTotals) float64 { return t.Projects }),
+		RecentProjects: changeOf(current.RecentProjects, first, func(t snapshotTotals) float64 { return t.RecentProjects }),
+		ActiveProjects: changeOf(current.ActiveProjects, first, func(t snapshotTotals) float64 { return t.ActiveProjects }),
+	}
+}
+
 // comparisonTimestamps picks the latest sample and the sample to compare it
 // against: the newest one at least 7 days older, falling back to the oldest
 // available so young deployments still get a delta. latest is nil while the

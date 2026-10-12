@@ -17,7 +17,7 @@ import {
   fmtLongDay,
   fmtNum,
   fmtUsdTick,
-  shortName,
+  shortNames,
 } from "~/lib/format";
 import type { TimelinePoint, TimelineResponse } from "~/queries/analytics";
 
@@ -262,6 +262,7 @@ function DayDetail({
     (t) => t.publishedAt && dayKey(t.publishedAt) === date,
   );
   const catchUp = data.gaps.find((g) => dayKey(g.to) === date);
+  const name = shortNames(data.templates.map((t) => t.name));
 
   return (
     <aside className="space-y-4 border-t pt-4 text-sm lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6">
@@ -276,13 +277,13 @@ function DayDetail({
         color={COLOR.earned}
         label="Kickback earned"
         value={fmtCents(point.earnedCents)}
-        items={earners.map(({ t, a }) => [shortName(t.name), fmtCents(a!.earnedCents)])}
+        items={earners.map(({ t, a }) => [name(t.name), fmtCents(a!.earnedCents)])}
       />
       <DetailBlock
         color={COLOR.newProjects}
         label="New projects"
         value={fmtNum(point.newProjects)}
-        items={deployed.map(({ t, a }) => [shortName(t.name), fmtNum(a!.newProjects)])}
+        items={deployed.map(({ t, a }) => [name(t.name), fmtNum(a!.newProjects)])}
         note={
           catchUp && point.newProjects > 0
             ? `Includes projects that arrived since ${fmtDay(catchUp.from)}, during the collection gap.`
@@ -299,7 +300,7 @@ function DayDetail({
         <DetailRow color={COLOR.services} label="Services" value={point.services} />
         {added.length > 0 && (
           <p className="text-xs text-muted-foreground">
-            Published this day: {added.map((t) => shortName(t.name)).join(", ")}
+            Published this day: {added.map((t) => name(t.name)).join(", ")}
           </p>
         )}
       </div>
@@ -332,8 +333,7 @@ function DetailBlock({
       </div>
       {shown.length > 0 && (
         <ul className="space-y-0.5 pl-4.5 text-xs text-muted-foreground">
-          {/* Index keys: short names collide (eight "Linux Desktop" templates), and
-              duplicate keys make React leave stale rows behind on every hover. */}
+          {/* Index keys: duplicate keys make React leave stale rows behind on hover. */}
           {shown.map(([name, v], i) => (
             <li key={i} className="flex justify-between gap-3">
               <span className="truncate">{name}</span>

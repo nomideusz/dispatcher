@@ -10,7 +10,7 @@ import {
   ZAxis,
 } from "recharts";
 import { ChartContainer } from "~/components/ui/chart";
-import { fmtDay, fmtNum, fmtUsd, fmtUsdTick, shortName } from "~/lib/format";
+import { fmtDay, fmtNum, fmtUsd, fmtUsdTick, shortNames } from "~/lib/format";
 import type { TimelineTemplate } from "~/queries/analytics";
 
 /** Tick values that read well on a square-root axis: dense near zero, where
@@ -47,6 +47,7 @@ export function TemplateScatter({
   // Name the templates that make the argument (top earners, then the widest
   // reach) wherever the name fits: a label that would land on one already
   // placed, in the chart's square-root space, is left to the tooltip.
+  const name = shortNames(templates.map((t) => t.name));
   const placed: [number, number][] = [];
   const pos = (d: Dot) => [Math.sqrt(d.activeProjects / xTop), Math.sqrt(d.earned / yTop)];
   for (const d of [
@@ -56,8 +57,8 @@ export function TemplateScatter({
     const [x, y] = pos(d);
     if (d.label || d.labelLeft || placed.some(([px, py]) => Math.abs(px - x) < 0.18 && Math.abs(py - y) < 0.06)) continue;
     placed.push([x, y]);
-    if (x > 0.8) d.labelLeft = shortName(d.name);
-    else d.label = shortName(d.name);
+    if (x > 0.8) d.labelLeft = name(d.name);
+    else d.label = name(d.name);
   }
   const diagonal = Math.min(xTop, yTop);
   const maxServices = Math.max(1, ...dots.map((d) => d.services));

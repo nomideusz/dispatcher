@@ -85,3 +85,26 @@ export function dayKey(iso: string): string {
 export function shortName(name: string): string {
   return name.split(" | ")[0];
 }
+
+/** Short names for a catalog. Where several templates share one (eight
+ * "Linux Desktop"s), each keeps its variant minus the words they all end
+ * with: "Linux Desktop · Alpine KDE Plasma". */
+export function shortNames(names: string[]): (name: string) => string {
+  const groups = new Map<string, string[]>();
+  for (const n of new Set(names)) {
+    const s = shortName(n);
+    groups.set(s, [...(groups.get(s) ?? []), n]);
+  }
+  const out = new Map<string, string>();
+  for (const [s, group] of groups) {
+    if (group.length < 2) continue;
+    const rests = group.map((n) => n.slice(s.length + 3).split(" ").filter(Boolean));
+    let k = 0;
+    while (rests.every((r) => r.length > k + 1 && r.at(-1 - k) === rests[0].at(-1 - k))) k++;
+    group.forEach((n, i) => {
+      const variant = rests[i].slice(0, rests[i].length - k).join(" ");
+      out.set(n, variant ? `${s} · ${variant}` : s);
+    });
+  }
+  return (n) => out.get(n) ?? shortName(n);
+}

@@ -16,7 +16,7 @@ import {
   CardTitle,
 } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
-import { dayDate, dayKey, fmtAgo, fmtCents, fmtDay, fmtNum, shortName } from "~/lib/format";
+import { dayDate, dayKey, fmtAgo, fmtCents, fmtDay, fmtNum, shortNames } from "~/lib/format";
 import { cn } from "~/lib/utils";
 import {
   qualifiesForBonus,
@@ -305,13 +305,14 @@ function Attention({
       text: `No snapshot since ${fmtDay(data.sampledAt)} — the collector has stopped`,
     });
   }
+  const name = shortNames(data.templates.map((t) => t.name));
   const atRisk = data.templates.filter((t) => !qualifiesForBonus(t));
   if (atRisk.length > 0) {
     items.push({
       key: "support",
       tone: "critical",
       text: `${atRisk.length} ${atRisk.length === 1 ? "template is" : "templates are"} below the ${SUPPORT_BONUS_THRESHOLD}% support-bonus line`,
-      title: atRisk.map((t) => shortName(t.name)).join(", "),
+      title: atRisk.map((t) => name(t.name)).join(", "),
     });
   }
   const failing = data.templates.filter(
@@ -322,7 +323,7 @@ function Attention({
       key: "health",
       tone: "muted",
       text: `${failing.length} deployed ${failing.length === 1 ? "template has" : "templates have"} deploy health under 50%`,
-      title: failing.map((t) => `${shortName(t.name)} ${t.health}%`).join(", "),
+      title: failing.map((t) => `${name(t.name)} ${t.health}%`).join(", "),
     });
   }
   if (payouts && payouts.totals.pendingCount > 0) {

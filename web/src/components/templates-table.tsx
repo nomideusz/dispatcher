@@ -31,6 +31,7 @@ type SortKey =
   | "projects"
   | "activeProjects"
   | "running"
+  | "publishedAt"
   | "lastDeployAt"
   | "earnedCents"
   | "perActive"
@@ -139,6 +140,7 @@ export function TemplatesTable({
               {header("projects", "Projects")}
               {header("activeProjects", "Active")}
               {header("running", "Running")}
+              {header("publishedAt", "Published")}
               {header("lastDeployAt", "Last deploy")}
               {header("earnedCents", `Earned ${dates.length}d`)}
               {header("perActive", "$/active")}
@@ -196,7 +198,6 @@ function TemplateRow({
         )}
         <div className="text-xs text-muted-foreground">
           {r.services} {r.services === 1 ? "service" : "services"}
-          {r.publishedAt && ` · published ${fmtDay(r.publishedAt)}`}
         </div>
       </td>
       <td className="py-2 pl-3">
@@ -206,6 +207,9 @@ function TemplateRow({
       <td className={cell}>{fmtNum(r.projects)}</td>
       <td className={cell}>{fmtNum(r.activeProjects)}</td>
       <td className={muted}>{r.running == null ? "—" : fmtNum(r.running)}</td>
+      <td className={`${muted} whitespace-nowrap`}>
+        {r.publishedAt ? fmtDay(r.publishedAt) : "—"}
+      </td>
       <td className={`${muted} whitespace-nowrap`}>
         <LastDeploy at={r.lastDeployAt} after={r.lastDeployAfter} />
       </td>

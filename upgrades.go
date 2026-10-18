@@ -109,8 +109,13 @@ func registryRepo(image string) (host, repo string) {
 var tagShapeRe = regexp.MustCompile(`^(\D*?)(\d+(?:\.\d+)*)(.*)$`)
 var digitsRe = regexp.MustCompile(`\d+`)
 
+// pgSuffixRe matches a Postgres major in a suffix (pgvector's 0.8.7-pg17),
+// which is part of the shape: pg17 → pg18 is a database major, not a patch.
+var pgSuffixRe = regexp.MustCompile(`pg\d+`)
+
 // tagVersion splits a tag into a shape key and its numbers: the version core
-// followed by any numbers in the suffix (alpine3.20 → 3, 20). ok is false for
+// followed by any numbers in the suffix (alpine3.20 → 3, 20), except a pgNN
+// suffix, which stays in the shape. ok is false for
 // tags with no version (latest, main).
 func tagVersion(tag string) (shape string, nums []int, ok bool) {
 	m := tagShapeRe.FindStringSubmatch(tag)
@@ -125,14 +130,16 @@ func tagVersion(tag string) (shape string, nums []int, ok bool) {
 		}
 		nums = append(nums, n)
 	}
-	for _, part := range digitsRe.FindAllString(m[3], -1) {
+	pg := pgSuffixRe.FindString(m[3])
+	suffix := pgSuffixRe.ReplaceAllString(m[3], "pg")
+	for _, part := range digitsRe.FindAllString(suffix, -1) {
 		n, err := strconv.Atoi(part)
 		if err != nil {
 			return "", nil, false
 		}
 		nums = append(nums, n)
 	}
-	shape = m[1] + "|" + strconv.Itoa(len(core)) + "|" + digitsRe.ReplaceAllString(m[3], "#")
+	shape = m[1] + "|" + strconv.Itoa(len(core)) + "|" + digitsRe.ReplaceAllString(suffix, "#") + "|" + pg
 	return shape, nums, true
 }
 

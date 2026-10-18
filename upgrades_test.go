@@ -39,13 +39,15 @@ func TestRegistryRepo(t *testing.T) {
 
 func TestNewestTags(t *testing.T) {
 	tags := []string{"17.9.2-slim", "17.9.3-slim", "17.10.0-slim", "18.0.0-rc1-slim", "18.1.0-slim", "17.10.0", "latest",
-		"v0.9.26", "v0.9.30", "v1.0.0-beta.1", "8-alpine3.20", "8-alpine3.21", "9-alpine3.21", "16", "17", "18"}
+		"v0.9.26", "v0.9.30", "v1.0.0-beta.1", "8-alpine3.20", "8-alpine3.21", "9-alpine3.21", "16", "17", "18",
+		"0.8.6-pg17", "0.8.7-pg17", "0.8.7-pg18"}
 	cases := []struct{ pinned, latest, behind, major string }{
 		{"17.9.2-slim", "17.10.0-slim", "minor", "18.1.0-slim"},
 		{"17.10.0-slim", "17.10.0-slim", "", "18.1.0-slim"},
 		{"v0.9.26", "v0.9.30", "patch", ""},
 		{"8-alpine3.20", "8-alpine3.21", "patch", "9-alpine3.21"},
 		{"17", "17", "", "18"},
+		{"0.8.6-pg17", "0.8.7-pg17", "patch", ""},
 		{"latest", "", "floating", ""},
 		{"@sha256:abc", "", "floating", ""},
 	}

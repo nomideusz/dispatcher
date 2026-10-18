@@ -12,9 +12,11 @@ import (
 	"gorm.io/gorm"
 )
 
+// Railway refreshes template stats on the hour, so collect a few minutes
+// after it, and send the weekly summary once that hour's snapshot is in.
 const (
-	templateSnapshotSpec = "@hourly"
-	weeklySummarySpec    = "0 9 * * MON"
+	templateSnapshotSpec = "7 * * * *"
+	weeklySummarySpec    = "10 9 * * MON"
 )
 
 // defaultAutoWithdrawSpec runs the payout job once a day at 08:00 UTC. ACH
@@ -63,6 +65,9 @@ func startCrons(db *gorm.DB) *cron.Cron {
 	if _, err := c.AddFunc(weeklySummarySpec, func() { runWeeklySummary(db) }); err != nil {
 		log.Fatalf("schedule weekly summary: %v", err)
 	}
+	if _, err := c.AddFunc(upgradeCheckSpec, func() { runUpgradeCheck(db) }); err != nil {
+		log.Fatalf("schedule upgrade check: %v", err)
+	}
 	autoWithdrawEntry.c = c
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -82,6 +87,7 @@ func startCrons(db *gorm.DB) *cron.Cron {
 	// Collect once at startup so the series has a point right away instead of
 	// waiting for the first tick.
 	go runTemplateSnapshots(db)
+	go runUpgradeCheck(db)
 	return c
 }
 

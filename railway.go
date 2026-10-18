@@ -261,10 +261,11 @@ type workspaceTemplate struct {
 	Projects       int64 `json:"projects"`
 	RecentProjects int64 `json:"recentProjects"`
 	ActiveProjects int64 `json:"activeProjects"`
-	// SerializedConfig is only read for its service count, which is what
-	// lets the two "active" figures be compared: templateMetrics'
+	// SerializedConfig is read for its service count, which is what lets
+	// the two "active" figures be compared (templateMetrics'
 	// activeDeployments looks like it counts running services, the
-	// templates page counts projects.
+	// templates page counts projects), and for each service's pinned image
+	// (see upgrades.go).
 	SerializedConfig struct {
 		Services map[string]json.RawMessage `json:"services"`
 	} `json:"serializedConfig"`

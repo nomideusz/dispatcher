@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	duckdb "github.com/vogo/duckdb/v2"
@@ -130,7 +131,7 @@ func openDB(dsn string) *gorm.DB {
 	if err != nil {
 		log.Fatalf("open database %s: %v", dsn, err)
 	}
-	if err := db.AutoMigrate(&RailwayCredentials{}, &TemplateSnapshot{}, &AutoWithdrawSettings{}, &NotificationTarget{}, &Payout{}); err != nil {
+	if err := db.AutoMigrate(&RailwayCredentials{}, &TemplateSnapshot{}, &AutoWithdrawSettings{}, &NotificationTarget{}, &Payout{}, &ServiceImage{}); err != nil {
 		log.Fatalf("migrate database: %v", err)
 	}
 	// Snapshots taken before templateMetrics was collected recorded the same
@@ -187,7 +188,14 @@ func saveToken(ctx context.Context, db *gorm.DB, id uint, tok tokenResponse) err
 
 // workspaceToken returns a valid access token for background work,
 // refreshing and persisting it when the stored one is near expiry.
+// workspaceTokenMu serializes background jobs that start on the same tick
+// (hourly snapshots, auto-withdraw, the upgrade check) so only one of them
+// spends the refresh token and the rest read the saved result.
+var workspaceTokenMu sync.Mutex
+
 func workspaceToken(ctx context.Context, db *gorm.DB) (string, error) {
+	workspaceTokenMu.Lock()
+	defer workspaceTokenMu.Unlock()
 	creds, err := gorm.G[RailwayCredentials](db).First(ctx)
 	if err != nil {
 		return "", fmt.Errorf("load railway credentials: %w", err)

@@ -7,6 +7,7 @@ import { TemplateFunnel } from "~/components/template-funnel";
 import { TemplateScatter, TemplateSegments } from "~/components/template-scatter";
 import { TemplatesTable } from "~/components/templates-table";
 import { TimelineChart } from "~/components/timeline-chart";
+import { UpgradeQueue } from "~/components/upgrade-queue";
 import { Button } from "~/components/ui/button";
 import {
   Card,
@@ -143,6 +144,8 @@ export default function Analytics() {
               />
             </CardContent>
           </Card>
+
+          <UpgradeQueue />
 
           <PayoutHistory days={days} />
         </>

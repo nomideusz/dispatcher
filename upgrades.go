@@ -364,20 +364,25 @@ func checkTemplateUpgrades(db *gorm.DB) error {
 	if ctx.Err() != nil {
 		return errors.New("timed out reading registries")
 	}
-	err = db.Transaction(func(tx *gorm.DB) error {
+	if err := replaceServiceImages(db, rows); err != nil {
+		return err
+	}
+	log.Printf("upgrade check: %d services across %d templates, %d repositories", len(rows), len(templates), len(cache))
+	return nil
+}
+
+// replaceServiceImages swaps in a run's rows in one transaction. Batches run
+// without GORM's own nested transaction, whose SAVEPOINT DuckDB rejects.
+func replaceServiceImages(db *gorm.DB, rows []ServiceImage) error {
+	return db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec("DELETE FROM service_images").Error; err != nil {
 			return err
 		}
 		if len(rows) == 0 {
 			return nil
 		}
-		return tx.CreateInBatches(&rows, 100).Error
+		return tx.Session(&gorm.Session{SkipDefaultTransaction: true}).CreateInBatches(&rows, 100).Error
 	})
-	if err != nil {
-		return err
-	}
-	log.Printf("upgrade check: %d services across %d templates, %d repositories", len(rows), len(templates), len(cache))
-	return nil
 }
 
 type upgradeRow struct {

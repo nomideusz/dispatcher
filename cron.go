@@ -12,9 +12,11 @@ import (
 	"gorm.io/gorm"
 )
 
+// Railway refreshes template stats on the hour, so collect a few minutes
+// after it, and send the weekly summary once that hour's snapshot is in.
 const (
-	templateSnapshotSpec = "@hourly"
-	weeklySummarySpec    = "0 9 * * MON"
+	templateSnapshotSpec = "7 * * * *"
+	weeklySummarySpec    = "10 9 * * MON"
 )
 
 // defaultAutoWithdrawSpec runs the payout job once a day at 08:00 UTC. ACH

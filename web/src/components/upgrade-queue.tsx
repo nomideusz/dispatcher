@@ -39,7 +39,7 @@ export function UpgradeQueue() {
         <CardTitle>Upgrades</CardTitle>
         <CardDescription>
           {checkedAt
-            ? `${fmtNum(behindTemplates)} templates pin an image with a newer release on the same major line, most earning first. Checked against the registries ${fmtAgo(checkedAt, new Date().toISOString())} ago; daily at 06:00 UTC.`
+            ? `${fmtNum(behindTemplates)} templates pin an image with a newer release on the same major line, most earning first. Checked against the registries ${fmtAgo(checkedAt, new Date().toISOString())} ago; daily at 06:08 UTC.`
             : "Each template's pinned images against the newest tag of the same shape in their registry."}
           {refresh.isError && (
             <span className="text-(--viz-critical)"> Re-check failed: {refresh.error.message}</span>

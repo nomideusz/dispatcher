@@ -25,7 +25,7 @@ import (
 // against other x.y.z-slim tags only, so variants and pre-releases never
 // count as upgrades.
 
-const upgradeCheckSpec = "0 6 * * *"
+const upgradeCheckSpec = "8 6 * * *"
 
 // ServiceImage is one service's pinned image as of the last check. Each run
 // replaces the whole table; history lives in git, not here.

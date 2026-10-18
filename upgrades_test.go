@@ -1,6 +1,13 @@
 package main
 
-import "testing"
+import (
+	"fmt"
+	"path/filepath"
+	"testing"
+
+	duckdb "github.com/vogo/duckdb/v2"
+	"gorm.io/gorm"
+)
 
 func TestSplitImageTag(t *testing.T) {
 	cases := []struct{ ref, image, tag string }{
@@ -57,5 +64,31 @@ func TestNextPageURL(t *testing.T) {
 	}
 	if nextPageURL("https://x/v2/a/tags/list", "") != "" {
 		t.Error("nextPageURL without Link should be empty")
+	}
+}
+
+// More rows than one batch: GORM would wrap the batches in a SAVEPOINT,
+// which DuckDB rejects.
+func TestReplaceServiceImages(t *testing.T) {
+	db, err := gorm.Open(duckdb.Open(filepath.Join(t.TempDir(), "upgrades.duckdb")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&ServiceImage{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []int{250, 3} {
+		rows := make([]ServiceImage, n)
+		for i := range rows {
+			rows[i] = ServiceImage{TemplateID: "t", Service: fmt.Sprint(i), Image: "postgres", Tag: "17"}
+		}
+		if err := replaceServiceImages(db, rows); err != nil {
+			t.Fatal(err)
+		}
+		var count int64
+		db.Model(&ServiceImage{}).Count(&count)
+		if count != int64(n) {
+			t.Fatalf("count = %d, want %d", count, n)
+		}
 	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -104,6 +105,35 @@ func TestResolveSessionFailsWhenRailwayRejectsTheGrant(t *testing.T) {
 	if _, _, err := resolveSession(t.Context(), db, creds,
 		session{AccessToken: "old", ExpiresAt: now.Add(-time.Minute)}, now); err == nil {
 		t.Fatal("a session without a refresh token was accepted")
+	}
+}
+
+func TestRevokedClientIsForgottenSoLoginCanReRegister(t *testing.T) {
+	db := cliAuthTestDB(t, "session-revoked-client.duckdb")
+	oldClient := client
+	body := `{"error":"invalid_grant"}`
+	client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return testHTTPResponse(req, http.StatusUnauthorized, body), nil
+	})}
+	defer func() { client = oldClient }()
+
+	if _, err := gorm.G[RailwayCredentials](db).Where("1 = 1").Update(t.Context(), "refresh_token", "refresh"); err != nil {
+		t.Fatal(err)
+	}
+	// A rejected grant is the user's problem, not the client's: keep it.
+	if _, err := workspaceToken(t.Context(), db); err == nil {
+		t.Fatal("a rejected grant was accepted")
+	}
+	if n, _ := gorm.G[RailwayCredentials](db).Count(t.Context(), "*"); n != 1 {
+		t.Fatalf("credentials dropped on invalid_grant, %d left", n)
+	}
+
+	body = `{"error":"invalid_client","error_description":"client authentication failed"}`
+	if _, err := workspaceToken(t.Context(), db); !errors.Is(err, errClientRevoked) {
+		t.Fatalf("err = %v", err)
+	}
+	if n, _ := gorm.G[RailwayCredentials](db).Count(t.Context(), "*"); n != 0 {
+		t.Fatalf("revoked client kept, %d left", n)
 	}
 }
 

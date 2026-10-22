@@ -87,6 +87,7 @@ func resolveSession(ctx context.Context, db *gorm.DB, creds RailwayCredentials, 
 		return refreshed, nil
 	})
 	if err != nil {
+		forgetRevokedClient(ctx, db, creds.ID, err)
 		return session{}, false, fmt.Errorf("refresh session: %w", err)
 	}
 	return renewed.(session), true, nil

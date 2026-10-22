@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -77,6 +78,10 @@ func createRailwayCredentials() (RailwayCredentials, error) {
 	return RailwayCredentials{ClientID: reg.ClientID, ClientSecret: reg.ClientSecret}, nil
 }
 
+// errClientRevoked means Railway no longer recognises Dispatcher's OAuth
+// client, so no refresh or login can succeed until a new one is registered.
+var errClientRevoked = errors.New("railway oauth client revoked")
+
 type tokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	TokenType    string `json:"token_type"`
@@ -118,6 +123,9 @@ func requestToken(ctx context.Context, creds RailwayCredentials, form url.Values
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if resp.StatusCode == http.StatusUnauthorized && bytes.Contains(body, []byte(`"invalid_client"`)) {
+			return tokenResponse{}, fmt.Errorf("railway oauth token: %s: %s: %w", resp.Status, body, errClientRevoked)
+		}
 		return tokenResponse{}, fmt.Errorf("railway oauth token: %s: %s", resp.Status, body)
 	}
 

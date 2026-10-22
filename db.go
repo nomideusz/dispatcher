@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -208,10 +209,25 @@ func workspaceToken(ctx context.Context, db *gorm.DB) (string, error) {
 	}
 	tok, err := refreshAccessToken(ctx, creds)
 	if err != nil {
+		forgetRevokedClient(ctx, db, creds.ID, err)
 		return "", err
 	}
 	if err := saveToken(ctx, db, creds.ID, tok); err != nil {
 		return "", err
 	}
 	return tok.AccessToken, nil
+}
+
+// forgetRevokedClient deletes the stored OAuth client once Railway has
+// revoked it, so the next login at /api/auth/redirect registers a new one
+// instead of retrying dead credentials forever.
+func forgetRevokedClient(ctx context.Context, db *gorm.DB, id uint, err error) {
+	if !errors.Is(err, errClientRevoked) {
+		return
+	}
+	if _, err := gorm.G[RailwayCredentials](db).Where("id = ?", id).Delete(ctx); err != nil {
+		log.Printf("forget revoked Railway client: %v", err)
+		return
+	}
+	log.Printf("Railway revoked the OAuth client; log in again at /api/auth/redirect to register a new one")
 }

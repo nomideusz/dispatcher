@@ -30,6 +30,8 @@ Note: `go build` embeds `web/build/client`, so the frontend must be built first 
 
 On Railway, Dispatcher reports on the workspace that owns its project (`RAILWAY_PROJECT_ID`, injected by Railway). Hosted anywhere else, set `RAILWAY_WORKSPACE_ID` to the workspace id instead.
 
+Dispatcher registers its own Railway OAuth client on first login. If Railway refuses dynamic registration, create a Web OAuth app under workspace settings → Developer with `CALLBACK_URL` as its redirect URI, and set `RAILWAY_OAUTH_CLIENT_ID` and `RAILWAY_OAUTH_CLIENT_SECRET`. A revoked client is deleted automatically, and the next login sets up a new one.
+
 ## Database
 
 GORM with DuckDB (via `github.com/vogo/duckdb/v2`). Data lives in `dispatcher.duckdb` next to the binary (override with `DB_PATH`); `db.go` holds the models and connection, and `AutoMigrate` runs on startup. Building needs CGO (DuckDB links a C library) — already the Go default.

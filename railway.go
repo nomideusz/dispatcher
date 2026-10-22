@@ -44,6 +44,11 @@ type clientRegistrationResponse struct {
 }
 
 func createRailwayCredentials() (RailwayCredentials, error) {
+	// An OAuth app created by hand under workspace settings → Developer, for
+	// when Railway refuses dynamic client registration.
+	if id := os.Getenv("RAILWAY_OAUTH_CLIENT_ID"); id != "" {
+		return RailwayCredentials{ClientID: id, ClientSecret: os.Getenv("RAILWAY_OAUTH_CLIENT_SECRET")}, nil
+	}
 	payload, err := json.Marshal(clientRegistrationRequest{
 		ClientName:              "dispatcher",
 		ApplicationType:         "web",

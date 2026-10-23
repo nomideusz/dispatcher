@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
 
@@ -343,6 +344,8 @@ func getJSON(ctx context.Context, rawURL string, v any) error {
 
 var registryClient = &http.Client{Timeout: 30 * time.Second}
 
+const registryWorkers = 8
+
 // maxTagPages bounds pagination for repositories with thousands of tags.
 const maxTagPages = 30
 
@@ -491,40 +494,65 @@ func checkTemplateUpgrades(db *gorm.DB) error {
 		return err
 	}
 
+	// Dockerfiles and then registries are read registryWorkers at a time:
+	// one by one, ~140 repositories at a second per page of tags overran the
+	// timeout from Contabo.
+	var g errgroup.Group
+	g.SetLimit(registryWorkers)
+	checkedAt := time.Now().UTC()
+	refs := make([][]serviceImageRef, len(templates))
+	failed := make([][]ServiceImage, len(templates))
+	for i, t := range templates {
+		for _, ref := range t.templateImages() {
+			if ref.Repo == "" {
+				refs[i] = append(refs[i], ref)
+			}
+		}
+		g.Go(func() error {
+			for _, ref := range t.templateImages() {
+				if ref.Repo == "" {
+					continue
+				}
+				dockerfile, ok, err := fetchDockerfile(ctx, ref.Repo, ref.Root)
+				if err != nil {
+					failed[i] = append(failed[i], ServiceImage{CheckedAt: checkedAt, TemplateID: t.ID, Service: ref.Service, Image: ref.Repo, Behind: "unknown", Error: err.Error()})
+				} else if ok {
+					refs[i] = append(refs[i], dockerfilePins(ref.Service, dockerfile)...)
+				}
+			}
+			return nil
+		})
+	}
+	g.Wait()
+
 	type tagResult struct {
 		tags []string
 		err  error
 	}
-	cache := map[string]tagResult{}
-	checkedAt := time.Now().UTC()
-	rows := []ServiceImage{}
-	for _, t := range templates {
-		refs := []serviceImageRef{}
-		for _, ref := range t.templateImages() {
-			if ref.Repo == "" {
-				refs = append(refs, ref)
-				continue
-			}
-			dockerfile, ok, err := fetchDockerfile(ctx, ref.Repo, ref.Root)
-			if err != nil {
-				rows = append(rows, ServiceImage{CheckedAt: checkedAt, TemplateID: t.ID, Service: ref.Service, Image: ref.Repo, Behind: "unknown", Error: err.Error()})
-			} else if ok {
-				refs = append(refs, dockerfilePins(ref.Service, dockerfile)...)
+	cache := map[string]*tagResult{}
+	for _, tRefs := range refs {
+		for _, ref := range tRefs {
+			if _, _, ok := tagVersion(ref.Tag); ok && cache[ref.Image] == nil {
+				cache[ref.Image] = &tagResult{}
 			}
 		}
-		for _, ref := range refs {
+	}
+	for image, res := range cache {
+		g.Go(func() error {
+			res.tags, res.err = listTags(ctx, image)
+			return nil
+		})
+	}
+	g.Wait()
+
+	rows := []ServiceImage{}
+	for i, t := range templates {
+		rows = append(rows, failed[i]...)
+		for _, ref := range refs[i] {
 			row := ServiceImage{CheckedAt: checkedAt, TemplateID: t.ID, Service: ref.Service, Image: ref.Image, Tag: ref.Tag}
-			if _, _, ok := tagVersion(ref.Tag); !ok {
+			if res := cache[ref.Image]; res == nil {
 				row.Behind = "floating"
-				rows = append(rows, row)
-				continue
-			}
-			res, seen := cache[ref.Image]
-			if !seen {
-				res.tags, res.err = listTags(ctx, ref.Image)
-				cache[ref.Image] = res
-			}
-			if res.err != nil {
+			} else if res.err != nil {
 				row.Behind, row.Error = "unknown", res.err.Error()
 			} else {
 				row.Latest, row.Behind, row.Major = newestTags(ref.Tag, res.tags)

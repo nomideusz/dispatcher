@@ -9,7 +9,10 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,7 +26,9 @@ import (
 // templates, the tag the template pins next to the newest tag of the same
 // shape in the image's registry. "Same shape" keeps 17.9.2-slim comparing
 // against other x.y.z-slim tags only, so variants and pre-releases never
-// count as upgrades.
+// count as upgrades. Services built from a GitHub repo are read through
+// their Dockerfile: its FROM images, and any ARG marked with where its
+// releases live (see dockerfilePins).
 
 const upgradeCheckSpec = "8 6 * * *"
 
@@ -34,7 +39,8 @@ type ServiceImage struct {
 	CheckedAt  time.Time `json:"checkedAt"`
 	TemplateID string    `json:"templateId"`
 	Service    string    `json:"service"`
-	// Image is the repository as written in the template, without the tag.
+	// Image is the repository as written in the template, without the tag,
+	// or "github:owner/repo" / "npm:package" for a marked Dockerfile ARG.
 	Image string `json:"image"`
 	Tag   string `json:"tag"`
 	// Latest is the newest tag shaped like Tag on the same major version.
@@ -48,28 +54,37 @@ type ServiceImage struct {
 	Error string `json:"error,omitempty"`
 }
 
+// serviceImageRef is one pinned image, or, with Repo set, a service built
+// from a repo whose Dockerfile still has to be read for its pins.
 type serviceImageRef struct {
 	Service string
 	Image   string
 	Tag     string
+	Repo    string
+	Root    string
 }
 
-// templateImages lists the image-based services of a template. Services
-// built from a repo have no image to compare and are skipped.
+// templateImages lists the image-based and repo-built services of a template.
 func (t workspaceTemplate) templateImages() []serviceImageRef {
 	refs := []serviceImageRef{}
 	for _, raw := range t.SerializedConfig.Services {
 		var svc struct {
 			Name   string `json:"name"`
 			Source struct {
-				Image string `json:"image"`
+				Image         string `json:"image"`
+				Repo          string `json:"repo"`
+				RootDirectory string `json:"rootDirectory"`
 			} `json:"source"`
 		}
-		if json.Unmarshal(raw, &svc) != nil || svc.Source.Image == "" {
+		if json.Unmarshal(raw, &svc) != nil {
 			continue
 		}
-		image, tag := splitImageTag(svc.Source.Image)
-		refs = append(refs, serviceImageRef{Service: svc.Name, Image: image, Tag: tag})
+		if svc.Source.Image != "" {
+			image, tag := splitImageTag(svc.Source.Image)
+			refs = append(refs, serviceImageRef{Service: svc.Name, Image: image, Tag: tag})
+		} else if svc.Source.Repo != "" {
+			refs = append(refs, serviceImageRef{Service: svc.Name, Repo: svc.Source.Repo, Root: svc.Source.RootDirectory})
+		}
 	}
 	sort.Slice(refs, func(i, j int) bool { return refs[i].Service < refs[j].Service })
 	return refs
@@ -189,6 +204,140 @@ func newestTags(pinned string, tags []string) (latest, behind, major string) {
 		behind = "patch"
 	}
 	return latest, behind, major
+}
+
+var upgradeMarkerRe = regexp.MustCompile(`^#\s*upgrade:\s*(github|npm)\s+(\S+)`)
+
+// dockerfilePins reads the upstream pins of a Dockerfile: every FROM image
+// that is not an earlier stage, with ARG defaults substituted, and every ARG
+// whose comment block names where its releases live:
+//
+//	# upgrade: github pingdotgg/t3code
+//	ARG T3_VERSION=0.1.0
+//
+// (or "# upgrade: npm @anthropic-ai/claude-code"), returned with Image
+// "github:pingdotgg/t3code" or "npm:@anthropic-ai/claude-code".
+func dockerfilePins(service, dockerfile string) []serviceImageRef {
+	refs := []serviceImageRef{}
+	args := map[string]string{}
+	stages := map[string]bool{"scratch": true}
+	seen := map[string]bool{}
+	add := func(image, tag string) {
+		if !seen[image+":"+tag] {
+			seen[image+":"+tag] = true
+			refs = append(refs, serviceImageRef{Service: service, Image: image, Tag: tag})
+		}
+	}
+	marker := ""
+	for _, line := range strings.Split(dockerfile, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "#") {
+			if m := upgradeMarkerRe.FindStringSubmatch(line); m != nil {
+				marker = m[1] + ":" + m[2]
+			}
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			marker = ""
+			continue
+		}
+		switch strings.ToUpper(fields[0]) {
+		case "ARG":
+			name, value, _ := strings.Cut(fields[1], "=")
+			value = strings.Trim(value, `"'`)
+			args[name] = value
+			if marker != "" && value != "" {
+				add(marker, value)
+			}
+		case "FROM":
+			from := fields[1:]
+			for len(from) > 1 && strings.HasPrefix(from[0], "--") {
+				from = from[1:]
+			}
+			image := os.Expand(from[0], func(k string) string { return args[k] })
+			if len(from) == 3 && strings.EqualFold(from[1], "AS") {
+				stages[strings.ToLower(from[2])] = true
+			}
+			if !stages[strings.ToLower(image)] {
+				add(splitImageTag(image))
+			}
+		}
+		marker = ""
+	}
+	return refs
+}
+
+var githubRepoRe = regexp.MustCompile(`^https://github\.com/([^/]+/[^/]+?)(?:\.git)?/?$`)
+
+// fetchDockerfile reads the Dockerfile of a GitHub repo's default branch
+// under root. ok is false for repos with none (non-GitHub, or built without
+// a Dockerfile), which have nothing to compare.
+func fetchDockerfile(ctx context.Context, repo, root string) (dockerfile string, ok bool, err error) {
+	m := githubRepoRe.FindStringSubmatch(repo)
+	if m == nil {
+		return "", false, nil
+	}
+	file := path.Join("/", root, "Dockerfile")
+	resp, err := registryGet(ctx, "https://raw.githubusercontent.com/"+m[1]+"/HEAD"+file, "")
+	if err != nil {
+		return "", false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return "", false, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", false, fmt.Errorf("%s%s: %s", repo, file, resp.Status)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	return string(body), err == nil, err
+}
+
+// listTags lists the versions behind an Image: registry tags, or for a
+// marked Dockerfile ARG the latest stable GitHub release or npm version.
+// Only the latest is fetched for those, which is enough for newestTags to
+// place it on the pinned line or a later major.
+func listTags(ctx context.Context, image string) ([]string, error) {
+	if repo, ok := strings.CutPrefix(image, "github:"); ok {
+		var release struct {
+			TagName string `json:"tag_name"`
+		}
+		if err := getJSON(ctx, "https://api.github.com/repos/"+repo+"/releases/latest", &release); err != nil {
+			return nil, err
+		}
+		// v0.1.2 also as 0.1.2, so a pin written either way finds it.
+		return []string{release.TagName, strings.TrimPrefix(release.TagName, "v")}, nil
+	}
+	if pkg, ok := strings.CutPrefix(image, "npm:"); ok {
+		var latest struct {
+			Version string `json:"version"`
+		}
+		if err := getJSON(ctx, "https://registry.npmjs.org/"+pkg+"/latest", &latest); err != nil {
+			return nil, err
+		}
+		return []string{latest.Version}, nil
+	}
+	tags, err := listRegistryTags(ctx, image)
+	if image == "ubuntu" {
+		// Interim releases (24.10) are not upgrades from an LTS (24.04).
+		tags = slices.DeleteFunc(tags, func(tag string) bool { return !ubuntuLTSRe.MatchString(tag) })
+	}
+	return tags, err
+}
+
+var ubuntuLTSRe = regexp.MustCompile(`^\d*[02468]\.04`)
+
+func getJSON(ctx context.Context, rawURL string, v any) error {
+	resp, err := registryGet(ctx, rawURL, "")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s: %s", rawURL, resp.Status)
+	}
+	return json.NewDecoder(resp.Body).Decode(v)
 }
 
 var registryClient = &http.Client{Timeout: 30 * time.Second}
@@ -318,8 +467,9 @@ func runUpgradeCheck(db *gorm.DB) {
 	}
 }
 
-// checkTemplateUpgrades reads every template's images and compares them with
-// their registries, then replaces the service_images table. Each repository
+// checkTemplateUpgrades reads every template's images, including those in
+// repo-built services' Dockerfiles, and compares them with their registries,
+// then replaces the service_images table. Each repository
 // is listed once per run however many templates share it.
 func checkTemplateUpgrades(db *gorm.DB) error {
 	upgradeCheckMu.Lock()
@@ -348,7 +498,20 @@ func checkTemplateUpgrades(db *gorm.DB) error {
 	checkedAt := time.Now().UTC()
 	rows := []ServiceImage{}
 	for _, t := range templates {
+		refs := []serviceImageRef{}
 		for _, ref := range t.templateImages() {
+			if ref.Repo == "" {
+				refs = append(refs, ref)
+				continue
+			}
+			dockerfile, ok, err := fetchDockerfile(ctx, ref.Repo, ref.Root)
+			if err != nil {
+				rows = append(rows, ServiceImage{CheckedAt: checkedAt, TemplateID: t.ID, Service: ref.Service, Image: ref.Repo, Behind: "unknown", Error: err.Error()})
+			} else if ok {
+				refs = append(refs, dockerfilePins(ref.Service, dockerfile)...)
+			}
+		}
+		for _, ref := range refs {
 			row := ServiceImage{CheckedAt: checkedAt, TemplateID: t.ID, Service: ref.Service, Image: ref.Image, Tag: ref.Tag}
 			if _, _, ok := tagVersion(ref.Tag); !ok {
 				row.Behind = "floating"
@@ -357,7 +520,7 @@ func checkTemplateUpgrades(db *gorm.DB) error {
 			}
 			res, seen := cache[ref.Image]
 			if !seen {
-				res.tags, res.err = listRegistryTags(ctx, ref.Image)
+				res.tags, res.err = listTags(ctx, ref.Image)
 				cache[ref.Image] = res
 			}
 			if res.err != nil {

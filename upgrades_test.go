@@ -94,3 +94,37 @@ func TestReplaceServiceImages(t *testing.T) {
 		}
 	}
 }
+
+func TestDockerfilePins(t *testing.T) {
+	dockerfile := `ARG NEKO_IMAGE=ghcr.io/m1k1o/neko/firefox:3.1.6
+FROM --platform=linux/amd64 ${NEKO_IMAGE} AS base
+# Bump here.
+# upgrade: github pingdotgg/t3code
+ARG T3_VERSION=0.1.0
+ARG T3_SHA256=f770
+# upgrade: npm @anthropic-ai/claude-code
+
+ARG CLAUDE_CODE_VERSION=2.1.302
+RUN echo \
+  # upgrade: npm not-an-arg
+  && true
+FROM base
+FROM caddy:2.10.2 AS caddy
+FROM ubuntu:24.04
+FROM ubuntu:24.04
+`
+	got := fmt.Sprint(dockerfilePins("svc", dockerfile))
+	want := fmt.Sprint([]serviceImageRef{
+		{Service: "svc", Image: "ghcr.io/m1k1o/neko/firefox", Tag: "3.1.6"},
+		{Service: "svc", Image: "github:pingdotgg/t3code", Tag: "0.1.0"},
+		{Service: "svc", Image: "caddy", Tag: "2.10.2"},
+		{Service: "svc", Image: "ubuntu", Tag: "24.04"},
+	})
+	if got != want {
+		t.Errorf("dockerfilePins =\n%s\nwant\n%s", got, want)
+	}
+	// A release tagged v0.1.2 is offered as 0.1.2 too (see listTags).
+	if latest, behind, _ := newestTags("0.1.0", []string{"v0.1.2", "0.1.2"}); latest != "0.1.2" || behind != "patch" {
+		t.Errorf("newestTags(0.1.0) = %q, %q", latest, behind)
+	}
+}

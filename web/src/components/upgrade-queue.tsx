@@ -14,7 +14,7 @@ import { fmtAgo, fmtNum, fmtUsd, shortNames } from "~/lib/format";
 import { type ServiceUpgrade, upgradesQuery, useRefreshUpgrades } from "~/queries/upgrades";
 
 /** behind: a newer release on the pinned major line (the queue). majors: a
- * later major exists. all: every image-based service. */
+ * later major exists. all: every pinned image or version. */
 type UpgradeFilter = "behind" | "majors" | "all";
 const FILTER_LABELS: Record<UpgradeFilter, string> = { behind: "Behind", majors: "Majors", all: "All" };
 const MATCHES: Record<UpgradeFilter, (u: ServiceUpgrade) => boolean> = {
@@ -39,8 +39,8 @@ export function UpgradeQueue() {
         <CardTitle>Upgrades</CardTitle>
         <CardDescription>
           {checkedAt
-            ? `${fmtNum(behindTemplates)} templates pin an image with a newer release on the same major line, most earning first. Checked against the registries ${fmtAgo(checkedAt, new Date().toISOString())} ago; daily at 06:08 UTC.`
-            : "Each template's pinned images against the newest tag of the same shape in their registry."}
+            ? `${fmtNum(behindTemplates)} templates pin an image or version with a newer release on the same major line, most earning first. Checked against the registries ${fmtAgo(checkedAt, new Date().toISOString())} ago; daily at 06:08 UTC.`
+            : "Each template's pinned images, and the versions its Dockerfiles mark, against the newest release of the same shape."}
           {refresh.isError && (
             <span className="text-(--viz-critical)"> Re-check failed: {refresh.error.message}</span>
           )}
@@ -87,7 +87,7 @@ export function UpgradeQueue() {
             </thead>
             <tbody>
               {shown.map((u) => (
-                <tr key={`${u.templateId}-${u.service}`} className="border-b last:border-0">
+                <tr key={`${u.templateId}-${u.service}-${u.image}`} className="border-b last:border-0">
                   <td className="py-1.5">{names(u.name ?? u.templateId)}</td>
                   <td className="py-1.5 pl-3 text-muted-foreground">{u.service}</td>
                   <td className="max-w-64 truncate py-1.5 pl-3 font-mono text-xs" title={u.image}>

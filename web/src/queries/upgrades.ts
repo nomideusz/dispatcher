@@ -5,7 +5,8 @@ import {
 } from "@tanstack/react-query";
 import { api } from "~/lib/api";
 
-/** One image-based template service as of the last daily check. latest is
+/** One pinned image or marked Dockerfile version (image "github:owner/repo"
+ * or "npm:package") of a template service as of the last daily check. latest is
  * the newest tag of the same shape on the pinned major line; major is the
  * newest tag of a later major, reported apart since templates often hold
  * databases back on purpose. */

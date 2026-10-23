@@ -344,7 +344,7 @@ func getJSON(ctx context.Context, rawURL string, v any) error {
 
 var registryClient = &http.Client{Timeout: 30 * time.Second}
 
-const registryWorkers = 8
+const registryWorkers = 16
 
 // maxTagPages bounds pagination for repositories with thousands of tags.
 const maxTagPages = 30
@@ -479,7 +479,7 @@ func checkTemplateUpgrades(db *gorm.DB) error {
 	upgradeCheckMu.Lock()
 	defer upgradeCheckMu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
 	token, err := workspaceToken(ctx, db)
 	if err != nil {
@@ -496,7 +496,7 @@ func checkTemplateUpgrades(db *gorm.DB) error {
 
 	// Dockerfiles and then registries are read registryWorkers at a time:
 	// one by one, ~140 repositories at a second per page of tags overran the
-	// timeout from Contabo.
+	// timeout from Contabo (8 at a time took 7 minutes for 190).
 	var g errgroup.Group
 	g.SetLimit(registryWorkers)
 	checkedAt := time.Now().UTC()

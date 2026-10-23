@@ -39,7 +39,7 @@ export function useRefreshUpgrades() {
   const qc = useQueryClient();
   return useMutation({
     // Lists every registry again; minutes at worst.
-    mutationFn: () => api.post("upgrades/refresh", { timeout: 600_000 }),
+    mutationFn: () => api.post("upgrades/refresh", { timeout: 1_200_000 }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["upgrades"] }),
   });
 }

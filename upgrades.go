@@ -208,7 +208,7 @@ func newestTags(pinned string, tags []string) (latest, behind, major string) {
 	return latest, behind, major
 }
 
-var upgradeMarkerRe = regexp.MustCompile(`^#\s*upgrade:\s*(github|npm)\s+(\S+)`)
+var upgradeMarkerRe = regexp.MustCompile(`^#\s*upgrade:\s*(?:(skip)\b|(github|npm)\s+(\S+))`)
 
 // dockerfilePins reads the upstream pins of a Dockerfile: every FROM image
 // that is not an earlier stage, with ARG defaults substituted, and every ARG
@@ -218,7 +218,8 @@ var upgradeMarkerRe = regexp.MustCompile(`^#\s*upgrade:\s*(github|npm)\s+(\S+)`)
 //	ARG T3_VERSION=0.1.0
 //
 // (or "# upgrade: npm @anthropic-ai/claude-code"), returned with Image
-// "github:pingdotgg/t3code" or "npm:@anthropic-ai/claude-code".
+// "github:pingdotgg/t3code" or "npm:@anthropic-ai/claude-code". A FROM
+// under "# upgrade: skip" is left out: a base held back on purpose.
 func dockerfilePins(service, dockerfile string) []serviceImageRef {
 	refs := []serviceImageRef{}
 	args := map[string]string{}
@@ -235,7 +236,10 @@ func dockerfilePins(service, dockerfile string) []serviceImageRef {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "#") {
 			if m := upgradeMarkerRe.FindStringSubmatch(line); m != nil {
-				marker = m[1] + ":" + m[2]
+				marker = m[1]
+				if marker == "" {
+					marker = m[2] + ":" + m[3]
+				}
 			}
 			continue
 		}
@@ -249,7 +253,7 @@ func dockerfilePins(service, dockerfile string) []serviceImageRef {
 			name, value, _ := strings.Cut(fields[1], "=")
 			value = strings.Trim(value, `"'`)
 			args[name] = value
-			if marker != "" && value != "" {
+			if marker != "" && marker != "skip" && value != "" {
 				add(marker, value)
 			}
 		case "FROM":
@@ -261,7 +265,7 @@ func dockerfilePins(service, dockerfile string) []serviceImageRef {
 			if len(from) == 3 && strings.EqualFold(from[1], "AS") {
 				stages[strings.ToLower(from[2])] = true
 			}
-			if !stages[strings.ToLower(image)] {
+			if marker != "skip" && !stages[strings.ToLower(image)] {
 				add(splitImageTag(image))
 			}
 		}

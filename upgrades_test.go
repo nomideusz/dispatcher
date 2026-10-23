@@ -113,6 +113,10 @@ FROM base
 FROM caddy:2.10.2 AS caddy
 FROM ubuntu:24.04
 FROM ubuntu:24.04
+# Held back on purpose.
+# upgrade: skip
+FROM python:3.12-slim
+FROM node:22-slim
 `
 	got := fmt.Sprint(dockerfilePins("svc", dockerfile))
 	want := fmt.Sprint([]serviceImageRef{
@@ -120,6 +124,7 @@ FROM ubuntu:24.04
 		{Service: "svc", Image: "github:pingdotgg/t3code", Tag: "0.1.0"},
 		{Service: "svc", Image: "caddy", Tag: "2.10.2"},
 		{Service: "svc", Image: "ubuntu", Tag: "24.04"},
+		{Service: "svc", Image: "node", Tag: "22-slim"},
 	})
 	if got != want {
 		t.Errorf("dockerfilePins =\n%s\nwant\n%s", got, want)

@@ -47,7 +47,8 @@ type ServiceImage struct {
 	Latest string `json:"latest"`
 	// Behind is minor or patch; empty when Tag is the newest on its major
 	// line; "floating" for tags like latest or a digest; "unknown" when the
-	// registry could not be read (see Error).
+	// registry could not be read (see Error). "unchecked" only in
+	// /api/upgrades, for a template with nothing to compare.
 	Behind string `json:"behind"`
 	// Major is the newest tag of a later major version, empty if none.
 	Major string `json:"major"`
@@ -564,22 +565,34 @@ type upgradeRow struct {
 	ActiveProjects     int64    `json:"activeProjects"`
 }
 
-// handleUpgrades lists every checked service with its template's latest
+// upgradeRows lists every checked service with its template's latest
 // snapshot, behind-first and then by 30-day earnings, so the top of the list
-// is the upgrade that matters most.
+// is the upgrade that matters most. Templates in the latest snapshot run
+// with nothing checked come back as one row with behind "unchecked", so
+// the list covers the whole catalog.
+func upgradeRows(db *gorm.DB) ([]upgradeRow, error) {
+	rows := []upgradeRow{}
+	err := db.Raw(`
+		WITH latest AS (
+			SELECT * FROM template_snapshots
+			QUALIFY ROW_NUMBER() OVER (PARTITION BY template_id ORDER BY sampled_at DESC, id DESC) = 1
+		)
+		SELECT si.checked_at, COALESCE(si.template_id, l.template_id) AS template_id,
+		       COALESCE(si.service, '') AS service, COALESCE(si.image, '') AS image, COALESCE(si.tag, '') AS tag,
+		       COALESCE(si.latest, '') AS latest, COALESCE(si.behind, 'unchecked') AS behind,
+		       COALESCE(si.major, '') AS major, COALESCE(si.error, '') AS error,
+		       l.name, l.code, l.status, l.earnings_last30_days, l.active_projects
+		FROM service_images si
+		FULL JOIN latest l ON l.template_id = si.template_id
+		WHERE si.template_id IS NOT NULL OR l.sampled_at = (SELECT max(sampled_at) FROM template_snapshots)
+		ORDER BY CASE si.behind WHEN 'minor' THEN 0 WHEN 'patch' THEN 0 ELSE 1 END,
+		         l.earnings_last30_days DESC NULLS LAST, l.name, si.service`).Scan(&rows).Error
+	return rows, err
+}
+
 func handleUpgrades(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rows := []upgradeRow{}
-		err := db.WithContext(r.Context()).Raw(`
-			WITH latest AS (
-				SELECT * FROM template_snapshots
-				QUALIFY ROW_NUMBER() OVER (PARTITION BY template_id ORDER BY sampled_at DESC, id DESC) = 1
-			)
-			SELECT si.*, l.name, l.code, l.status, l.earnings_last30_days, l.active_projects
-			FROM service_images si
-			LEFT JOIN latest l ON l.template_id = si.template_id
-			ORDER BY CASE si.behind WHEN 'minor' THEN 0 WHEN 'patch' THEN 0 ELSE 1 END,
-			         l.earnings_last30_days DESC NULLS LAST, l.name, si.service`).Scan(&rows).Error
+		rows, err := upgradeRows(db.WithContext(r.Context()))
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
 	duckdb "github.com/vogo/duckdb/v2"
 	"gorm.io/gorm"
@@ -126,5 +127,40 @@ FROM ubuntu:24.04
 	// A release tagged v0.1.2 is offered as 0.1.2 too (see listTags).
 	if latest, behind, _ := newestTags("0.1.0", []string{"v0.1.2", "0.1.2"}); latest != "0.1.2" || behind != "patch" {
 		t.Errorf("newestTags(0.1.0) = %q, %q", latest, behind)
+	}
+}
+
+// Every template of the latest snapshot run is listed, the ones with
+// nothing checked as a single "unchecked" row; a template gone from the
+// catalog is not.
+func TestUpgradeRows(t *testing.T) {
+	db, err := gorm.Open(duckdb.Open(filepath.Join(t.TempDir(), "rows.duckdb")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&ServiceImage{}, &TemplateSnapshot{}); err != nil {
+		t.Fatal(err)
+	}
+	old, now := time.Now().Add(-time.Hour), time.Now()
+	db.Create(&[]TemplateSnapshot{
+		{SampledAt: old, TemplateID: "gone", Name: "Gone"},
+		{SampledAt: now, TemplateID: "pinned", Name: "Pinned"},
+		{SampledAt: now, TemplateID: "bare", Name: "Bare"},
+	})
+	db.Create(&[]ServiceImage{
+		{CheckedAt: now, TemplateID: "pinned", Service: "app", Image: "ubuntu", Tag: "24.04", Behind: "patch", Latest: "24.04.1"},
+		{CheckedAt: now, TemplateID: "pinned", Service: "db", Image: "postgres", Tag: "17"},
+	})
+	rows, err := upgradeRows(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := []string{}
+	for _, r := range rows {
+		got = append(got, r.TemplateID+"/"+r.Service+"/"+r.Behind+"/"+r.Name)
+	}
+	want := "[pinned/app/patch/Pinned bare//unchecked/Bare pinned/db//Pinned]"
+	if fmt.Sprint(got) != want {
+		t.Errorf("upgradeRows = %v, want %v", got, want)
 	}
 }

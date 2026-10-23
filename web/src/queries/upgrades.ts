@@ -18,8 +18,9 @@ export interface ServiceUpgrade {
   tag: string;
   latest: string;
   /** minor or patch; "" when current; floating for latest/digests;
-   * unknown when the registry could not be read (see error). */
-  behind: "" | "minor" | "patch" | "floating" | "unknown";
+   * unknown when the registry could not be read (see error); unchecked for
+   * a template with nothing pinned (its only row, service and image empty). */
+  behind: "" | "minor" | "patch" | "floating" | "unknown" | "unchecked";
   major: string;
   error?: string;
   name: string | null;

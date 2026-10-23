@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Button } from "~/components/ui/button";
 import {
   Card,
@@ -14,7 +14,8 @@ import { fmtAgo, fmtNum, fmtUsd, shortNames } from "~/lib/format";
 import { type ServiceUpgrade, upgradesQuery, useRefreshUpgrades } from "~/queries/upgrades";
 
 /** behind: a newer release on the pinned major line (the queue). majors: a
- * later major exists. all: every pinned image or version. */
+ * later major exists. all: every template, including those with nothing
+ * pinned to check. */
 type UpgradeFilter = "behind" | "majors" | "all";
 const FILTER_LABELS: Record<UpgradeFilter, string> = { behind: "Behind", majors: "Majors", all: "All" };
 const MATCHES: Record<UpgradeFilter, (u: ServiceUpgrade) => boolean> = {
@@ -23,15 +24,27 @@ const MATCHES: Record<UpgradeFilter, (u: ServiceUpgrade) => boolean> = {
   all: () => true,
 };
 
+const templateCount = (rows: ServiceUpgrade[]) => new Set(rows.map((u) => u.templateId)).size;
+
+/** Rows by template, templates in the order they first appear (the server's
+ * behind-first, most-earning-first order). */
+function byTemplate(rows: ServiceUpgrade[]): ServiceUpgrade[][] {
+  const groups = new Map<string, ServiceUpgrade[]>();
+  for (const u of rows) groups.set(u.templateId, [...(groups.get(u.templateId) ?? []), u]);
+  return [...groups.values()];
+}
+
 export function UpgradeQueue() {
   const upgrades = useQuery(upgradesQuery);
   const refresh = useRefreshUpgrades();
   const [filter, setFilter] = useState<UpgradeFilter>("behind");
+  const [grouped, setGrouped] = useState(false);
   const rows = upgrades.data ?? [];
   const names = shortNames(rows.map((u) => u.name ?? u.templateId));
   const shown = rows.filter(MATCHES[filter]);
-  const behindTemplates = new Set(rows.filter(MATCHES.behind).map((u) => u.templateId)).size;
-  const checkedAt = rows[0]?.checkedAt;
+  const pins = shown.filter((u) => u.behind !== "unchecked").length;
+  const behindTemplates = templateCount(rows.filter(MATCHES.behind));
+  const checkedAt = rows.find((u) => u.behind !== "unchecked")?.checkedAt;
 
   return (
     <Card>
@@ -54,8 +67,16 @@ export function UpgradeQueue() {
               onClick={() => setFilter(f)}
             >
               {FILTER_LABELS[f]}
+              {upgrades.isSuccess && (
+                <span className="tabular-nums text-muted-foreground">
+                  {fmtNum(templateCount(rows.filter(MATCHES[f])))}
+                </span>
+              )}
             </Button>
           ))}
+          <Button size="xs" variant={grouped ? "secondary" : "ghost"} onClick={() => setGrouped(!grouped)}>
+            Group
+          </Button>
           <Button size="xs" variant="ghost" disabled={refresh.isPending} onClick={() => refresh.mutate()}>
             {refresh.isPending ? "Checking…" : "Re-check"}
           </Button>
@@ -69,6 +90,12 @@ export function UpgradeQueue() {
         {upgrades.isSuccess && shown.length === 0 && (
           <p className="text-sm text-muted-foreground">
             {rows.length === 0 ? "No check has run yet." : "Nothing here: every pinned image is current."}
+          </p>
+        )}
+        {shown.length > 0 && (
+          <p className="mb-2 text-xs text-muted-foreground">
+            {fmtNum(templateCount(shown))} templates, {fmtNum(pins)} pinned{" "}
+            {pins === 1 ? "image or version" : "images and versions"}
           </p>
         )}
         {shown.length > 0 && (
@@ -86,31 +113,72 @@ export function UpgradeQueue() {
               </tr>
             </thead>
             <tbody>
-              {shown.map((u) => (
-                <tr key={`${u.templateId}-${u.service}-${u.image}`} className="border-b last:border-0">
-                  <td className="py-1.5">{names(u.name ?? u.templateId)}</td>
-                  <td className="py-1.5 pl-3 text-muted-foreground">{u.service}</td>
-                  <td className="max-w-64 truncate py-1.5 pl-3 font-mono text-xs" title={u.image}>
-                    {u.image}
-                  </td>
-                  <td className="py-1.5 pl-3 font-mono text-xs">{u.tag}</td>
-                  <td className="py-1.5 pl-3 font-mono text-xs">
-                    <LineCell u={u} />
-                  </td>
-                  <td className="py-1.5 pl-3 font-mono text-xs text-muted-foreground">{u.major}</td>
-                  <td className="py-1.5 pl-3 text-right tabular-nums">
-                    {u.earningsLast30Days == null ? "—" : fmtUsd(u.earningsLast30Days)}
-                  </td>
-                  <td className="py-1.5 pl-3 text-right tabular-nums">
-                    {u.activeProjects == null ? "—" : fmtNum(u.activeProjects)}
-                  </td>
-                </tr>
-              ))}
+              {grouped
+                ? byTemplate(shown).map((group) => {
+                    const u = group[0];
+                    const checked = group.filter((g) => g.behind !== "unchecked");
+                    const behind = group.filter(MATCHES.behind).length;
+                    return (
+                      <Fragment key={u.templateId}>
+                        <tr className="border-t first:border-0">
+                          <td className="pt-3 pb-1 font-medium">{names(u.name ?? u.templateId)}</td>
+                          <td colSpan={5} className="pt-3 pb-1 pl-3 text-xs text-muted-foreground">
+                            {checked.length === 0
+                              ? "nothing pinned"
+                              : `${fmtNum(checked.length)} pinned${behind ? `, ${fmtNum(behind)} behind` : ""}`}
+                          </td>
+                          <EarningCells u={u} />
+                        </tr>
+                        {checked.map((s) => (
+                          <ServiceRow key={`${s.service}-${s.image}`} u={s} template="" />
+                        ))}
+                      </Fragment>
+                    );
+                  })
+                : shown.map((u) => (
+                    <ServiceRow
+                      key={`${u.templateId}-${u.service}-${u.image}`}
+                      u={u}
+                      template={names(u.name ?? u.templateId)}
+                      earnings
+                    />
+                  ))}
             </tbody>
           </table>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function ServiceRow({ u, template, earnings }: { u: ServiceUpgrade; template: string; earnings?: boolean }) {
+  return (
+    <tr className={earnings ? "border-b last:border-0" : undefined}>
+      <td className="py-1.5">{template}</td>
+      <td className="py-1.5 pl-3 text-muted-foreground">{u.service}</td>
+      <td className="max-w-64 truncate py-1.5 pl-3 font-mono text-xs" title={u.image}>
+        {u.image}
+      </td>
+      <td className="py-1.5 pl-3 font-mono text-xs">{u.tag}</td>
+      <td className="py-1.5 pl-3 font-mono text-xs">
+        <LineCell u={u} />
+      </td>
+      <td className="py-1.5 pl-3 font-mono text-xs text-muted-foreground">{u.major}</td>
+      {earnings ? <EarningCells u={u} /> : <td colSpan={2} />}
+    </tr>
+  );
+}
+
+function EarningCells({ u }: { u: ServiceUpgrade }) {
+  return (
+    <>
+      <td className="py-1.5 pl-3 text-right tabular-nums">
+        {u.earningsLast30Days == null ? "—" : fmtUsd(u.earningsLast30Days)}
+      </td>
+      <td className="py-1.5 pl-3 text-right tabular-nums">
+        {u.activeProjects == null ? "—" : fmtNum(u.activeProjects)}
+      </td>
+    </>
   );
 }
 
@@ -125,6 +193,8 @@ function LineCell({ u }: { u: ServiceUpgrade }) {
       );
     case "floating":
       return <span className="font-sans text-muted-foreground">floating tag</span>;
+    case "unchecked":
+      return <span className="font-sans text-muted-foreground">nothing pinned</span>;
     case "unknown":
       return (
         <span className="font-sans text-muted-foreground" title={u.error}>

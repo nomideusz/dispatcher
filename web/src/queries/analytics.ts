@@ -143,11 +143,15 @@ export const templateProjectsQuery = (templateId: string, days: number) =>
 export function useRefreshAnalytics() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.post("analytics/refresh"),
+    // Snapshots every template, then syncs payouts: ~30 s, past ky's 10 s
+    // default, which dropped the response and left the page stale.
+    mutationFn: () => api.post("analytics/refresh", { timeout: 300_000 }),
     onSuccess: () =>
       Promise.all([
         qc.invalidateQueries({ queryKey: ["analytics"] }),
         qc.invalidateQueries({ queryKey: ["payouts"] }),
+        // The upgrade queue shows each template's latest earnings.
+        qc.invalidateQueries({ queryKey: ["upgrades"] }),
       ]),
   });
 }

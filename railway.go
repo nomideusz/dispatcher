@@ -156,7 +156,9 @@ func graphqlRequest(ctx context.Context, endpoint, accessToken, query string, va
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+accessToken)
+	if accessToken != "" {
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {

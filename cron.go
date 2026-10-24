@@ -68,6 +68,9 @@ func startCrons(db *gorm.DB) *cron.Cron {
 	if _, err := c.AddFunc(upgradeCheckSpec, func() { runUpgradeCheck(db) }); err != nil {
 		log.Fatalf("schedule upgrade check: %v", err)
 	}
+	if _, err := c.AddFunc(marketFetchSpec, func() { runMarketFetch(db) }); err != nil {
+		log.Fatalf("schedule market fetch: %v", err)
+	}
 	autoWithdrawEntry.c = c
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -88,6 +91,10 @@ func startCrons(db *gorm.DB) *cron.Cron {
 	// waiting for the first tick.
 	go runTemplateSnapshots(db)
 	go runUpgradeCheck(db)
+	var marketRows int64
+	if db.Model(&MarketTemplate{}).Count(&marketRows); marketRows == 0 {
+		go runMarketFetch(db)
+	}
 	return c
 }
 

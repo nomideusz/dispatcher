@@ -8,6 +8,7 @@ import { TemplateScatter } from "~/components/template-scatter";
 import { TemplatesTable } from "~/components/templates-table";
 import { Earnings } from "~/components/earnings";
 import { WhatToPublish } from "~/components/what-to-publish";
+import { Candidates } from "~/components/candidates";
 import { behindTemplateCount, UpgradeQueue } from "~/components/upgrade-queue";
 import { Button } from "~/components/ui/button";
 import {
@@ -110,11 +111,23 @@ export default function Analytics() {
           <Section
             id="publish"
             title="What to publish"
-            text="Template size and publish month against what they earn and how soon they start paying."
+            text="What kind of template, how big and how old, against what it earns and how soon it starts paying."
           >
             <Card>
               <CardContent>
                 <WhatToPublish data={data} />
+              </CardContent>
+            </Card>
+          </Section>
+
+          <Section
+            id="candidates"
+            title="Candidates"
+            text="What people deploy on Railway, one row per app, against what we already publish. Shortlist what to build next; skip what never will be."
+          >
+            <Card>
+              <CardContent>
+                <Candidates templates={data.templates} />
               </CardContent>
             </Card>
           </Section>
@@ -175,6 +188,7 @@ export default function Analytics() {
 const SECTIONS = [
   ["earnings", "Earnings"],
   ["publish", "What to publish"],
+  ["candidates", "Candidates"],
   ["templates", "Templates"],
   ["payouts", "Payouts"],
 ] as const;
@@ -290,14 +304,38 @@ function KpiBand({
   const firstPaid = Math.min(...templates.map((t) => (t.firstPaidAt ? Date.parse(t.firstPaidAt) : Infinity)));
   const comparable = firstPaid <= dayDate(since).getTime() - w.days * 86_400_000;
 
+  // The window ends today, so the last point is today's money so far.
+  const today = points[points.length - 1];
+  const yesterday = points[points.length - 2];
+  const name = shortNames(templates.map((t) => t.name));
+  const earnedToday = templates
+    .map((t) => [name(t.name), t.activity.find((a) => a.date === today?.date)?.earnedCents ?? 0] as const)
+    .filter(([, c]) => c > 0)
+    .sort((a, b) => b[1] - a[1]);
+
   const balance = accounts.data?.availableBalance;
   const minimum = accounts.data?.minimumBalance ?? 10_000;
   const auto = withdraw.data;
   const autoAccount = auto && accounts.data?.accounts.find((a) => a.id === auto.withdrawalAccountId);
 
   return (
-    <section className="grid grid-cols-2 overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10 lg:grid-cols-5 [&>*]:border-foreground/10">
-      <BandCell label={`Earned · last ${w.days}d`} className="border-r border-b lg:border-b-0">
+    <section className="grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-foreground/10 ring-1 ring-foreground/10 md:grid-cols-3 xl:grid-cols-6 [&>*]:bg-card">
+      <BandCell label="Today · UTC">
+        <BandValue value={fmtCents(today?.earnedCents ?? 0)} />
+        {yesterday && (
+          <p className="text-xs text-muted-foreground">{fmtCents(yesterday.earnedCents)} yesterday</p>
+        )}
+        <p className="line-clamp-2 text-xs text-muted-foreground">
+          {earnedToday.length === 0
+            ? "Nothing yet"
+            : [
+                ...earnedToday.slice(0, 3).map(([n, c]) => `${n} ${fmtCents(c)}`),
+                ...(earnedToday.length > 3 ? [`+${earnedToday.length - 3} more`] : []),
+              ].join(" · ")}
+        </p>
+      </BandCell>
+
+      <BandCell label={`Earned · last ${w.days}d`}>
         <BandValue value={fmtCents(w.earnedCents)} />
         <Delta
           pct={
@@ -310,7 +348,7 @@ function KpiBand({
         <p className="text-xs text-muted-foreground">{fmtCents(perDay)} a day</p>
       </BandCell>
 
-      <BandCell label="Balance" className="border-b lg:border-r lg:border-b-0">
+      <BandCell label="Balance">
         {accounts.isPending ? (
           <Skeleton className="h-7 w-24" />
         ) : (
@@ -343,14 +381,14 @@ function KpiBand({
         )}
       </BandCell>
 
-      <BandCell label="Lifetime kickback" className="border-r border-b lg:border-b-0">
+      <BandCell label="Lifetime kickback">
         <BandValue value={fmtCents(lifetime)} />
         <p className="text-xs text-muted-foreground">
           {payouts ? `${fmtCents(payouts.totals.lifetimeCents)} of it paid out` : " "}
         </p>
       </BandCell>
 
-      <BandCell label="Active projects" className="border-b lg:border-r lg:border-b-0">
+      <BandCell label="Active projects">
         <BandValue value={fmtNum(activeNow)} />
         {activeChange != null && first && (
           <p className="text-xs">
@@ -366,7 +404,7 @@ function KpiBand({
         </p>
       </BandCell>
 
-      <BandCell label="Templates" className="col-span-2 lg:col-span-1">
+      <BandCell label="Templates">
         <BandValue value={fmtNum(last?.published ?? templates.length)} />
         <p className="text-xs text-muted-foreground">
           {fmtNum(earning)} earned in {w.days}d · {fmtNum(added)} added

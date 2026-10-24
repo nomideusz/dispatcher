@@ -40,6 +40,8 @@ export interface TimelineTemplate {
   templateId: string;
   name: string;
   code: string;
+  /** What it is for, set by hand; "" until sorted. */
+  kind: Kind | "";
   /** Railway's Template.createdAt; the API has no separate publish date. */
   publishedAt: string | null;
   firstSeenAt: string;
@@ -161,5 +163,25 @@ export function useRefreshAnalytics() {
         // The upgrade queue shows each template's latest earnings.
         qc.invalidateQueries({ queryKey: ["upgrades"] }),
       ]),
+  });
+}
+
+/** Template kinds, in the order the dashboard lists them. */
+export const KINDS = [
+  { key: "business", label: "Business & team" },
+  { key: "ai", label: "AI infrastructure" },
+  { key: "media", label: "Media & hobby" },
+  { key: "agent", label: "Coding agents" },
+  { key: "devtools", label: "Dev & infra" },
+  { key: "desktop", label: "Desktops & browsers" },
+] as const;
+export type Kind = (typeof KINDS)[number]["key"];
+
+export function useSetKind() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ templateId, kind }: { templateId: string; kind: Kind | "" }) =>
+      api.put(`templates/${encodeURIComponent(templateId)}/kind`, { json: { kind } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["analytics", "timeline"] }),
   });
 }

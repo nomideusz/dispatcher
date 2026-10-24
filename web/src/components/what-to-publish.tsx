@@ -3,7 +3,7 @@ import { CartesianGrid, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts"
 import { cursor, GROUPS, groupOf, Key, median, perDay, Tip, tick } from "~/components/chart-kit";
 import { ChartContainer } from "~/components/ui/chart";
 import { dayKey, fmtDay, fmtNum, fmtUsd } from "~/lib/format";
-import type { TimelineResponse, TimelineTemplate } from "~/queries/analytics";
+import { KINDS, type TimelineResponse, type TimelineTemplate } from "~/queries/analytics";
 
 const DAY = 86_400_000;
 const pct = (v: number) => `${Math.round(v * 100)}%`;
@@ -57,16 +57,18 @@ function useWhatToPublish(data: TimelineResponse) {
       return row;
     }).filter((r) => r.g0 != null || r.g1 != null || r.g2 != null);
 
+    const kindOrder = (k: string) => (k === "" ? KINDS.length : KINDS.findIndex((x) => x.key === k));
+    const byKind = segment(templates, (t) => t.kind).sort((a, b) => kindOrder(a.key) - kindOrder(b.key));
     const bySize = segment(templates, (t) => String(groupOf(t)));
     const byMonth = segment(templates, (t) => t.publishedAt?.slice(0, 7) ?? "unknown");
-    return { trend, curve, bySize, byMonth };
+    return { trend, curve, byKind, bySize, byMonth };
   }, [data]);
 }
 
 /** Template size and age against what they earn and how soon: the numbers
  * for deciding what to build next. */
 export function WhatToPublish({ data }: { data: TimelineResponse }) {
-  const { trend, curve, bySize, byMonth } = useWhatToPublish(data);
+  const { trend, curve, byKind, bySize, byMonth } = useWhatToPublish(data);
 
   return (
     <div className="space-y-6">
@@ -121,6 +123,13 @@ export function WhatToPublish({ data }: { data: TimelineResponse }) {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">
+        <div className="xl:col-span-2">
+          <SegmentTable
+            title="Kind"
+            rows={byKind}
+            format={(k) => KINDS.find((x) => x.key === k)?.label ?? "Unsorted"}
+          />
+        </div>
         <SegmentTable
           title="Services"
           rows={bySize}
@@ -138,7 +147,8 @@ export function WhatToPublish({ data }: { data: TimelineResponse }) {
         />
       </div>
       <p className="text-xs text-muted-foreground">
-        Earning and 30d are Railway&apos;s trailing 30 days, whatever range is picked. Per template
+        Kind is set per template in All templates, under its name. Earning and 30d are
+        Railway&apos;s trailing 30 days, whatever range is picked. Per template
         divides that kickback across every template in the row, earning or not; first paid is
         the median wait of those that have paid.
       </p>

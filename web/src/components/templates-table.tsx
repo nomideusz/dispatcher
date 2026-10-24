@@ -4,9 +4,12 @@ import { TemplateProjects } from "~/components/template-projects";
 import { Button } from "~/components/ui/button";
 import { fmtCents, fmtDay, fmtLongDay, fmtNum, fmtUsd } from "~/lib/format";
 import {
+  type Kind,
+  KINDS,
   qualifiesForBonus,
   SUPPORT_BONUS_THRESHOLD,
   type TimelineTemplate,
+  useSetKind,
 } from "~/queries/analytics";
 import type { PayoutTemplateTotal } from "~/queries/payouts";
 
@@ -23,6 +26,7 @@ const FILTERS = {
     test: (r: Row) => r.activeProjects > 0 && !r.earned30d,
   },
   unused: { label: "No projects", test: (r: Row) => r.projects === 0 },
+  unsorted: { label: "Unsorted", test: (r: Row) => !r.kind },
 } satisfies Record<string, { label: string; test: (r: Row) => boolean }>;
 type Filter = keyof typeof FILTERS;
 
@@ -213,8 +217,9 @@ function TemplateRow({
                   {r.name}
                 </div>
               )}
-              <div className="text-xs text-muted-foreground">
-                {r.services} {r.services === 1 ? "service" : "services"}
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                {r.services} {r.services === 1 ? "service" : "services"} ·
+                <KindSelect r={r} />
               </div>
             </div>
           </div>
@@ -280,6 +285,29 @@ function TemplateRow({
         </tr>
       )}
     </>
+  );
+}
+
+/** What the template is for, editable in place: a plain select that reads
+ * as text until it is opened. */
+function KindSelect({ r }: { r: Row }) {
+  const setKind = useSetKind();
+  const kind = setKind.isPending ? setKind.variables.kind : r.kind;
+  return (
+    <select
+      aria-label={`Kind of ${r.name}`}
+      value={kind}
+      disabled={setKind.isPending}
+      onChange={(e) => setKind.mutate({ templateId: r.templateId, kind: e.target.value as Kind | "" })}
+      className={`-mx-0.5 cursor-pointer appearance-none rounded-sm bg-transparent px-0.5 outline-none field-sizing-content hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${kind ? "" : "text-(--viz-critical)"}`}
+    >
+      <option value="">Unsorted</option>
+      {KINDS.map((k) => (
+        <option key={k.key} value={k.key}>
+          {k.label}
+        </option>
+      ))}
+    </select>
   );
 }
 

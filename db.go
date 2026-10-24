@@ -132,7 +132,7 @@ func openDB(dsn string) *gorm.DB {
 	if err != nil {
 		log.Fatalf("open database %s: %v", dsn, err)
 	}
-	if err := db.AutoMigrate(&RailwayCredentials{}, &TemplateSnapshot{}, &AutoWithdrawSettings{}, &NotificationTarget{}, &Payout{}, &ServiceImage{}); err != nil {
+	if err := db.AutoMigrate(&RailwayCredentials{}, &TemplateSnapshot{}, &AutoWithdrawSettings{}, &NotificationTarget{}, &Payout{}, &ServiceImage{}, &TemplateKind{}, &MarketTemplate{}, &CandidateMark{}); err != nil {
 		log.Fatalf("migrate database: %v", err)
 	}
 	// Snapshots taken before templateMetrics was collected recorded the same
@@ -153,6 +153,14 @@ func openDB(dsn string) *gorm.DB {
 	// error). Checkpoint so they never survive an unclean shutdown.
 	if err := db.Exec("CHECKPOINT").Error; err != nil {
 		log.Fatalf("checkpoint database: %v", err)
+	}
+	// After the checkpoint: a failed seed must not leave ALTERs in the WAL,
+	// and it only loses the defaults.
+	if err := seedTemplateKinds(db); err != nil {
+		log.Printf("seed template kinds: %v", err)
+	}
+	if err := seedCandidateMarks(db); err != nil {
+		log.Printf("seed candidates: %v", err)
 	}
 	return db
 }

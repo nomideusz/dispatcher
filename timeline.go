@@ -73,6 +73,7 @@ type timelineTemplate struct {
 	TemplateID     string     `json:"templateId"`
 	Name           string     `json:"name"`
 	Code           string     `json:"code"`
+	Kind           string     `json:"kind"`
 	PublishedAt    *time.Time `json:"publishedAt"`
 	FirstSeenAt    time.Time  `json:"firstSeenAt"`
 	Services       int64      `json:"services"`
@@ -158,13 +159,14 @@ func handleTimeline(db *gorm.DB) http.HandlerFunc {
 				SELECT template_id, MIN(sampled_at) AS first_seen_at
 				FROM template_snapshots WHERE status = 'PUBLISHED' GROUP BY template_id
 			)
-			SELECT s.template_id, s.name, s.code, s.published_at, seen.first_seen_at,
+			SELECT s.template_id, s.name, s.code, COALESCE(k.kind, '') AS kind, s.published_at, seen.first_seen_at,
 			       s.services, s.projects, s.active_projects,
 			       s.active_deployments AS running, s.total_deployments AS deployments,
 			       s.template_health AS health, s.support_health,
 			       s.earnings_last30_days AS earned30d,
 			       CAST(ROUND(s.total_payout * 100) AS BIGINT) AS lifetime_cents
 			FROM template_snapshots s JOIN seen USING (template_id)
+			LEFT JOIN template_kinds k USING (template_id)
 			WHERE s.sampled_at = ? AND s.status = 'PUBLISHED'
 			ORDER BY s.total_payout DESC, s.name`, *sampledAt).Scan(&templates).Error
 		if err != nil {

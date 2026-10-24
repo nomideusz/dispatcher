@@ -6,7 +6,7 @@ import { RangeToggle, type RangeDays } from "~/components/range-toggle";
 import { TemplateFunnel } from "~/components/template-funnel";
 import { TemplateScatter, TemplateSegments } from "~/components/template-scatter";
 import { TemplatesTable } from "~/components/templates-table";
-import { TimelineChart } from "~/components/timeline-chart";
+import { DayByDay } from "~/components/day-by-day";
 import { behindTemplateCount, UpgradeQueue } from "~/components/upgrade-queue";
 import { Button } from "~/components/ui/button";
 import {
@@ -83,12 +83,13 @@ export default function Analytics() {
             <CardHeader>
               <CardTitle>Day by day</CardTitle>
               <CardDescription>
-                What each day earned, how many projects were created and still live, and how
-                big the catalog was. Hover a day to see which templates moved.
+                Kickback by template size against the catalog and the templates actually earning,
+                what one published template brings in, and how long a template takes to pay. Hover
+                a day to see which templates earned.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <TimelineChart data={data} />
+              <DayByDay data={data} />
             </CardContent>
           </Card>
 

@@ -18,6 +18,14 @@ export interface TimelinePoint {
   /** templateMetrics.activeDeployments — Railway's metrics page "Active":
    * running instances, not projects. Null before metrics were collected. */
   running: number | null;
+  /** Published templates with any project ever, with a live project, and
+   * with kickback in Railway's trailing 30 days (null before Railway
+   * reported it), at the day's last sample; null on a day without one. */
+  deployedTemplates: number | null;
+  activeTemplates: number | null;
+  earningTemplates: number | null;
+  /** What the published templates had earned by the day's last sample. */
+  lifetimeCents: number | null;
   published: number;
   services: number;
 }

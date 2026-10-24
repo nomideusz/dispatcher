@@ -24,13 +24,21 @@ type timelineEvent struct {
 	Ledger      bool
 }
 
-// usageSample is the workspace's project counts at one collector sample.
-// Running is nil on samples taken before templateMetrics was collected.
+// usageSample is the workspace's project counts at one collector sample,
+// and how many published templates had projects at all (Deployed), live
+// projects (Active) and kickback in Railway's trailing 30 days (Earning).
+// Running is nil on samples taken before templateMetrics was collected,
+// Earning on those before earningsLast30Days was. LifetimeCents is what the
+// published templates had earned by then.
 type usageSample struct {
-	SampledAt      time.Time
-	Projects       int64
-	ActiveProjects int64
-	Running        *int64
+	SampledAt         time.Time
+	Projects          int64
+	ActiveProjects    int64
+	Running           *int64
+	DeployedTemplates int64
+	ActiveTemplates   int64
+	EarningTemplates  *int64
+	LifetimeCents     int64
 }
 
 // timelinePoint is one UTC day. EarnedCents and NewProjects are what the
@@ -38,14 +46,18 @@ type usageSample struct {
 // day without one (before tracking, or during a collection gap). Published
 // and Services are the catalog as of the end of the day.
 type timelinePoint struct {
-	Date           string `json:"date"`
-	EarnedCents    int64  `json:"earnedCents"`
-	NewProjects    int64  `json:"newProjects"`
-	Projects       *int64 `json:"projects"`
-	ActiveProjects *int64 `json:"activeProjects"`
-	Running        *int64 `json:"running"`
-	Published      int    `json:"published"`
-	Services       int    `json:"services"`
+	Date              string `json:"date"`
+	EarnedCents       int64  `json:"earnedCents"`
+	NewProjects       int64  `json:"newProjects"`
+	Projects          *int64 `json:"projects"`
+	ActiveProjects    *int64 `json:"activeProjects"`
+	Running           *int64 `json:"running"`
+	DeployedTemplates *int64 `json:"deployedTemplates"`
+	ActiveTemplates   *int64 `json:"activeTemplates"`
+	EarningTemplates  *int64 `json:"earningTemplates"`
+	LifetimeCents     *int64 `json:"lifetimeCents"`
+	Published         int    `json:"published"`
+	Services          int    `json:"services"`
 }
 
 type timelineActivity struct {
@@ -194,7 +206,12 @@ func handleTimeline(db *gorm.DB) http.HandlerFunc {
 			SELECT sampled_at,
 			       CAST(SUM(projects) AS BIGINT) AS projects,
 			       CAST(SUM(active_projects) AS BIGINT) AS active_projects,
-			       CAST(SUM(active_deployments) AS BIGINT) AS running
+			       CAST(SUM(active_deployments) AS BIGINT) AS running,
+			       COUNT(*) FILTER (WHERE projects > 0) AS deployed_templates,
+			       COUNT(*) FILTER (WHERE active_projects > 0) AS active_templates,
+			       CASE WHEN COUNT(earnings_last30_days) > 0
+			            THEN COUNT(*) FILTER (WHERE earnings_last30_days > 0) END AS earning_templates,
+			       CAST(ROUND(SUM(total_payout) * 100) AS BIGINT) AS lifetime_cents
 			FROM template_snapshots
 			WHERE status = 'PUBLISHED' AND sampled_at >= ?
 			GROUP BY sampled_at ORDER BY sampled_at`, timelineStart(now, days).AddDate(0, 0, -days)).Scan(&samples).Error
@@ -331,6 +348,8 @@ func buildTimeline(days int, now, trackedSince time.Time, events []timelineEvent
 		}
 		if s, ok := lastOfDay[key]; ok {
 			p.Projects, p.ActiveProjects, p.Running = &s.Projects, &s.ActiveProjects, s.Running
+			p.DeployedTemplates, p.ActiveTemplates, p.EarningTemplates = &s.DeployedTemplates, &s.ActiveTemplates, s.EarningTemplates
+			p.LifetimeCents = &s.LifetimeCents
 		}
 		p.Published, p.Services = catalogAsOf(publishes, d.Add(24*time.Hour-time.Nanosecond))
 		resp.Points = append(resp.Points, p)

@@ -76,6 +76,10 @@ func TestTimelineBucketsDeltasGapsAndLedger(t *testing.T) {
 	if p := points[key(t2)]; p.EarnedCents != 100 || p.NewProjects != 2 || p.ActiveProjects == nil || *p.ActiveProjects != 4 || *p.Running != 5 {
 		t.Errorf("%s = %+v, want 100¢, 2 new, 4 active, 5 running", key(t2), p)
 	}
+	if p := points[key(t2)]; p.DeployedTemplates == nil || *p.DeployedTemplates != 1 || *p.ActiveTemplates != 1 ||
+		p.EarningTemplates != nil || *p.LifetimeCents != 150 {
+		t.Errorf("%s templates = %+v, want 1 deployed, 1 active, earning unknown, 150¢ lifetime", key(t2), p)
+	}
 	if p := points[key(day(-1))]; p.ActiveProjects != nil {
 		t.Errorf("%s active = %d, want nil inside the gap", key(day(-1)), *p.ActiveProjects)
 	}

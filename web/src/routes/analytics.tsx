@@ -4,9 +4,10 @@ import { Delta } from "~/components/delta";
 import { PayoutHistory } from "~/components/payout-history";
 import { RangeToggle, type RangeDays } from "~/components/range-toggle";
 import { TemplateFunnel } from "~/components/template-funnel";
-import { TemplateScatter, TemplateSegments } from "~/components/template-scatter";
+import { TemplateScatter } from "~/components/template-scatter";
 import { TemplatesTable } from "~/components/templates-table";
-import { DayByDay } from "~/components/day-by-day";
+import { Earnings } from "~/components/earnings";
+import { WhatToPublish } from "~/components/what-to-publish";
 import { behindTemplateCount, UpgradeQueue } from "~/components/upgrade-queue";
 import { Button } from "~/components/ui/button";
 import {
@@ -63,7 +64,22 @@ export default function Analytics() {
               : "What your templates earn, who deploys them, and when"}
           </p>
         </div>
-        {data && <RangeToggle value={days} onChange={setDays} />}
+        {data && (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <nav aria-label="Sections" className="flex flex-wrap gap-x-3 gap-y-1 text-sm">
+              {SECTIONS.map(([id, label]) => (
+                <a
+                  key={id}
+                  href={`#${id}`}
+                  className="rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {label}
+                </a>
+              ))}
+            </nav>
+            <RangeToggle value={days} onChange={setDays} />
+          </div>
+        )}
       </header>
 
       {timeline.isPending && <DashboardSkeleton />}
@@ -79,71 +95,111 @@ export default function Analytics() {
           <KpiBand data={data} payouts={payouts.data} />
           <Attention data={data} payouts={payouts.data} />
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Day by day</CardTitle>
-              <CardDescription>
-                Kickback by template size against the catalog and the templates actually earning,
-                what one published template brings in, and how long a template takes to pay. Hover
-                a day to see which templates earned.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <DayByDay data={data} />
-            </CardContent>
-          </Card>
-
-          <div className="grid gap-4 lg:grid-cols-12">
-            <Card className="lg:col-span-7">
-              <CardHeader>
-                <CardTitle>Reach vs money</CardTitle>
-                <CardDescription>
-                  Each template by its live projects and its last 30 days of kickback. Above
-                  the dashed line a project earns more than $1 a month; far right and low is
-                  popular but unpaid.
-                </CardDescription>
-              </CardHeader>
+          <Section
+            id="earnings"
+            title="Earnings"
+            text="Everything earned so far against how much of the catalog is deployed, live and paying, and what each day added. Hover a day to see which templates earned."
+          >
+            <Card>
               <CardContent>
-                <TemplateScatter templates={data.templates} payers={payers} />
+                <Earnings data={data} />
               </CardContent>
             </Card>
-            <Card className="lg:col-span-5">
-              <CardHeader>
-                <CardTitle>From deploy to kickback</CardTitle>
-                <CardDescription>What Railway counts, widest first, across all templates</CardDescription>
-              </CardHeader>
-              <CardContent className="flex-1">
-                <TemplateFunnel
-                  templates={data.templates}
-                  payers={payouts.data?.byTemplate.reduce((s, t) => s + t.payers, 0)}
-                />
+          </Section>
+
+          <Section
+            id="publish"
+            title="What to publish"
+            text="Template size and publish month against what they earn and how soon they start paying."
+          >
+            <Card>
+              <CardContent>
+                <WhatToPublish data={data} />
               </CardContent>
             </Card>
-          </div>
+          </Section>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>What earns</CardTitle>
-              <CardDescription>
-                Kickback over the last 30 days per active project, by template size and by
-                when it was published
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <TemplateSegments templates={data.templates} />
-            </CardContent>
-          </Card>
+          <Section
+            id="templates"
+            title="Templates"
+            text="Which templates reach people and which of those pay, then every template to act on."
+          >
+            <div className="grid gap-4 lg:grid-cols-12">
+              <Card className="lg:col-span-7">
+                <CardHeader>
+                  <CardTitle>Reach vs money</CardTitle>
+                  <CardDescription>
+                    Each template by its live projects and its last 30 days of kickback. Above
+                    the dashed line a project earns more than $1 a month; far right and low is
+                    popular but unpaid.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <TemplateScatter templates={data.templates} payers={payers} />
+                </CardContent>
+              </Card>
+              <Card className="lg:col-span-5">
+                <CardHeader>
+                  <CardTitle>From deploy to kickback</CardTitle>
+                  <CardDescription>What Railway counts, widest first, across all templates</CardDescription>
+                </CardHeader>
+                <CardContent className="flex-1">
+                  <TemplateFunnel
+                    templates={data.templates}
+                    payers={payouts.data?.byTemplate.reduce((s, t) => s + t.payers, 0)}
+                  />
+                </CardContent>
+              </Card>
+            </div>
 
-          <TemplatesCard
-            data={data}
-            days={days}
-            byTemplate={payouts.data?.byTemplate}
-          />
+            <TemplatesCard
+              data={data}
+              days={days}
+              byTemplate={payouts.data?.byTemplate}
+            />
+          </Section>
 
-          <PayoutHistory days={days} />
+          <Section
+            id="payouts"
+            title="Payouts"
+            text="Money that left Railway as cash or credits, who pays it, and every entry."
+          >
+            <PayoutHistory days={days} />
+          </Section>
         </>
       )}
     </main>
+  );
+}
+
+const SECTIONS = [
+  ["earnings", "Earnings"],
+  ["publish", "What to publish"],
+  ["templates", "Templates"],
+  ["payouts", "Payouts"],
+] as const;
+
+function Section({
+  id,
+  title,
+  text,
+  children,
+}: {
+  id: (typeof SECTIONS)[number][0];
+  title: string;
+  text: string;
+  children: ReactNode;
+}) {
+  return (
+    <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-20 space-y-3 pt-3">
+      <div>
+        <h2 id={`${id}-title`} className="font-heading text-lg font-semibold tracking-tight">
+          {title}
+        </h2>
+        <p className="text-sm text-muted-foreground">{text}</p>
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -166,7 +222,7 @@ function TemplatesCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Templates</CardTitle>
+        <CardTitle>All templates</CardTitle>
         <CardDescription>
           {view === "templates"
             ? `New and earned are for the last ${days} days; payers and $/active for the last 30. Last deploy is when a new project last appeared; paid is the first and latest kickback.`

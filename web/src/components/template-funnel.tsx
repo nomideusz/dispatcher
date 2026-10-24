@@ -22,15 +22,6 @@ export function TemplateFunnel({
   const running = sum(templates.map((t) => t.running));
   const earned = sum(templates.map((t) => t.earned30d));
 
-  // How long a template takes to start paying says how soon a new batch
-  // can be judged.
-  const lags = templates
-    .filter((t) => t.publishedAt && t.firstPaidAt)
-    .map((t) => (Date.parse(t.firstPaidAt!) - Date.parse(t.publishedAt!)) / 86_400_000)
-    .filter((d) => d >= 0)
-    .sort((a, b) => a - b);
-  const median = lags.length > 0 ? lags[Math.floor(lags.length / 2)] : null;
-
   const stages = [
     {
       label: "Deployments",
@@ -101,20 +92,8 @@ export function TemplateFunnel({
         . <span className="text-foreground">{fmtNum(running)}</span> service instances running.
       </p>
 
-      {median != null && (
-        <div className="mt-auto flex items-baseline justify-between gap-3 rounded-lg bg-muted/60 px-3 py-2.5">
-          <div className="text-xs text-muted-foreground">
-            <div className="font-medium text-foreground">Publish to first kickback</div>
-            Median of the {lags.length} templates that have paid (fastest {Math.round(lags[0])},
-            slowest {Math.round(lags[lags.length - 1])}). Younger than that hasn&apos;t had its
-            chance yet.
-          </div>
-          <span className="shrink-0 text-xl font-semibold">{Math.round(median)} days</span>
-        </div>
-      )}
-
       {/* The definitions matter once, then they are noise on a page read daily. */}
-      <details className={`group text-xs text-muted-foreground ${median == null ? "mt-auto" : ""}`}>
+      <details className="group mt-auto text-xs text-muted-foreground">
         <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm font-medium text-foreground outline-none select-none hover:underline focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
           <ChevronRight className="size-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
           What each count means

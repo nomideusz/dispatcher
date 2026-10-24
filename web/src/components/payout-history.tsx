@@ -99,10 +99,10 @@ export function PayoutHistory({ days }: { days: number }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Payouts</CardTitle>
+        <CardTitle>Cash and credits</CardTitle>
         <CardDescription>
-          Cash and Railway credits paid out over the range, who pays, and every entry.
-          Kickback that stays in the balance shows above, as earned.
+          Paid out over the range. Kickback still in the Railway balance counts as earned
+          above, not here.
         </CardDescription>
         {data && data.totalRows > 0 && (
           <CardAction>

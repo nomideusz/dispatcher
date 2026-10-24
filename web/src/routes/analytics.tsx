@@ -129,9 +129,9 @@ export default function Analytics() {
                 <CardHeader>
                   <CardTitle>Reach vs money</CardTitle>
                   <CardDescription>
-                    Each template by its live projects and its last 30 days of kickback. Above
-                    the dashed line a project earns more than $1 a month; far right and low is
-                    popular but unpaid.
+                    Each template by its live projects and its last 30 days of kickback. Up and
+                    left of a diagonal, each project pays more; far right and low is popular but
+                    unpaid.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>

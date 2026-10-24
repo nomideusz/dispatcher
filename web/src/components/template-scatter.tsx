@@ -222,39 +222,19 @@ function segment(templates: TimelineTemplate[], keyOf: (t: TimelineTemplate) => 
 const monthFmt = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
 
 /** The same templates cut two ways: by how many services they define, and
- * by the month they were published — plus how long a template takes to
- * start paying, which says how soon a new batch can be judged. */
+ * by the month they were published. */
 export function TemplateSegments({ templates }: { templates: TimelineTemplate[] }) {
   const bySize = segment(templates, (t) => (t.services >= 4 ? "4+" : String(t.services)));
   const byMonth = segment(templates, (t) => t.publishedAt?.slice(0, 7) ?? "unknown");
 
-  const lags = templates
-    .filter((t) => t.publishedAt && t.firstPaidAt)
-    .map((t) => (Date.parse(t.firstPaidAt!) - Date.parse(t.publishedAt!)) / 86_400_000)
-    .filter((d) => d >= 0)
-    .sort((a, b) => a - b);
-  const median = lags.length > 0 ? lags[Math.floor(lags.length / 2)] : null;
-
   return (
-    <div className="space-y-5">
-      <div className="grid gap-6 lg:grid-cols-2">
+    <div className="grid gap-6 lg:grid-cols-2">
         <SegmentTable title="Services per template" rows={bySize} />
         <SegmentTable
           title="Published"
           rows={byMonth}
           format={(k) => (k === "unknown" ? k : monthFmt.format(new Date(`${k}-01T00:00:00Z`)))}
         />
-      </div>
-      {median != null && (
-        <p className="text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">
-            Publish to first kickback: {Math.round(median)} days
-          </span>{" "}
-          median across the {lags.length} templates that have paid (fastest{" "}
-          {Math.round(lags[0])}, slowest {Math.round(lags[lags.length - 1])}). A template younger
-          than that hasn&apos;t had its chance yet.
-        </p>
-      )}
     </div>
   );
 }
@@ -271,9 +251,9 @@ function SegmentTable({
   const best = Math.max(0, ...rows.map((r) => (r.active > 0 ? r.earned / r.active : 0)));
   return (
     <div className="overflow-x-auto">
-    <table className="w-full text-sm">
+    <table className="w-full min-w-[32rem] text-sm">
       <thead>
-        <tr className="border-b text-left text-xs text-muted-foreground">
+        <tr className="border-b text-left text-xs whitespace-nowrap text-muted-foreground">
           <th className="pb-2 font-medium">{title}</th>
           <th className="pb-2 pl-3 text-right font-medium">Templates</th>
           <th className="pb-2 pl-3 text-right font-medium">Earning</th>

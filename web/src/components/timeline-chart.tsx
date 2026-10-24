@@ -5,6 +5,7 @@ import {
   ComposedChart,
   Line,
   ReferenceArea,
+  ReferenceLine,
   Tooltip,
   XAxis,
   YAxis,
@@ -48,8 +49,9 @@ function missingRuns(points: TimelinePoint[], trackedDay: string) {
   return runs;
 }
 
-/** Kickback, new projects, live projects and the catalog on one time axis:
- * four small charts, one scale each, hovering together. The panel on the
+/** Kickback, new projects (with the days templates were published) and live
+ * projects on one time axis: three small charts, one scale each, hovering
+ * together. The panel on the
  * right reads out the hovered day, down to which templates moved. */
 export function TimelineChart({ data }: { data: TimelineResponse }) {
   const { points } = data;
@@ -83,6 +85,17 @@ export function TimelineChart({ data }: { data: TimelineResponse }) {
       ifOverflow="hidden"
     />
   ));
+
+  // Days the catalog grew: marked on the new-projects panel, so a launch
+  // and the deploys that follow it read together. Totals live in the panel
+  // on the right and the KPI band.
+  const launches = useMemo(
+    () =>
+      points
+        .filter((p, i) => i > 0 && p.published > points[i - 1].published)
+        .map((p) => p.date),
+    [points],
+  );
 
   const track = (s: { activeTooltipIndex?: number | string | null }) => {
     const i = Number(s.activeTooltipIndex);
@@ -147,11 +160,29 @@ export function TimelineChart({ data }: { data: TimelineResponse }) {
           </ChartContainer>
         </Panel>
 
-        <Panel title="New projects" keys={[{ label: "per day", color: COLOR.newProjects }]}>
-          <ChartContainer config={{}} className="aspect-auto h-20 w-full">
+        <Panel
+          title="New projects"
+          keys={[
+            { label: "per day", color: COLOR.newProjects },
+            ...(launches.length > 0
+              ? [{ label: "templates published", color: COLOR.published, line: true }]
+              : []),
+          ]}
+        >
+          <ChartContainer config={{}} className="aspect-auto h-24 w-full">
             <ComposedChart {...chartProps}>
               {axes(false, fmtNum)}
               {areas}
+              {launches.map((d) => (
+                <ReferenceLine
+                  key={d}
+                  x={d}
+                  stroke={COLOR.published}
+                  strokeOpacity={0.7}
+                  strokeDasharray="2 3"
+                  ifOverflow="hidden"
+                />
+              ))}
               <Bar dataKey="newProjects" fill={COLOR.newProjects} radius={[3, 3, 0, 0]} maxBarSize={24} isAnimationActive={false} />
             </ComposedChart>
           </ChartContainer>
@@ -164,9 +195,9 @@ export function TimelineChart({ data }: { data: TimelineResponse }) {
             { label: "Running instances", color: COLOR.running, line: true },
           ]}
         >
-          <ChartContainer config={{}} className="aspect-auto h-28 w-full">
+          <ChartContainer config={{}} className="aspect-auto h-36 w-full">
             <ComposedChart {...chartProps}>
-              {axes(false, fmtNum)}
+              {axes(true, fmtNum)}
               {areas}
               <Line dataKey="activeProjects" stroke={COLOR.active} strokeWidth={2} dot={false} isAnimationActive={false} />
               <Line dataKey="running" stroke={COLOR.running} strokeWidth={2} dot={false} isAnimationActive={false} />
@@ -174,21 +205,6 @@ export function TimelineChart({ data }: { data: TimelineResponse }) {
           </ChartContainer>
         </Panel>
 
-        <Panel
-          title="Catalog"
-          keys={[
-            { label: "Published templates", color: COLOR.published, line: true },
-            { label: "Services they define", color: COLOR.services, line: true },
-          ]}
-        >
-          <ChartContainer config={{}} className="aspect-auto h-28 w-full">
-            <ComposedChart {...chartProps}>
-              {axes(true, fmtNum)}
-              <Line type="stepAfter" dataKey="published" stroke={COLOR.published} strokeWidth={2} dot={false} isAnimationActive={false} />
-              <Line type="stepAfter" dataKey="services" stroke={COLOR.services} strokeWidth={2} dot={false} isAnimationActive={false} />
-            </ComposedChart>
-          </ChartContainer>
-        </Panel>
         {shade.length > 0 && (
           <p className="pl-13 text-xs text-muted-foreground">
             Shaded days have no sample —{" "}

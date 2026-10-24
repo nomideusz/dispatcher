@@ -7,10 +7,11 @@ import { TemplateFunnel } from "~/components/template-funnel";
 import { TemplateScatter, TemplateSegments } from "~/components/template-scatter";
 import { TemplatesTable } from "~/components/templates-table";
 import { TimelineChart } from "~/components/timeline-chart";
-import { UpgradeQueue } from "~/components/upgrade-queue";
+import { behindTemplateCount, UpgradeQueue } from "~/components/upgrade-queue";
 import { Button } from "~/components/ui/button";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -26,7 +27,12 @@ import {
   timelineQuery,
   useRefreshAnalytics,
 } from "~/queries/analytics";
-import { type PayoutHistory as PayoutHistoryData, payoutHistoryQuery } from "~/queries/payouts";
+import {
+  type PayoutHistory as PayoutHistoryData,
+  type PayoutTemplateTotal,
+  payoutHistoryQuery,
+} from "~/queries/payouts";
+import { upgradesQuery } from "~/queries/upgrades";
 import {
   accountLabel,
   scheduleDescription,
@@ -105,7 +111,7 @@ export default function Analytics() {
                 <CardTitle>From deploy to kickback</CardTitle>
                 <CardDescription>What Railway counts, widest first, across all templates</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="flex-1">
                 <TemplateFunnel
                   templates={data.templates}
                   payers={payouts.data?.byTemplate.reduce((s, t) => s + t.payers, 0)}
@@ -127,30 +133,76 @@ export default function Analytics() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Templates</CardTitle>
-              <CardDescription>
-                New and earned are for the last {days} days; payers and $/active for the last
-                30. Last deploy is when a new project last appeared; paid is the first and
-                latest kickback.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <TemplatesTable
-                templates={data.templates}
-                byTemplate={payouts.data?.byTemplate}
-                dates={data.points.map((p) => p.date)}
-              />
-            </CardContent>
-          </Card>
-
-          <UpgradeQueue />
+          <TemplatesCard
+            data={data}
+            days={days}
+            byTemplate={payouts.data?.byTemplate}
+          />
 
           <PayoutHistory days={days} />
         </>
       )}
     </main>
+  );
+}
+
+/** Every template, two ways: what it earns and how it is deployed, or what
+ * it pins that has a newer release. Both are lists to act on, per template,
+ * so they share one card and one place on the page. */
+function TemplatesCard({
+  data,
+  days,
+  byTemplate,
+}: {
+  data: TimelineResponse;
+  days: RangeDays;
+  byTemplate: PayoutTemplateTotal[] | undefined;
+}) {
+  const [view, setView] = useState<"templates" | "upgrades">("templates");
+  const upgrades = useQuery(upgradesQuery);
+  const behind = upgrades.data ? behindTemplateCount(upgrades.data) : null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Templates</CardTitle>
+        <CardDescription>
+          {view === "templates"
+            ? `New and earned are for the last ${days} days; payers and $/active for the last 30. Last deploy is when a new project last appeared; paid is the first and latest kickback.`
+            : "Each template's pinned images, and the versions its Dockerfiles mark, against the newest release of the same shape. Behind first, most earning first."}
+        </CardDescription>
+        <CardAction role="group" aria-label="Templates view">
+          <Button
+            size="xs"
+            variant={view === "templates" ? "secondary" : "ghost"}
+            onClick={() => setView("templates")}
+          >
+            Earnings
+          </Button>
+          <Button
+            size="xs"
+            variant={view === "upgrades" ? "secondary" : "ghost"}
+            onClick={() => setView("upgrades")}
+          >
+            Upgrades
+            {behind != null && behind > 0 && (
+              <span className="tabular-nums text-muted-foreground">{fmtNum(behind)}</span>
+            )}
+          </Button>
+        </CardAction>
+      </CardHeader>
+      <CardContent>
+        {view === "templates" ? (
+          <TemplatesTable
+            templates={data.templates}
+            byTemplate={byTemplate}
+            dates={data.points.map((p) => p.date)}
+          />
+        ) : (
+          <UpgradeQueue />
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

@@ -1,3 +1,4 @@
+import { ChevronRight } from "lucide-react";
 import { fmtNum, fmtUsd } from "~/lib/format";
 import type { TimelineTemplate } from "~/queries/analytics";
 
@@ -20,6 +21,15 @@ export function TemplateFunnel({
   const active = sum(templates.map((t) => t.activeProjects));
   const running = sum(templates.map((t) => t.running));
   const earned = sum(templates.map((t) => t.earned30d));
+
+  // How long a template takes to start paying says how soon a new batch
+  // can be judged.
+  const lags = templates
+    .filter((t) => t.publishedAt && t.firstPaidAt)
+    .map((t) => (Date.parse(t.firstPaidAt!) - Date.parse(t.publishedAt!)) / 86_400_000)
+    .filter((d) => d >= 0)
+    .sort((a, b) => a - b);
+  const median = lags.length > 0 ? lags[Math.floor(lags.length / 2)] : null;
 
   const stages = [
     {
@@ -53,10 +63,10 @@ export function TemplateFunnel({
   ];
 
   return (
-    <div className="space-y-4">
+    <div className="flex h-full flex-col gap-4">
       <ol className="space-y-3">
         {stages.map((s) => (
-          <li key={s.label} className="space-y-1">
+          <li key={s.label} className="space-y-1.5">
             <div className="flex items-baseline justify-between gap-3 text-sm">
               <span className="font-medium">{s.label}</span>
               <span className="flex items-baseline gap-2">
@@ -75,35 +85,64 @@ export function TemplateFunnel({
                 }}
               />
             </div>
-            <p className="text-xs text-muted-foreground">{s.text}</p>
           </li>
         ))}
       </ol>
 
-      <div className="space-y-2 border-t pt-3 text-xs text-muted-foreground">
-        <p>
-          <span className="font-medium text-foreground">{fmtUsd(earned)}</span> kickback over
-          30 days: <span className="text-foreground">{active > 0 ? fmtUsd(earned / active) : "—"}</span>{" "}
-          per active project
-          {payers ? (
-            <>
-              , <span className="text-foreground">{fmtUsd(earned / payers)}</span> per payer
-            </>
-          ) : null}
-          .
-        </p>
-        <p>
-          <span className="font-medium text-foreground">Running · {fmtNum(running)}</span> is
-          what Railway&apos;s metrics page labels “Active”: service instances running right now,
-          not projects. A four-service project counts up to four; a crashed or removed service
-          counts none. So running can outnumber active projects, or trail them.
-        </p>
-        <p>
-          <span className="font-medium text-foreground">“Activated”</span> isn&apos;t a Railway
-          term. Railway also shows <span className="text-foreground">Recent projects</span>:
-          projects created in the last 90 days.
-        </p>
-      </div>
+      <p className="border-t pt-3 text-xs text-muted-foreground">
+        <span className="font-medium text-foreground">{fmtUsd(earned)}</span> kickback over
+        30 days: <span className="text-foreground">{active > 0 ? fmtUsd(earned / active) : "—"}</span>{" "}
+        per active project
+        {payers ? (
+          <>
+            , <span className="text-foreground">{fmtUsd(earned / payers)}</span> per payer
+          </>
+        ) : null}
+        . <span className="text-foreground">{fmtNum(running)}</span> service instances running.
+      </p>
+
+      {median != null && (
+        <div className="mt-auto flex items-baseline justify-between gap-3 rounded-lg bg-muted/60 px-3 py-2.5">
+          <div className="text-xs text-muted-foreground">
+            <div className="font-medium text-foreground">Publish to first kickback</div>
+            Median of the {lags.length} templates that have paid (fastest {Math.round(lags[0])},
+            slowest {Math.round(lags[lags.length - 1])}). Younger than that hasn&apos;t had its
+            chance yet.
+          </div>
+          <span className="shrink-0 text-xl font-semibold">{Math.round(median)} days</span>
+        </div>
+      )}
+
+      {/* The definitions matter once, then they are noise on a page read daily. */}
+      <details className={`group text-xs text-muted-foreground ${median == null ? "mt-auto" : ""}`}>
+        <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm font-medium text-foreground outline-none select-none hover:underline focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+          <ChevronRight className="size-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
+          What each count means
+        </summary>
+        <dl className="mt-2 space-y-2">
+          {stages.map((s) => (
+            <div key={s.label}>
+              <dt className="font-medium text-foreground">{s.label}</dt>
+              <dd>{s.text}</dd>
+            </div>
+          ))}
+          <div>
+            <dt className="font-medium text-foreground">Running · {fmtNum(running)}</dt>
+            <dd>
+              What Railway&apos;s metrics page labels “Active”: service instances running right
+              now, not projects. A four-service project counts up to four; a crashed or removed
+              service counts none. So running can outnumber active projects, or trail them.
+            </dd>
+          </div>
+          <div>
+            <dt className="font-medium text-foreground">“Activated”, “Recent projects”</dt>
+            <dd>
+              “Activated” isn&apos;t a Railway term. Railway also shows Recent projects: projects
+              created in the last 90 days.
+            </dd>
+          </div>
+        </dl>
+      </details>
     </div>
   );
 }

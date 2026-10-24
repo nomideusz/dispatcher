@@ -79,54 +79,82 @@ function sortPayers(payers: PayerChain[], by: PayerSort): PayerChain[] {
 }
 const PAYER_SORT_LABELS: Record<PayerSort, string> = { rank: "By total", status: "By status", due: "By next due" };
 
+type PayoutView = "payers" | "ledger";
+const STICKY_HEAD = "w-full text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10 [&_thead_th]:bg-card";
+
 /** Money out of Railway, who is paying, and the raw ledger, for the range
- * the dashboard header picks. Per-template totals live in the templates
- * table. */
+ * the dashboard header picks, in one card: the figures and the cumulative
+ * line on top, then payers or the ledger. Per-template totals live in the
+ * templates table. */
 export function PayoutHistory({ days }: { days: number }) {
   const [payerSort, setPayerSort] = useState<PayerSort>("rank");
-  const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [view, setView] = useState<PayoutView>("payers");
   const history = useQuery(payoutHistoryQuery(days));
   const data = history.data;
   const statusCount = (s: PayerChain["status"]) =>
     data?.payers.filter((c) => c.status === s).length ?? 0;
+  const hasPayers = (data?.payers.length ?? 0) > 0;
+  const current: PayoutView = hasPayers ? view : "ledger";
 
   return (
-    <>
-      <Card>
-        <CardHeader>
-          <CardTitle>Withdrawals</CardTitle>
-          <CardDescription>
-            Cash and Railway credits paid out, cumulative over the range.
-            Kickback that stays in the balance shows above, as earned.
-          </CardDescription>
-        </CardHeader>
-
-        {history.isPending && (
-          <CardContent>
-            <Skeleton className="h-64 w-full" />
-          </CardContent>
-        )}
-
-        {history.isError && (
-          <CardContent>
-            <p className="text-sm text-(--viz-critical)">
-              Couldn&apos;t load payout history — check the server logs.
-            </p>
-          </CardContent>
-        )}
-
-        {data && data.totalRows === 0 && (
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              No payouts recorded yet. Railway pays out once your balance clears{" "}
-              {fmtCents(10000)}; the collector picks them up on each refresh.
-            </p>
-          </CardContent>
-        )}
-
+    <Card>
+      <CardHeader>
+        <CardTitle>Payouts</CardTitle>
+        <CardDescription>
+          Cash and Railway credits paid out over the range, who pays, and every entry.
+          Kickback that stays in the balance shows above, as earned.
+        </CardDescription>
         {data && data.totalRows > 0 && (
-          <>
-            <CardContent className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
+          <CardAction>
+            {hasPayers && (
+              <Button
+                size="xs"
+                variant={current === "payers" ? "secondary" : "ghost"}
+                onClick={() => setView("payers")}
+              >
+                Payers
+                <span className="tabular-nums text-muted-foreground">{fmtNum(data.payers.length)}</span>
+              </Button>
+            )}
+            <Button
+              size="xs"
+              variant={current === "ledger" ? "secondary" : "ghost"}
+              onClick={() => setView("ledger")}
+            >
+              Ledger
+              <span className="tabular-nums text-muted-foreground">{fmtNum(data.payouts.length)}</span>
+            </Button>
+          </CardAction>
+        )}
+      </CardHeader>
+
+      {history.isPending && (
+        <CardContent>
+          <Skeleton className="h-64 w-full" />
+        </CardContent>
+      )}
+
+      {history.isError && (
+        <CardContent>
+          <p className="text-sm text-(--viz-critical)">
+            Couldn&apos;t load payout history — check the server logs.
+          </p>
+        </CardContent>
+      )}
+
+      {data && data.totalRows === 0 && (
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            No payouts recorded yet. Railway pays out once your balance clears{" "}
+            {fmtCents(10000)}; the collector picks them up on each refresh.
+          </p>
+        </CardContent>
+      )}
+
+      {data && data.totalRows > 0 && (
+        <>
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
               <WindowFigure days={days} data={data} />
               <Figure
                 label="Total paid out"
@@ -144,115 +172,98 @@ export function PayoutHistory({ days }: { days: number }) {
                   note={`${data.totals.pendingCount} pending`}
                 />
               )}
-            </CardContent>
-            <CardContent>
-              {data.window.count > 0 ? (
-                <PayoutHistoryChart points={data.points} />
-              ) : (
-                <p className="text-sm text-muted-foreground">
+              {data.window.count === 0 && (
+                <p className="max-w-md self-center text-sm text-muted-foreground">
                   Nothing paid out in the last {days} days
                   {data.totals.lastPayoutAt &&
                     ` — the last payout was ${dayFmt.format(new Date(data.totals.lastPayoutAt))}`}
                   . Kickback is accruing in the Railway balance instead.
                 </p>
               )}
-            </CardContent>
-          </>
-        )}
-      </Card>
-
-      {data && data.payers.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Payers</CardTitle>
-            <CardDescription>
-              {fmtNum(statusCount("returning"))} returning ·{" "}
-              {fmtNum(statusCount("new"))} new · {fmtNum(statusCount("lapsed"))}{" "}
-              lapsed. One line per deployer, under a stable pseudonym: returning
-              paid again on their billing date, lapsed missed a due invoice.
-            </CardDescription>
-            <CardAction className="flex gap-1">
-              {(["rank", "status", "due"] as const).map((s) => (
-                <Button
-                  key={s}
-                  size="xs"
-                  variant={s === payerSort ? "secondary" : "ghost"}
-                  onClick={() => setPayerSort(s)}
-                >
-                  {PAYER_SORT_LABELS[s]}
-                </Button>
-              ))}
-            </CardAction>
-          </CardHeader>
-          <CardContent className="scroll-fade max-h-[32rem] overflow-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs text-muted-foreground">
-                  <th className="pb-2 text-right font-medium">#</th>
-                  <th className="pb-2 pl-3 font-medium">Payer</th>
-                  <th className="pb-2 pl-3 font-medium">Template</th>
-                  <th className="pb-2 pl-3 font-medium">Status</th>
-                  <th className="pb-2 pl-3 font-medium">First</th>
-                  <th className="pb-2 pl-3 font-medium">Last</th>
-                  <th className="pb-2 pl-3 font-medium">Next due</th>
-                  <th className="pb-2 pl-3 text-right font-medium">Invoices</th>
-                  <th className="pb-2 pl-3 text-right font-medium">Last amount</th>
-                  <th className="pb-2 pl-3 text-right font-medium">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortPayers(data.payers, payerSort).map((c) => (
-                  <PayerRow key={`${c.templateId}-${c.firstAt}`} chain={c} />
-                ))}
-              </tbody>
-            </table>
+            </div>
+            {data.window.count > 0 && <PayoutHistoryChart points={data.points} />}
           </CardContent>
-        </Card>
-      )}
 
-      {data && data.totalRows > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Ledger</CardTitle>
-            <CardDescription>
-              {fmtNum(data.payouts.length)} payouts and balance accruals in the
-              last {days} days, newest first
-            </CardDescription>
-            <CardAction>
-              <Button size="xs" variant="ghost" onClick={() => setLedgerOpen((o) => !o)}>
-                {ledgerOpen ? "Hide" : "Show"}
-              </Button>
-            </CardAction>
-          </CardHeader>
-          {ledgerOpen && (
-          <CardContent className="scroll-fade max-h-[32rem] overflow-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs text-muted-foreground">
-                  <th className="pb-2 font-medium">Date</th>
-                  <th className="pb-2 pl-3 font-medium">Template</th>
-                  <th className="pb-2 pl-3 font-medium">Destination</th>
-                  <th className="pb-2 pl-3 font-medium">Status</th>
-                  <th className="pb-2 pl-3 text-right font-medium">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.payouts.map((p) => (
-                  <PayoutRow key={p.id} payout={p} />
-                ))}
-              </tbody>
-            </table>
-            {data.totalRows > data.payouts.length && (
-              <p className="pt-3 text-xs text-muted-foreground">
-                {fmtNum(data.payouts.length)} entries in the last {days} days;{" "}
-                {fmtNum(data.totalRows - data.payouts.length)} more before that.
-              </p>
+          <CardContent className="space-y-3 border-t pt-4">
+            {current === "payers" ? (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs text-muted-foreground">
+                    {fmtNum(statusCount("returning"))} returning · {fmtNum(statusCount("new"))} new ·{" "}
+                    {fmtNum(statusCount("lapsed"))} lapsed. One line per deployer, under a stable
+                    pseudonym: returning paid again on their billing date, lapsed missed a due
+                    invoice.
+                  </p>
+                  <div role="group" aria-label="Sort payers" className="flex gap-1">
+                    {(["rank", "status", "due"] as const).map((s) => (
+                      <Button
+                        key={s}
+                        size="xs"
+                        variant={s === payerSort ? "secondary" : "ghost"}
+                        onClick={() => setPayerSort(s)}
+                      >
+                        {PAYER_SORT_LABELS[s]}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <div className="scroll-fade max-h-[32rem] overflow-auto">
+                  <table className={STICKY_HEAD}>
+                    <thead>
+                      <tr className="border-b text-left text-xs text-muted-foreground">
+                        <th className="pb-2 text-right font-medium">#</th>
+                        <th className="pb-2 pl-3 font-medium">Payer</th>
+                        <th className="pb-2 pl-3 font-medium">Template</th>
+                        <th className="pb-2 pl-3 font-medium">Status</th>
+                        <th className="pb-2 pl-3 font-medium">First</th>
+                        <th className="pb-2 pl-3 font-medium">Last</th>
+                        <th className="pb-2 pl-3 font-medium">Next due</th>
+                        <th className="pb-2 pl-3 text-right font-medium">Invoices</th>
+                        <th className="pb-2 pl-3 text-right font-medium">Last amount</th>
+                        <th className="pb-2 pl-3 text-right font-medium">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortPayers(data.payers, payerSort).map((c) => (
+                        <PayerRow key={`${c.templateId}-${c.firstAt}`} chain={c} />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  {fmtNum(data.payouts.length)} payouts and balance accruals in the last {days}{" "}
+                  days, newest first
+                  {data.totalRows > data.payouts.length &&
+                    `; ${fmtNum(data.totalRows - data.payouts.length)} more before that`}
+                  .
+                </p>
+                <div className="scroll-fade max-h-[32rem] overflow-auto">
+                  <table className={STICKY_HEAD}>
+                    <thead>
+                      <tr className="border-b text-left text-xs text-muted-foreground">
+                        <th className="pb-2 font-medium">Date</th>
+                        <th className="pb-2 pl-3 font-medium">Template</th>
+                        <th className="pb-2 pl-3 font-medium">Destination</th>
+                        <th className="pb-2 pl-3 font-medium">Status</th>
+                        <th className="pb-2 pl-3 text-right font-medium">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.payouts.map((p) => (
+                        <PayoutRow key={p.id} payout={p} />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </CardContent>
-          )}
-        </Card>
+        </>
       )}
-    </>
+    </Card>
   );
 }
 

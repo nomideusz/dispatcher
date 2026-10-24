@@ -1,17 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { Fragment, useState } from "react";
 import { Button } from "~/components/ui/button";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 import { fmtAgo, fmtNum, fmtUsd, shortNames } from "~/lib/format";
 import { type ServiceUpgrade, upgradesQuery, useRefreshUpgrades } from "~/queries/upgrades";
+
+/** How many templates pin something with a newer release on its major
+ * line: the count the Templates card puts on its Upgrades tab. */
+export const behindTemplateCount = (rows: ServiceUpgrade[]) => templateCount(rows.filter(MATCHES.behind));
 
 /** behind: a newer release on the pinned major line (the queue). majors: a
  * later major exists. all: every template, including those with nothing
@@ -43,22 +39,12 @@ export function UpgradeQueue() {
   const names = shortNames(rows.map((u) => u.name ?? u.templateId));
   const shown = rows.filter(MATCHES[filter]);
   const pins = shown.filter((u) => u.behind !== "unchecked").length;
-  const behindTemplates = templateCount(rows.filter(MATCHES.behind));
   const checkedAt = rows.find((u) => u.behind !== "unchecked")?.checkedAt;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Upgrades</CardTitle>
-        <CardDescription>
-          {checkedAt
-            ? `${fmtNum(behindTemplates)} templates pin an image or version with a newer release on the same major line, most earning first. Checked against the registries ${fmtAgo(checkedAt, new Date().toISOString())} ago; daily at 06:08 UTC.`
-            : "Each template's pinned images, and the versions its Dockerfiles mark, against the newest release of the same shape."}
-          {refresh.isError && (
-            <span className="text-(--viz-critical)"> Re-check failed: {refresh.error.message}</span>
-          )}
-        </CardDescription>
-        <CardAction className="flex gap-1">
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div role="group" aria-label="Filter upgrades" className="flex flex-wrap gap-1">
           {(["behind", "majors", "all"] as const).map((f) => (
             <Button
               key={f}
@@ -77,29 +63,33 @@ export function UpgradeQueue() {
           <Button size="xs" variant={grouped ? "secondary" : "ghost"} onClick={() => setGrouped(!grouped)}>
             Group
           </Button>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          {checkedAt && (
+            <span>
+              Checked {fmtAgo(checkedAt, new Date().toISOString())} ago · daily at 06:08 UTC
+            </span>
+          )}
           <Button size="xs" variant="ghost" disabled={refresh.isPending} onClick={() => refresh.mutate()}>
             {refresh.isPending ? "Checking…" : "Re-check"}
           </Button>
-        </CardAction>
-      </CardHeader>
-      <CardContent className="scroll-fade max-h-[32rem] overflow-auto">
+        </div>
+      </div>
+      {refresh.isError && (
+        <p className="text-xs text-(--viz-critical)">Re-check failed: {refresh.error.message}</p>
+      )}
+      <div className="scroll-fade max-h-[36rem] overflow-auto">
         {upgrades.isPending && <Skeleton className="h-40 w-full" />}
         {upgrades.isError && (
           <p className="text-sm text-(--viz-critical)">Failed to load upgrades.</p>
         )}
         {upgrades.isSuccess && shown.length === 0 && (
-          <p className="text-sm text-muted-foreground">
+          <p className="py-6 text-center text-sm text-muted-foreground">
             {rows.length === 0 ? "No check has run yet." : "Nothing here: every pinned image is current."}
           </p>
         )}
         {shown.length > 0 && (
-          <p className="mb-2 text-xs text-muted-foreground">
-            {fmtNum(templateCount(shown))} templates, {fmtNum(pins)} pinned{" "}
-            {pins === 1 ? "image or version" : "images and versions"}
-          </p>
-        )}
-        {shown.length > 0 && (
-          <table className="w-full text-sm">
+          <table className="w-full text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10 [&_thead_th]:bg-card">
             <thead>
               <tr className="border-b text-left text-xs text-muted-foreground">
                 <th className="pb-2 font-medium">Template</th>
@@ -146,8 +136,14 @@ export function UpgradeQueue() {
             </tbody>
           </table>
         )}
-      </CardContent>
-    </Card>
+      </div>
+      {shown.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {fmtNum(templateCount(shown))} templates, {fmtNum(pins)} pinned{" "}
+          {pins === 1 ? "image or version" : "images and versions"}
+        </p>
+      )}
+    </div>
   );
 }
 

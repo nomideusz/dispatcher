@@ -60,6 +60,28 @@ func TestNewestTags(t *testing.T) {
 	}
 }
 
+func TestHABlock(t *testing.T) {
+	redis := []int{7, 8}
+	cases := []struct {
+		tag, major string
+		supported  []int
+		want       string
+	}{
+		{"8-alpine", "", redis, ""},
+		{"7.4.11-alpine", "8.10.2-alpine", redis, ""},
+		{"8-alpine", "9-alpine", redis, "major"},
+		{"6-alpine", "8-alpine", redis, "pinned"},
+		{"alpine", "", redis, "tag"},
+		{"latest", "", nil, "tag"},
+		{"8-alpine", "9-alpine", nil, ""},
+	}
+	for _, c := range cases {
+		if got := haBlock(c.tag, c.major, c.supported); got != c.want {
+			t.Errorf("haBlock(%q, %q, %v) = %q, want %q", c.tag, c.major, c.supported, got, c.want)
+		}
+	}
+}
+
 func TestNextPageURL(t *testing.T) {
 	got := nextPageURL("https://ghcr.io/v2/o/r/tags/list?n=1000", `</v2/o/r/tags/list?last=v1&n=1000>; rel="next"`)
 	if got != "https://ghcr.io/v2/o/r/tags/list?last=v1&n=1000" {

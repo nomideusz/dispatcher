@@ -159,11 +159,28 @@ function ServiceRow({ u, template, earnings }: { u: ServiceUpgrade; template: st
       <td className="max-w-64 truncate py-1.5 pl-3 font-mono text-xs" title={u.image}>
         {u.image}
       </td>
-      <td className="py-1.5 pl-3 font-mono text-xs">{u.tag}</td>
+      <td className="py-1.5 pl-3 font-mono text-xs">
+        {u.tag}
+        {(u.haBlock === "tag" || u.haBlock === "pinned") && (
+          <span className="font-sans text-(--viz-critical)" title={`${u.ha} cannot convert this tag`}>
+            {" "}(no HA)
+          </span>
+        )}
+      </td>
       <td className="py-1.5 pl-3 font-mono text-xs">
         <LineCell u={u} />
       </td>
-      <td className="py-1.5 pl-3 font-mono text-xs text-muted-foreground">{u.major}</td>
+      <td className="py-1.5 pl-3 font-mono text-xs text-muted-foreground">
+        {u.major}
+        {u.major && u.ha && (u.haBlock === "" || u.haBlock === "major") && (
+          <span
+            className={`font-sans ${u.haBlock === "major" ? "text-(--viz-critical)" : ""}`}
+            title={u.haBlock === "major" ? `${u.ha} does not support this major yet` : `${u.ha} supports this major`}
+          >
+            {u.haBlock === "major" ? " (drops HA)" : " (HA ok)"}
+          </span>
+        )}
+      </td>
       {earnings ? <EarningCells u={u} /> : <td colSpan={2} />}
     </tr>
   );

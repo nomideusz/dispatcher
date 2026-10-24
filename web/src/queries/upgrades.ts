@@ -22,6 +22,14 @@ export interface ServiceUpgrade {
    * a template with nothing pinned (its only row, service and image empty). */
   behind: "" | "minor" | "patch" | "floating" | "unknown" | "unchecked";
   major: string;
+  /** The Railway template this database converts to a cluster with
+   * (redis-ha, mysql-ha, postgres-ha); "" when it has none. */
+  ha: string;
+  /** Why that conversion fails or would: tag (the pinned tag names no
+   * major, Railway refuses it), pinned (the companion does not support the
+   * pinned major), major (it does not support the later major, so bumping
+   * drops the convert option). */
+  haBlock: "" | "tag" | "pinned" | "major";
   error?: string;
   name: string | null;
   code: string | null;

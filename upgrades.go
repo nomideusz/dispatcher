@@ -53,7 +53,15 @@ type ServiceImage struct {
 	Behind string `json:"behind"`
 	// Major is the newest tag of a later major version, empty if none.
 	Major string `json:"major"`
-	Error string `json:"error,omitempty"`
+	// HA is the Railway template the service converts to a cluster with
+	// (its haTemplateCode, e.g. redis-ha), empty when it has none.
+	HA string `json:"ha"`
+	// HABlock says why that conversion fails or would: "tag" when the
+	// pinned tag names no major, which Railway refuses; "pinned" when the
+	// companion does not support the pinned major; "major" when it does not
+	// support Major, so bumping to it drops the convert option.
+	HABlock string `json:"haBlock"`
+	Error   string `json:"error,omitempty"`
 }
 
 // serviceImageRef is one pinned image, or, with Repo set, a service built
@@ -64,6 +72,7 @@ type serviceImageRef struct {
 	Tag     string
 	Repo    string
 	Root    string
+	HA      string
 }
 
 // templateImages lists the image-based and repo-built services of a template.
@@ -77,13 +86,14 @@ func (t workspaceTemplate) templateImages() []serviceImageRef {
 				Repo          string `json:"repo"`
 				RootDirectory string `json:"rootDirectory"`
 			} `json:"source"`
+			HATemplateCode string `json:"haTemplateCode"`
 		}
 		if json.Unmarshal(raw, &svc) != nil {
 			continue
 		}
 		if svc.Source.Image != "" {
 			image, tag := splitImageTag(svc.Source.Image)
-			refs = append(refs, serviceImageRef{Service: svc.Name, Image: image, Tag: tag})
+			refs = append(refs, serviceImageRef{Service: svc.Name, Image: image, Tag: tag, HA: svc.HATemplateCode})
 		} else if svc.Source.Repo != "" {
 			refs = append(refs, serviceImageRef{Service: svc.Name, Repo: svc.Source.Repo, Root: svc.Source.RootDirectory})
 		}
@@ -206,6 +216,52 @@ func newestTags(pinned string, tags []string) (latest, behind, major string) {
 		behind = "patch"
 	}
 	return latest, behind, major
+}
+
+// haMajors reads the image majors an HA companion template converts:
+// supportedImageMajorVersions on its root service's haConversionConfig.
+func haMajors(ctx context.Context, accessToken, code string) ([]int, error) {
+	var data struct {
+		Template struct {
+			SerializedConfig struct {
+				Services map[string]struct {
+					ClusterRole        string `json:"clusterRole"`
+					HAConversionConfig struct {
+						SupportedImageMajorVersions []int `json:"supportedImageMajorVersions"`
+					} `json:"haConversionConfig"`
+				} `json:"services"`
+			} `json:"serializedConfig"`
+		} `json:"template"`
+	}
+	query := "query ($code: String!) { template(code: $code) { serializedConfig } }"
+	if err := graphqlRequest(ctx, railwayGraphQLURL, accessToken, query, map[string]any{"code": code}, &data); err != nil {
+		return nil, err
+	}
+	for _, svc := range data.Template.SerializedConfig.Services {
+		if svc.ClusterRole == "root" {
+			return svc.HAConversionConfig.SupportedImageMajorVersions, nil
+		}
+	}
+	return nil, fmt.Errorf("HA template %s has no root service", code)
+}
+
+// haBlock places a pinned tag and its later major against the majors an HA
+// companion supports (see ServiceImage.HABlock). supported is nil when the
+// companion could not be read; only the tag is judged then.
+func haBlock(tag, major string, supported []int) string {
+	_, nums, ok := tagVersion(tag)
+	switch {
+	case !ok:
+		return "tag"
+	case supported == nil:
+		return ""
+	case !slices.Contains(supported, nums[0]):
+		return "pinned"
+	}
+	if _, m, ok := tagVersion(major); ok && !slices.Contains(supported, m[0]) {
+		return "major"
+	}
+	return ""
 }
 
 var upgradeMarkerRe = regexp.MustCompile(`^#\s*upgrade:\s*(?:(skip)\b|(github|npm)\s+(\S+))`)
@@ -549,17 +605,35 @@ func checkTemplateUpgrades(db *gorm.DB) error {
 	}
 	g.Wait()
 
+	// A handful of Railway companions (redis-ha, mysql-ha, postgres-ha),
+	// read once each. An unreadable one only loses the major checks.
+	haSupported := map[string][]int{}
+	for _, tRefs := range refs {
+		for _, ref := range tRefs {
+			if _, done := haSupported[ref.HA]; ref.HA != "" && !done {
+				majors, err := haMajors(ctx, token, ref.HA)
+				if err != nil {
+					log.Printf("upgrade check: HA template %s: %v", ref.HA, err)
+				}
+				haSupported[ref.HA] = majors
+			}
+		}
+	}
+
 	rows := []ServiceImage{}
 	for i, t := range templates {
 		rows = append(rows, failed[i]...)
 		for _, ref := range refs[i] {
-			row := ServiceImage{CheckedAt: checkedAt, TemplateID: t.ID, Service: ref.Service, Image: ref.Image, Tag: ref.Tag}
+			row := ServiceImage{CheckedAt: checkedAt, TemplateID: t.ID, Service: ref.Service, Image: ref.Image, Tag: ref.Tag, HA: ref.HA}
 			if res := cache[ref.Image]; res == nil {
 				row.Behind = "floating"
 			} else if res.err != nil {
 				row.Behind, row.Error = "unknown", res.err.Error()
 			} else {
 				row.Latest, row.Behind, row.Major = newestTags(ref.Tag, res.tags)
+			}
+			if ref.HA != "" {
+				row.HABlock = haBlock(ref.Tag, row.Major, haSupported[ref.HA])
 			}
 			rows = append(rows, row)
 		}
@@ -612,7 +686,8 @@ func upgradeRows(db *gorm.DB) ([]upgradeRow, error) {
 		SELECT si.checked_at, COALESCE(si.template_id, l.template_id) AS template_id,
 		       COALESCE(si.service, '') AS service, COALESCE(si.image, '') AS image, COALESCE(si.tag, '') AS tag,
 		       COALESCE(si.latest, '') AS latest, COALESCE(si.behind, 'unchecked') AS behind,
-		       COALESCE(si.major, '') AS major, COALESCE(si.error, '') AS error,
+		       COALESCE(si.major, '') AS major, COALESCE(si.ha, '') AS ha,
+		       COALESCE(si.ha_block, '') AS ha_block, COALESCE(si.error, '') AS error,
 		       l.name, l.code, l.status, l.earnings_last30_days, l.active_projects
 		FROM service_images si
 		FULL JOIN latest l ON l.template_id = si.template_id

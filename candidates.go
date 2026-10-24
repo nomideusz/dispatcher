@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 // Railway publishes template stats around the hour; the marketplace is read
@@ -138,7 +139,9 @@ func runMarketFetch(db *gorm.DB) {
 		if err := tx.Exec("DELETE FROM market_templates").Error; err != nil {
 			return err
 		}
-		return tx.Session(&gorm.Session{SkipDefaultTransaction: true}).CreateInBatches(&rows, 500).Error
+		// Silent: each 500-row batch takes ~600 ms and GORM logs the whole
+		// statement as a slow query.
+		return tx.Session(&gorm.Session{SkipDefaultTransaction: true, Logger: logger.Discard}).CreateInBatches(&rows, 500).Error
 	})
 	if err != nil {
 		log.Printf("market fetch: save: %v", err)

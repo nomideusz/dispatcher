@@ -539,9 +539,12 @@ func loadAccruals(ctx context.Context, db *gorm.DB) ([]Payout, error) {
 // catalog item. Railway's Template type exposes createdAt, not publishedAt;
 // we store that as PublishedAt, and fall back to the first snapshot that
 // saw the template published for rows collected before the field existed.
+// RetiredAt is the last sample that saw it published, set once a later run
+// no longer does (unpublished or deleted), so the catalog stops counting it.
 type templatePublish struct {
 	TemplateID  string
 	PublishedAt time.Time
+	RetiredAt   *time.Time
 	Services    int64
 }
 
@@ -550,6 +553,7 @@ func loadTemplatePublishes(ctx context.Context, db *gorm.DB) ([]templatePublish,
 	err := db.WithContext(ctx).Raw(`
 		SELECT template_id,
 		       COALESCE(MIN(published_at), MIN(sampled_at)) AS published_at,
+		       NULLIF(MAX(sampled_at), (SELECT MAX(sampled_at) FROM template_snapshots)) AS retired_at,
 		       MAX(services) AS services
 		FROM template_snapshots
 		WHERE status = 'PUBLISHED'
@@ -559,7 +563,7 @@ func loadTemplatePublishes(ctx context.Context, db *gorm.DB) ([]templatePublish,
 
 func catalogAsOf(publishes []templatePublish, at time.Time) (published, services int) {
 	for _, p := range publishes {
-		if !p.PublishedAt.After(at) {
+		if !p.PublishedAt.After(at) && (p.RetiredAt == nil || !at.After(*p.RetiredAt)) {
 			published++
 			services += int(p.Services)
 		}

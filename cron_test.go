@@ -124,6 +124,34 @@ func TestLoadTemplatePublishesPrefersCreatedAtOverFirstSeen(t *testing.T) {
 	}
 }
 
+// A template published once and later unpublished or deleted (Dino) drops
+// out of the catalog after its last published sample.
+func TestCatalogAsOfDropsRetiredTemplates(t *testing.T) {
+	db, err := gorm.Open(duckdb.Open(filepath.Join(t.TempDir(), "retired.duckdb")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&TemplateSnapshot{}); err != nil {
+		t.Fatal(err)
+	}
+	day := func(d int) time.Time { return time.Date(2026, time.October, d, 0, 0, 0, 0, time.UTC) }
+	db.Create(&[]TemplateSnapshot{
+		{SampledAt: day(1), TemplateID: "live", Status: "PUBLISHED"},
+		{SampledAt: day(1), TemplateID: "dino", Status: "PUBLISHED"},
+		{SampledAt: day(2), TemplateID: "dino", Status: "UNPUBLISHED"},
+		{SampledAt: day(3), TemplateID: "live", Status: "PUBLISHED"},
+	})
+	got, err := loadTemplatePublishes(t.Context(), db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ at, want int }{{1, 2}, {2, 1}, {3, 1}} {
+		if n, _ := catalogAsOf(got, day(c.at)); n != c.want {
+			t.Errorf("catalogAsOf(day %d) = %d, want %d", c.at, n, c.want)
+		}
+	}
+}
+
 func TestTemplateSnapshotLeavesUnpublishedMetricsUnknown(t *testing.T) {
 	got := templateSnapshotAt(time.Now(), workspaceTemplate{ID: "draft", Status: "UNPUBLISHED"}, nil)
 	if got.TotalDeployments != nil || got.TotalEarnings != nil || got.TemplateHealth != nil || got.EligibleForSupportBonus != nil {

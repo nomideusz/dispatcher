@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -292,6 +293,23 @@ func groupMarket(rows []MarketTemplate, ours map[string]bool) []*candidateGroup 
 	return groups
 }
 
+// addCatalog adds our published templates the market read has not seen
+// yet to the group of the same name.
+func addCatalog(groups []*candidateGroup, catalog []struct{ TemplateID, Name string }) []*candidateGroup {
+	by := make(map[string]*candidateGroup, len(groups))
+	for _, g := range groups {
+		by[g.Key] = g
+	}
+	for _, t := range catalog {
+		g := by[marketKey(t.Name)]
+		if g == nil || slices.Contains(g.Ours, t.TemplateID) {
+			continue
+		}
+		g.Ours = append(g.Ours, t.TemplateID)
+	}
+	return groups
+}
+
 // marketCopy is another creator's template that builds from our code:
 // its deploys pay its creator, not us.
 type marketCopy struct {
@@ -331,6 +349,14 @@ func handleCandidates(db *gorm.DB) http.HandlerFunc {
 			fail(err)
 			return
 		}
+		// The market is read once a day, so a template published since is
+		// matched to its group by name instead.
+		var catalog []struct{ TemplateID, Name string }
+		if err := db.WithContext(ctx).Raw(`SELECT template_id, name FROM template_snapshots
+			WHERE sampled_at = (SELECT MAX(sampled_at) FROM template_snapshots) AND status = 'PUBLISHED'`).Scan(&catalog).Error; err != nil {
+			fail(err)
+			return
+		}
 		var marks []CandidateMark
 		if err := db.WithContext(ctx).Find(&marks).Error; err != nil {
 			fail(err)
@@ -356,12 +382,16 @@ func handleCandidates(db *gorm.DB) http.HandlerFunc {
 			}
 		}
 		sort.Slice(resp.Copies, func(i, j int) bool { return resp.Copies[i].CreatedAt.After(resp.Copies[j].CreatedAt) })
-		for i, g := range groupMarket(rows, ours) {
+		for i, g := range addCatalog(groupMarket(rows, ours), catalog) {
 			m, ok := marked[g.Key]
 			if i >= maxCandidates && !ok && len(g.Ours) == 0 {
 				continue
 			}
 			g.Status, g.Note = m.Status, m.Note
+			// Built: off the shortlist, like the rest of ours.
+			if g.Status == "shortlist" && len(g.Ours) > 0 {
+				g.Status = ""
+			}
 			resp.Groups = append(resp.Groups, g)
 		}
 		writeJSON(w, http.StatusOK, resp)

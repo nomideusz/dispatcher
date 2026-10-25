@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -64,5 +65,17 @@ func TestOurRepo(t *testing.T) {
 		if got := ourRepo(json.RawMessage(config)); got != want {
 			t.Errorf("ourRepo(%s) = %q, want %q", config, got, want)
 		}
+	}
+}
+
+// A template published since the daily market read joins its group by name.
+func TestAddCatalog(t *testing.T) {
+	groups := groupMarket([]MarketTemplate{{ID: "x", Name: "Metabase (2022)"}}, map[string]bool{})
+	addCatalog(groups, []struct{ TemplateID, Name string }{
+		{"ours", "Metabase | Open-Source BI and Dashboards with Postgres"},
+		{"other", "Typebot | Chatbot Builder"},
+	})
+	if len(groups) != 1 || fmt.Sprint(groups[0].Ours) != "[ours]" {
+		t.Errorf("groups = %+v, want metabase with ours", groups[0])
 	}
 }

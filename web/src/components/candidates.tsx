@@ -239,11 +239,13 @@ function CandidateRow({ g, view, maxRecent }: { g: CandidateGroup; view: View; m
 function Originals({ groups, templates }: { groups: CandidateGroup[]; templates: TimelineTemplate[] }) {
   const stats = useMemo(() => {
     const alone = new Set(groups.filter((g) => g.ours.length > 0 && g.rivals === 0).flatMap((g) => g.ours));
-    const tally = (ts: TimelineTemplate[]) => {
-      const earned = ts.reduce((s, t) => s + (t.earned30d ?? 0), 0);
-      const active = ts.reduce((s, t) => s + t.activeProjects, 0);
-      return { n: ts.length, earned, active, per: active > 0 ? earned / active : null };
-    };
+    // Counts, not a per-active-project ratio: a handful of originals earn
+    // almost all of it, so a ratio swings on one template's month.
+    const tally = (ts: TimelineTemplate[]) => ({
+      n: ts.length,
+      earning: ts.filter((t) => (t.earned30d ?? 0) > 0).length,
+      earned: ts.reduce((s, t) => s + (t.earned30d ?? 0), 0),
+    });
     const mine = templates.filter((t) => alone.has(t.templateId));
     const rest = templates.filter((t) => !alone.has(t.templateId));
     const name = shortNames(templates.map((t) => t.name));
@@ -260,9 +262,9 @@ function Originals({ groups, templates }: { groups: CandidateGroup[]; templates:
     <div className="grid gap-4 border-b pb-5 sm:grid-cols-[auto_auto_1fr] sm:items-end sm:gap-8">
       <Figure label="Alone on Railway" value={fmtNum(alone.n)} sub={`of our ${fmtNum(alone.n + rest.n)} templates`} />
       <Figure
-        label="Per active project, 30 days"
-        value={alone.per != null ? fmtUsd(alone.per) : "—"}
-        sub={`others with rivals: ${rest.per != null ? fmtUsd(rest.per) : "—"}`}
+        label="Earning, 30 days"
+        value={`${fmtNum(alone.earning)} of ${fmtNum(alone.n)}`}
+        sub={`${fmtUsd(alone.earned)} total · with rivals: ${fmtNum(rest.earning)} of ${fmtNum(rest.n)}`}
       />
       <p className="text-xs text-muted-foreground sm:pb-0.5">
         Templates of an app no one else publishes on Railway, like Laya, the first of its kind.

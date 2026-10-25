@@ -91,8 +91,10 @@ func startCrons(db *gorm.DB) *cron.Cron {
 	// waiting for the first tick.
 	go runTemplateSnapshots(db)
 	go runUpgradeCheck(db)
+	// Our own templates always build from our repos, so none with a repo
+	// means the market was never read, or was read before repos were kept.
 	var marketRows int64
-	if db.Model(&MarketTemplate{}).Count(&marketRows); marketRows == 0 {
+	if db.Model(&MarketTemplate{}).Where("our_repo <> ''").Count(&marketRows); marketRows == 0 {
 		go runMarketFetch(db)
 	}
 	return c

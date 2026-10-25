@@ -32,9 +32,23 @@ export interface CandidateGroup {
   note: string;
 }
 
+/** Another creator's template that builds from one of our repos: its
+ * deploys pay its creator, not us. */
+export interface MarketCopy {
+  id: string;
+  name: string;
+  code: string;
+  creator: string;
+  repo: string;
+  activeProjects: number;
+  recentProjects: number;
+  createdAt: string;
+}
+
 export interface Candidates {
   fetchedAt: string | null;
   groups: CandidateGroup[];
+  copies: MarketCopy[];
 }
 
 export const candidatesQuery = queryOptions({

@@ -31,6 +31,9 @@ type MarketTemplate struct {
 	RecentProjects int64
 	Health         *float64
 	CreatedAt      time.Time
+	// OurRepo is a repo of ours that one of the template's services builds
+	// from, when there is one.
+	OurRepo string
 }
 
 // CandidateMark is a verdict on a marketplace group: shortlist or skip,
@@ -73,7 +76,7 @@ var seedSkips = []string{
 const marketQuery = `query($after: String) {
 	templates(first: 500, after: $after) {
 		pageInfo { hasNextPage endCursor }
-		edges { node { id name code category activeProjects recentProjects health createdAt creator { name } } }
+		edges { node { id name code category activeProjects recentProjects health createdAt creator { name } serializedConfig } }
 	}
 }`
 
@@ -101,6 +104,7 @@ func fetchMarket(ctx context.Context) ([]MarketTemplate, error) {
 						Creator        *struct {
 							Name string `json:"name"`
 						} `json:"creator"`
+						Config json.RawMessage `json:"serializedConfig"`
 					} `json:"node"`
 				} `json:"edges"`
 			} `json:"templates"`
@@ -111,7 +115,7 @@ func fetchMarket(ctx context.Context) ([]MarketTemplate, error) {
 		}
 		for _, e := range data.Templates.Edges {
 			n := e.Node
-			t := MarketTemplate{ID: n.ID, FetchedAt: fetchedAt, Name: n.Name, Code: n.Code, ActiveProjects: n.ActiveProjects, RecentProjects: n.RecentProjects, Health: n.Health, CreatedAt: n.CreatedAt}
+			t := MarketTemplate{ID: n.ID, FetchedAt: fetchedAt, Name: n.Name, Code: n.Code, ActiveProjects: n.ActiveProjects, RecentProjects: n.RecentProjects, Health: n.Health, CreatedAt: n.CreatedAt, OurRepo: ourRepo(n.Config)}
 			if n.Category != nil {
 				t.Category = *n.Category
 			}
@@ -125,6 +129,31 @@ func fetchMarket(ctx context.Context) ([]MarketTemplate, error) {
 		}
 		after = data.Templates.PageInfo.EndCursor
 	}
+}
+
+// ourRepoRe matches GitHub repos of the accounts our templates build from.
+var ourRepoRe = regexp.MustCompile(`(?i)github\.com/(two-workspaces|nomideusz)/[\w.-]+`)
+
+// ourRepo returns the first repo of ours a template's services build from.
+// A config that doesn't parse has none: one odd template must not fail the
+// whole read.
+func ourRepo(config json.RawMessage) string {
+	var c struct {
+		Services map[string]struct {
+			Source struct {
+				Repo string `json:"repo"`
+			} `json:"source"`
+		} `json:"services"`
+	}
+	if json.Unmarshal(config, &c) != nil {
+		return ""
+	}
+	for _, s := range c.Services {
+		if m := ourRepoRe.FindString(s.Source.Repo); m != "" {
+			return m
+		}
+	}
+	return ""
 }
 
 func runMarketFetch(db *gorm.DB) {
@@ -263,9 +292,23 @@ func groupMarket(rows []MarketTemplate, ours map[string]bool) []*candidateGroup 
 	return groups
 }
 
+// marketCopy is another creator's template that builds from our code:
+// its deploys pay its creator, not us.
+type marketCopy struct {
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	Code           string    `json:"code"`
+	Creator        string    `json:"creator"`
+	Repo           string    `json:"repo"`
+	ActiveProjects int64     `json:"activeProjects"`
+	RecentProjects int64     `json:"recentProjects"`
+	CreatedAt      time.Time `json:"createdAt"`
+}
+
 type candidatesResponse struct {
 	FetchedAt *time.Time        `json:"fetchedAt"`
 	Groups    []*candidateGroup `json:"groups"`
+	Copies    []marketCopy      `json:"copies"`
 }
 
 // maxCandidates bounds the market list: past it, groups have a handful of
@@ -302,10 +345,17 @@ func handleCandidates(db *gorm.DB) http.HandlerFunc {
 			marked[m.Key] = m
 		}
 
-		resp := candidatesResponse{Groups: []*candidateGroup{}}
+		resp := candidatesResponse{Groups: []*candidateGroup{}, Copies: []marketCopy{}}
 		if len(rows) > 0 {
 			resp.FetchedAt = &rows[0].FetchedAt
 		}
+		for _, t := range rows {
+			if t.OurRepo != "" && !ours[t.ID] {
+				resp.Copies = append(resp.Copies, marketCopy{ID: t.ID, Name: t.Name, Code: t.Code, Creator: t.Creator, Repo: t.OurRepo,
+					ActiveProjects: t.ActiveProjects, RecentProjects: t.RecentProjects, CreatedAt: t.CreatedAt})
+			}
+		}
+		sort.Slice(resp.Copies, func(i, j int) bool { return resp.Copies[i].CreatedAt.After(resp.Copies[j].CreatedAt) })
 		for i, g := range groupMarket(rows, ours) {
 			m, ok := marked[g.Key]
 			if i >= maxCandidates && !ok && len(g.Ours) == 0 {

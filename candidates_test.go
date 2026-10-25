@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -49,5 +50,19 @@ func TestGroupMarket(t *testing.T) {
 	}
 	if g := by["laya"]; g.Rivals != 0 {
 		t.Errorf("laya rivals = %d, want an original", g.Rivals)
+	}
+}
+
+func TestOurRepo(t *testing.T) {
+	for config, want := range map[string]string{
+		`{"services":{"a":{"source":{"repo":"https://github.com/two-workspaces/edge"}}}}`:                                       "github.com/two-workspaces/edge",
+		`{"services":{"a":{"source":{"image":"postgres:17"}},"b":{"source":{"repo":"https://github.com/NomiDeusz/dino.git"}}}}`: "github.com/NomiDeusz/dino.git",
+		`{"services":{"a":{"source":{"repo":"https://github.com/someone/edge"}}}}`:                                              "",
+		`"not an object"`: "",
+		`null`:            "",
+	} {
+		if got := ourRepo(json.RawMessage(config)); got != want {
+			t.Errorf("ourRepo(%s) = %q, want %q", config, got, want)
+		}
 	}
 }

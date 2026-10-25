@@ -4,7 +4,7 @@ import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { fmtAgo, fmtDay, fmtNum, fmtUsd, shortNames } from "~/lib/format";
 import type { TimelineTemplate } from "~/queries/analytics";
-import { type CandidateGroup, candidatesQuery, useMarkCandidate } from "~/queries/candidates";
+import { type CandidateGroup, candidatesQuery, type MarketCopy, useMarkCandidate } from "~/queries/candidates";
 
 /** Databases, boilerplates and queues top the marketplace and are not apps
  * anyone pays kickback on for long. */
@@ -49,6 +49,7 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
 
   return (
     <div className="space-y-5">
+      <Copies copies={q.data.copies ?? []} />
       <Originals groups={groups} templates={templates} />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -273,6 +274,40 @@ function Originals({ groups, templates }: { groups: CandidateGroup[]; templates:
             {earners.length > 5 ? ` · +${earners.length - 5} more` : ""}
           </span>
         )}
+      </p>
+    </div>
+  );
+}
+
+/** Other creators' templates built from our repos. Their deploys pay them,
+ * and they run whatever we push to main. */
+function Copies({ copies }: { copies: MarketCopy[] }) {
+  if (copies.length === 0) return null;
+  return (
+    <div className="space-y-2 border-b pb-5">
+      <div className="text-sm font-medium text-(--viz-critical)">
+        {copies.length === 1 ? "1 template by someone else builds" : `${fmtNum(copies.length)} templates by others build`} from our code
+      </div>
+      <ul className="space-y-1 text-sm">
+        {copies.map((c) => (
+          <li key={c.id} className="flex flex-wrap items-baseline gap-x-2">
+            <a
+              href={`https://railway.com/deploy/${c.code}`}
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium hover:underline"
+            >
+              {c.name}
+            </a>
+            <span className="text-xs text-muted-foreground">
+              by {c.creator || "unknown creator"} · {c.repo.replace(/^github\.com\//i, "")} · published{" "}
+              {fmtDay(c.createdAt)} · {fmtNum(c.activeProjects)} active, {fmtNum(c.recentProjects)} in 90 days
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-muted-foreground">
+        Deploys of these pay their creator, not us, and they build whatever we push to main.
       </p>
     </div>
   );

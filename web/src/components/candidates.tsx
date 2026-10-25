@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead } from "~/components/ui/table";
 import { fmtAgo, fmtDay, fmtNum, fmtUsd, shortNames } from "~/lib/format";
 import type { TimelineTemplate } from "~/queries/analytics";
 import { type CandidateGroup, candidatesQuery, type MarketCopy, useMarkCandidate } from "~/queries/candidates";
@@ -99,34 +100,34 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[56rem] text-sm">
-          <thead>
-            <tr className="border-b text-left text-xs whitespace-nowrap text-muted-foreground">
-              <th className="pb-2 font-medium">App</th>
-              <th className="pb-2 pl-3 font-medium">Deployed, 90 days</th>
-              <th className="pb-2 pl-3 text-right font-medium">Active</th>
-              <th className="pb-2 pl-3 text-right font-medium">Templates</th>
-              <th className="pb-2 pl-3 font-medium">Leading template</th>
-              <th className="pb-2 pl-3 text-right font-medium">Newest</th>
-              <th className="pb-2 pl-3 font-medium">{view === "market" ? "We have" : "Note"}</th>
-              <th className="pb-2 pl-3" />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.slice(0, limit).map((g) => (
-              <CandidateRow key={g.key} g={g} view={view} maxRecent={maxRecent} />
-            ))}
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={8} className="py-6 text-center text-muted-foreground">
-                  {view === "shortlist" ? "Nothing shortlisted. Pick from Market." : "No apps match."}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <Table className="min-w-[56rem]">
+        <TableHeader>
+          <TableRow>
+            <TableHead>App</TableHead>
+            <TableHead>Deployed, 90 days</TableHead>
+            <TableHead numeric>Active</TableHead>
+            <TableHead numeric>Templates</TableHead>
+            <TableHead>Leading template</TableHead>
+            <TableHead numeric>Newest</TableHead>
+            <TableHead>{view === "market" ? "We have" : "Note"}</TableHead>
+            <TableHead>
+              <span className="sr-only">Actions</span>
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.slice(0, limit).map((g) => (
+            <CandidateRow key={g.key} g={g} view={view} maxRecent={maxRecent} />
+          ))}
+          {rows.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={8} className="py-6 text-center text-muted-foreground">
+                {view === "shortlist" ? "Nothing shortlisted. Pick from Market." : "No apps match."}
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
         <span>
           From Railway&apos;s marketplace, read {fmtAgo(q.data.fetchedAt, new Date().toISOString())} ago.
@@ -148,8 +149,8 @@ function CandidateRow({ g, view, maxRecent }: { g: CandidateGroup; view: View; m
   const l = g.leader;
   const weak = l.health != null && l.health < 70;
   return (
-    <tr className="border-b border-border/50 last:border-0">
-      <td className="max-w-60 py-2 pr-3">
+    <TableRow>
+      <TableRowHead className="max-w-60">
         {l.code ? (
           <a
             href={`https://railway.com/deploy/${l.code}`}
@@ -167,21 +168,16 @@ function CandidateRow({ g, view, maxRecent }: { g: CandidateGroup; view: View; m
           {g.key}
           {g.category && g.category !== "Other" ? ` · ${g.category}` : ""}
         </div>
-      </td>
-      <td className="py-2 pl-3">
+      </TableRowHead>
+      <TableCell>
         <div className="flex items-center gap-2">
           <span className="w-12 text-right tabular-nums">{fmtNum(g.recent)}</span>
-          <span className="h-1.5 w-24 rounded-full bg-muted">
-            <span
-              className="block h-full rounded-full bg-(--chart-3)"
-              style={{ width: `${(g.recent / maxRecent) * 100}%` }}
-            />
-          </span>
+          <TableMeter value={g.recent / maxRecent} color="var(--chart-3)" className="w-24" />
         </div>
-      </td>
-      <td className="py-2 pl-3 text-right tabular-nums">{fmtNum(g.active)}</td>
-      <td className="py-2 pl-3 text-right tabular-nums text-muted-foreground">{fmtNum(g.rivals)}</td>
-      <td className="max-w-56 py-2 pl-3 text-xs whitespace-nowrap text-muted-foreground">
+      </TableCell>
+      <TableCell numeric>{fmtNum(g.active)}</TableCell>
+      <TableCell numeric className="text-muted-foreground">{fmtNum(g.rivals)}</TableCell>
+      <TableCell className="max-w-56 text-xs whitespace-nowrap text-muted-foreground">
         {l.name ? (
           <div className="truncate">
             <span className={weak ? "font-medium text-(--viz-caution)" : ""}>
@@ -193,9 +189,9 @@ function CandidateRow({ g, view, maxRecent }: { g: CandidateGroup; view: View; m
         ) : (
           "Only ours"
         )}
-      </td>
-      <td className="py-2 pl-3 text-right text-xs whitespace-nowrap text-muted-foreground">{fmtDay(g.newest)}</td>
-      <td className="max-w-64 py-2 pl-3 text-xs text-muted-foreground">
+      </TableCell>
+      <TableCell numeric className="text-xs text-muted-foreground">{fmtDay(g.newest)}</TableCell>
+      <TableCell className="max-w-64 text-xs text-muted-foreground">
         {view === "market" ? (
           g.ours.length > 0 ? "Yes" : (g.similar ?? "—")
         ) : (
@@ -208,8 +204,8 @@ function CandidateRow({ g, view, maxRecent }: { g: CandidateGroup; view: View; m
             className="w-full min-w-40 border-b border-dashed border-border bg-transparent px-1 py-0.5 text-foreground outline-none placeholder:text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
           />
         )}
-      </td>
-      <td className="py-2 pl-3 text-right whitespace-nowrap">
+      </TableCell>
+      <TableCell className="text-right whitespace-nowrap">
         {view === "shortlist" ? (
           <Button size="xs" variant="ghost" className="text-muted-foreground" disabled={mark.isPending} onClick={() => set("")}>
             Remove
@@ -228,8 +224,8 @@ function CandidateRow({ g, view, maxRecent }: { g: CandidateGroup; view: View; m
             </Button>
           </>
         )}
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 

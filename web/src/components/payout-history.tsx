@@ -17,7 +17,9 @@ import {
   CardTitle,
 } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHead } from "~/components/ui/table";
 import { dayDate, fmtCents, fmtNum } from "~/lib/format";
+import { cn } from "~/lib/utils";
 import {
   type PayerChain,
   type Payout,
@@ -42,12 +44,12 @@ const utcFmt = new Intl.DateTimeFormat("en-US", {
   timeStyle: "short",
   timeZone: "UTC",
 });
-function DateCell({ iso, className }: { iso: string; className: string }) {
+function DateCell({ iso, className }: { iso: string; className?: string }) {
   const d = new Date(iso);
   return (
-    <td className={className} title={`${timeFmt.format(d)} (${utcFmt.format(d)} UTC)`}>
+    <TableCell className={cn("whitespace-nowrap tabular-nums", className)} title={`${timeFmt.format(d)} (${utcFmt.format(d)} UTC)`}>
       {fmtDate(d)}
-    </td>
+    </TableCell>
   );
 }
 const monthLong = new Intl.DateTimeFormat("en-US", {
@@ -80,8 +82,6 @@ function sortPayers(payers: PayerChain[], by: PayerSort): PayerChain[] {
 const PAYER_SORT_LABELS: Record<PayerSort, string> = { rank: "By total", status: "By status", due: "By next due" };
 
 type PayoutView = "payers" | "ledger";
-const STICKY_HEAD = "w-full text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10 [&_thead_th]:bg-card";
-
 /** Money out of Railway, who is paying, and the raw ledger, for the range
  * the dashboard header picks, in one card: the figures and the cumulative
  * line on top, then payers or the ledger. Per-template totals live in the
@@ -201,29 +201,27 @@ export function PayoutHistory({ days }: { days: number }) {
                     ))}
                   </div>
                 </div>
-                <div className="scroll-fade max-h-[32rem] overflow-auto">
-                  <table className={STICKY_HEAD}>
-                    <thead>
-                      <tr className="border-b text-left text-xs text-muted-foreground">
-                        <th className="pb-2 text-right font-medium max-sm:hidden">#</th>
-                        <th className="pb-2 font-medium sm:pl-3">Payer</th>
-                        <th className="pb-2 pl-3 font-medium max-sm:hidden">Template</th>
-                        <th className="pb-2 pl-3 font-medium max-sm:hidden">Status</th>
-                        <th className="pb-2 pl-3 font-medium max-sm:hidden">First</th>
-                        <th className="pb-2 pl-3 font-medium max-sm:hidden">Last</th>
-                        <th className="pb-2 pl-3 font-medium max-sm:hidden">Next due</th>
-                        <th className="pb-2 pl-3 text-right font-medium max-sm:hidden">Invoices</th>
-                        <th className="pb-2 pl-3 text-right font-medium max-sm:hidden">Last amount</th>
-                        <th className="pb-2 pl-3 text-right font-medium">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sortPayers(data.payers, payerSort).map((c) => (
-                        <PayerRow key={`${c.templateId}-${c.firstAt}`} chain={c} />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead numeric className="max-sm:hidden">#</TableHead>
+                      <TableHead className="max-sm:pl-0">Payer</TableHead>
+                      <TableHead className="max-sm:hidden">Template</TableHead>
+                      <TableHead className="max-sm:hidden">Status</TableHead>
+                      <TableHead className="max-sm:hidden">First</TableHead>
+                      <TableHead className="max-sm:hidden">Last</TableHead>
+                      <TableHead className="max-sm:hidden">Next due</TableHead>
+                      <TableHead numeric className="max-sm:hidden">Invoices</TableHead>
+                      <TableHead numeric className="max-sm:hidden">Last amount</TableHead>
+                      <TableHead numeric>Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {sortPayers(data.payers, payerSort).map((c) => (
+                      <PayerRow key={`${c.templateId}-${c.firstAt}`} chain={c} />
+                    ))}
+                  </TableBody>
+                </Table>
               </>
             ) : (
               <>
@@ -234,24 +232,22 @@ export function PayoutHistory({ days }: { days: number }) {
                     `; ${fmtNum(data.totalRows - data.payouts.length)} more before that`}
                   .
                 </p>
-                <div className="scroll-fade max-h-[32rem] overflow-auto">
-                  <table className={STICKY_HEAD}>
-                    <thead>
-                      <tr className="border-b text-left text-xs text-muted-foreground">
-                        <th className="pb-2 font-medium">Date</th>
-                        <th className="pb-2 pl-3 font-medium">Template</th>
-                        <th className="pb-2 pl-3 font-medium max-sm:hidden">Destination</th>
-                        <th className="pb-2 pl-3 font-medium">Status</th>
-                        <th className="pb-2 pl-3 text-right font-medium">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.payouts.map((p) => (
-                        <PayoutRow key={p.id} payout={p} />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Template</TableHead>
+                      <TableHead className="max-sm:hidden">Destination</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead numeric>Amount</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.payouts.map((p) => (
+                      <PayoutRow key={p.id} payout={p} />
+                    ))}
+                  </TableBody>
+                </Table>
               </>
             )}
           </CardContent>
@@ -337,65 +333,53 @@ function PayerRow({ chain }: { chain: PayerChain }) {
         ? "text-(--viz-down)"
         : "text-muted-foreground";
   return (
-    <tr className="border-b border-border/50 last:border-0">
-      <td className="py-2 text-right tabular-nums text-muted-foreground max-sm:hidden">{chain.rank}</td>
-      <td className="py-2 sm:pl-3">
+    <TableRow>
+      <TableCell numeric className="text-muted-foreground max-sm:hidden">{chain.rank}</TableCell>
+      <TableRowHead className="max-sm:pl-0">
         <div className="font-medium capitalize">{chain.name}</div>
         {/* A phone shows only payer and total; the rest rides here. */}
         <div className="text-xs text-muted-foreground sm:hidden">
           {chain.templateName} · <span className={tone}>{chain.status}</span>
         </div>
-      </td>
-      <td
-        className={
-          PSEUDO_TEMPLATE_IDS.has(chain.templateId)
-            ? "py-2 pl-3 text-muted-foreground max-sm:hidden"
-            : "py-2 pl-3 max-sm:hidden"
-        }
-      >
+      </TableRowHead>
+      <TableCell className={cn("max-sm:hidden", PSEUDO_TEMPLATE_IDS.has(chain.templateId) && "text-muted-foreground")}>
         {chain.templateName}
-      </td>
-      <td className={`py-2 pl-3 max-sm:hidden ${tone}`}>{chain.status}</td>
-      <DateCell iso={chain.firstAt} className="whitespace-nowrap py-2 pl-3 tabular-nums max-sm:hidden" />
-      <DateCell iso={chain.lastAt} className="whitespace-nowrap py-2 pl-3 tabular-nums max-sm:hidden" />
+      </TableCell>
+      <TableCell className={cn("max-sm:hidden", tone)}>{chain.status}</TableCell>
+      <DateCell iso={chain.firstAt} className="max-sm:hidden" />
+      <DateCell iso={chain.lastAt} className="max-sm:hidden" />
       {chain.status === "lapsed" ? (
-        <td className="whitespace-nowrap py-2 pl-3 tabular-nums text-muted-foreground max-sm:hidden">—</td>
+        <TableCell className="text-muted-foreground max-sm:hidden">—</TableCell>
       ) : (
-        <DateCell iso={chain.nextDueAt} className="whitespace-nowrap py-2 pl-3 tabular-nums text-muted-foreground max-sm:hidden" />
+        <DateCell iso={chain.nextDueAt} className="text-muted-foreground max-sm:hidden" />
       )}
-      <td className="py-2 pl-3 text-right tabular-nums max-sm:hidden">{fmtNum(chain.invoices)}</td>
-      <td className="py-2 pl-3 text-right tabular-nums max-sm:hidden">{fmtCents(chain.lastCents)}</td>
-      <td className="py-2 pl-3 text-right tabular-nums">{fmtCents(chain.totalCents)}</td>
-    </tr>
+      <TableCell numeric className="max-sm:hidden">{fmtNum(chain.invoices)}</TableCell>
+      <TableCell numeric className="max-sm:hidden">{fmtCents(chain.lastCents)}</TableCell>
+      <TableCell numeric>{fmtCents(chain.totalCents)}</TableCell>
+    </TableRow>
   );
 }
 
 function PayoutRow({ payout }: { payout: Payout }) {
   return (
-    <tr className="border-b border-border/50 last:border-0">
-      <DateCell iso={payout.createdAt} className="whitespace-nowrap py-2.5 pr-4 tabular-nums" />
-      <td
-        className={
-          PSEUDO_TEMPLATE_IDS.has(payout.templateId) || !payout.templateName
-            ? "py-2.5 pl-3 text-muted-foreground"
-            : "py-2.5 pl-3"
-        }
-      >
+    <TableRow>
+      <DateCell iso={payout.createdAt} />
+      <TableCell className={cn((PSEUDO_TEMPLATE_IDS.has(payout.templateId) || !payout.templateName) && "text-muted-foreground")}>
         {payout.templateName ||
           (payout.templateId === "unknown"
             ? "unknown"
             : payout.kind === "credits"
               ? "pending"
               : "—")}
-      </td>
-      <td className="py-2.5 pl-3 text-muted-foreground max-sm:hidden">{payout.destination}</td>
-      <td className="py-2.5 pl-3">
+      </TableCell>
+      <TableCell className="text-muted-foreground max-sm:hidden">{payout.destination}</TableCell>
+      <TableCell>
         <PayoutStatus status={payout.status} />
-      </td>
-      <td className="whitespace-nowrap py-2.5 pl-3 text-right font-medium tabular-nums">
+      </TableCell>
+      <TableCell numeric className="font-medium">
         {fmtCents(payout.amountCents)}
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 

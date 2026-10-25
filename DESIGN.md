@@ -272,6 +272,13 @@ Pressing a held name jumps to that template's consignment row (scroll margin 6re
 ### Consignment Table
 Columns: a mono code column, a template name with an expander chevron, a sparkline strip, then mono figures right-aligned. The header is sticky on paper with a hairline underline. Health shows as a mono percentage, and a held row reads "held · NN%" in red at weight 600.
 
+Every table in the app (templates, payers, payout ledger, upgrades, candidates, pattern segments) is built from `components/ui/table.tsx`, so these rules live in one place:
+- **Table:** `box="scroll"` (default) holds a long list in a 36rem box whose bottom edge fades; `box="wide"` only scrolls sideways, for short tables wider than a phone.
+- **TableHeader / TableHead:** 12px labels at weight 500 in ink-light, sticky on paper, with the hairline underline riding on the sticky cells. `numeric` right-aligns a label over figures.
+- **TableRow:** `rule="bottom"` (default) is a hairline at 60% under each row, none under the last; `rule="top"` opens a group (the grouped upgrade queue); `rule="none"` for rows inside a group or an expanded panel.
+- **TableCell / TableRowHead:** 8px vertical padding, 12px between columns, none before the first. `numeric` sets a figure: mono, right-aligned, unbroken. The cell that names its row (template, payer, segment) is a `TableRowHead`.
+- **TableMeter:** the hairline-thin, rounded share-of-column bar beside a figure (lifetime, deployed, per template), filled with a chart series and dimmed in the carbon copy.
+
 ## Do's and Don'ts
 
 ### Do:

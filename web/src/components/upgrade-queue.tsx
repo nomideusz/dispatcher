@@ -3,7 +3,9 @@ import { Fragment, type ReactNode, useState } from "react";
 import { Link } from "react-router";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHead } from "~/components/ui/table";
 import { fmtAgo, fmtNum, fmtUsd, shortNames } from "~/lib/format";
+import { cn } from "~/lib/utils";
 import { type ServiceUpgrade, upgradesQuery, useRefreshUpgrades } from "~/queries/upgrades";
 
 /** How many templates pin something with a newer release on its major
@@ -93,30 +95,29 @@ export function UpgradeQueue() {
       {refresh.isError && (
         <p className="text-xs text-(--viz-critical)">Re-check failed: {refresh.error.message}</p>
       )}
-      <div className="scroll-fade max-h-[36rem] overflow-auto">
-        {upgrades.isPending && <Skeleton className="h-40 w-full" />}
-        {upgrades.isError && (
-          <p className="text-sm text-(--viz-critical)">Failed to load upgrades.</p>
-        )}
-        {upgrades.isSuccess && shown.length === 0 && (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            {rows.length === 0 ? "No check has run yet." : "Nothing here: every pinned image is current."}
-          </p>
-        )}
-        {shown.length > 0 && (
-          <table className="w-full text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10 [&_thead_th]:bg-card [&_thead_th]:shadow-[inset_0_-1px_0_var(--border)]">
-            <thead>
-              <tr className="text-left text-xs whitespace-nowrap text-muted-foreground">
-                <th className="pb-2 font-medium">Template</th>
-                <th className="pb-2 pl-3 font-medium">Service</th>
-                <th className="pb-2 pl-3 font-medium max-md:hidden">Image</th>
-                <th className="pb-2 pl-3 font-medium">Pinned → newest on line</th>
-                <th className="pb-2 pl-3 font-medium max-sm:hidden">Later major</th>
-                <th className="pb-2 pl-3 text-right font-medium max-sm:hidden">Earned 30d</th>
-                <th className="pb-2 pl-3 text-right font-medium max-sm:hidden">Active</th>
-              </tr>
-            </thead>
-            <tbody>
+      {upgrades.isPending && <Skeleton className="h-40 w-full" />}
+      {upgrades.isError && (
+        <p className="text-sm text-(--viz-critical)">Failed to load upgrades.</p>
+      )}
+      {upgrades.isSuccess && shown.length === 0 && (
+        <p className="py-6 text-center text-sm text-muted-foreground">
+          {rows.length === 0 ? "No check has run yet." : "Nothing here: every pinned image is current."}
+        </p>
+      )}
+      {shown.length > 0 && (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Template</TableHead>
+                <TableHead>Service</TableHead>
+                <TableHead className="max-md:hidden">Image</TableHead>
+                <TableHead>Pinned → newest on line</TableHead>
+                <TableHead className="max-sm:hidden">Later major</TableHead>
+                <TableHead numeric className="max-sm:hidden">Earned 30d</TableHead>
+                <TableHead numeric className="max-sm:hidden">Active</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {grouped
                 ? byTemplate(shown).map((group) => {
                     const u = group[0];
@@ -124,17 +125,17 @@ export function UpgradeQueue() {
                     const behind = group.filter(MATCHES.behind).length;
                     return (
                       <Fragment key={u.templateId}>
-                        <tr className="border-t first:border-0">
-                          <th scope="rowgroup" className="pt-3 pb-1 text-left font-medium">
+                        <TableRow rule="top">
+                          <TableRowHead scope="rowgroup" className="pt-3 pb-1 font-medium">
                             <TemplateLink u={u} name={names(u.name ?? u.templateId)} />
-                          </th>
-                          <td colSpan={4} className="pt-3 pb-1 pl-3 text-xs text-muted-foreground">
+                          </TableRowHead>
+                          <TableCell colSpan={4} className="pt-3 pb-1 text-xs text-muted-foreground">
                             {checked.length === 0
                               ? "nothing pinned"
                               : `${fmtNum(checked.length)} pinned${behind ? `, ${fmtNum(behind)} behind` : ""}`}
-                          </td>
-                          <EarningCells u={u} />
-                        </tr>
+                          </TableCell>
+                          <EarningCells u={u} className="pt-3 pb-1" />
+                        </TableRow>
                         {checked.map((s) => (
                           <ServiceRow key={`${s.service}-${s.image}`} u={s} template="" />
                         ))}
@@ -149,10 +150,9 @@ export function UpgradeQueue() {
                       earnings
                     />
                   ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+            </TableBody>
+          </Table>
+      )}
       {shown.length > 0 && (
         <p className="text-xs text-muted-foreground">
           {fmtNum(templateCount(shown))} templates, {fmtNum(pins)} pinned{" "}
@@ -183,15 +183,15 @@ function ServiceRow({
 }) {
   const moved = u.behind === "minor" || u.behind === "patch";
   return (
-    <tr className={earnings ? "border-b last:border-0" : undefined}>
-      <td className="py-2">{template}</td>
-      <td className="py-2 pl-3 text-muted-foreground" title={u.image}>
+    <TableRow rule={earnings ? "bottom" : "none"}>
+      <TableCell>{template}</TableCell>
+      <TableCell className="text-muted-foreground" title={u.image}>
         {u.service}
-      </td>
-      <td className="max-w-64 truncate py-2 pl-3 font-mono text-xs max-md:hidden" title={u.image}>
+      </TableCell>
+      <TableCell className="max-w-64 truncate font-mono text-xs max-md:hidden" title={u.image}>
         {u.image}
-      </td>
-      <td className="py-2 pl-3 font-mono text-xs whitespace-nowrap">
+      </TableCell>
+      <TableCell className="font-mono text-xs whitespace-nowrap">
         {u.tag}
         {(u.haBlock === "tag" || u.haBlock === "pinned") && (
           <span className="font-sans text-(--viz-caution)" title={`${u.ha} cannot convert this tag`}>
@@ -201,8 +201,8 @@ function ServiceRow({
         {u.tag && " "}
         {moved && <span className="font-sans text-muted-foreground">→ </span>}
         <LineCell u={u} />
-      </td>
-      <td className="py-2 pl-3 font-mono text-xs text-muted-foreground max-sm:hidden">
+      </TableCell>
+      <TableCell className="font-mono text-xs text-muted-foreground max-sm:hidden">
         {u.major}
         {u.major && u.ha && (u.haBlock === "" || u.haBlock === "major") && (
           <span
@@ -212,21 +212,21 @@ function ServiceRow({
             {u.haBlock === "major" ? " (drops HA)" : " (HA ok)"}
           </span>
         )}
-      </td>
-      {earnings ? <EarningCells u={u} /> : <td colSpan={2} className="max-sm:hidden" />}
-    </tr>
+      </TableCell>
+      {earnings ? <EarningCells u={u} /> : <TableCell colSpan={2} className="max-sm:hidden" />}
+    </TableRow>
   );
 }
 
-function EarningCells({ u }: { u: ServiceUpgrade }) {
+function EarningCells({ u, className }: { u: ServiceUpgrade; className?: string }) {
   return (
     <>
-      <td className="py-2 pl-3 text-right tabular-nums max-sm:hidden">
+      <TableCell numeric className={cn("max-sm:hidden", className)}>
         {u.earningsLast30Days == null ? "—" : fmtUsd(u.earningsLast30Days)}
-      </td>
-      <td className="py-2 pl-3 text-right tabular-nums max-sm:hidden">
+      </TableCell>
+      <TableCell numeric className={cn("max-sm:hidden", className)}>
         {u.activeProjects == null ? "—" : fmtNum(u.activeProjects)}
-      </td>
+      </TableCell>
     </>
   );
 }

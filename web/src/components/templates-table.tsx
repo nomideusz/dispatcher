@@ -2,7 +2,9 @@ import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, CircleAlert } from "luci
 import { useEffect, useState } from "react";
 import { TemplateProjects } from "~/components/template-projects";
 import { Button } from "~/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead } from "~/components/ui/table";
 import { fmtCents, fmtDay, fmtLongDay, fmtNum, fmtUsd } from "~/lib/format";
+import { cn } from "~/lib/utils";
 import {
   type Kind,
   KINDS,
@@ -104,10 +106,7 @@ export function TemplatesTable({
   const header = (key: SortKey, label: string, right = true) => {
     const on = sort.key === key;
     return (
-      <th
-        aria-sort={on ? (sort.desc ? "descending" : "ascending") : undefined}
-        className={`sticky top-0 z-10 bg-card pb-2 font-medium ${right ? "pl-3 text-right" : ""}`}
-      >
+      <TableHead numeric={right} aria-sort={on ? (sort.desc ? "descending" : "ascending") : undefined}>
         <button
           type="button"
           className={`group inline-flex items-center gap-0.5 whitespace-nowrap outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${on ? "text-foreground" : ""}`}
@@ -122,7 +121,7 @@ export function TemplatesTable({
             <ArrowUpDown className="size-3 opacity-30 group-hover:opacity-70 group-focus-visible:opacity-70" />
           )}
         </button>
-      </th>
+      </TableHead>
     );
   };
 
@@ -151,16 +150,12 @@ export function TemplatesTable({
         below. Support: support health under {SUPPORT_BONUS_THRESHOLD}%, so no +10% bonus.
       </p>
 
-      <div className="scroll-fade max-h-[36rem] overflow-auto">
-        <table className="w-full text-sm">
-          {/* The rule rides on the sticky cells; a row border scrolls away. */}
-          <thead className="[&_th]:shadow-[inset_0_-1px_0_var(--border)]">
-            <tr className="text-left text-xs text-muted-foreground">
+      <Table>
+        <TableHeader>
+          <TableRow>
               {header("name", "Template", false)}
               {header("health", "Health")}
-              <th className="sticky top-0 z-10 bg-card pb-2 pl-3 font-medium whitespace-nowrap max-sm:hidden">
-                Last {dates.length}d
-              </th>
+              <TableHead className="max-sm:hidden">Last {dates.length}d</TableHead>
               {header("newProjects", "New")}
               {header("projects", "Projects")}
               {header("activeProjects", "Active")}
@@ -172,9 +167,9 @@ export function TemplatesTable({
               {header("payers", "Payers")}
               {header("lifetimeCents", "Lifetime")}
               {header("lastPaidAt", "Paid")}
-            </tr>
-          </thead>
-          <tbody>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
             {rows.map((r) => (
               <TemplateRow
                 key={r.templateId}
@@ -184,17 +179,18 @@ export function TemplatesTable({
                 byTemplateLoaded={byTemplate != null}
               />
             ))}
-          </tbody>
-        </table>
-        {rows.length === 0 && (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            No templates match.{" "}
-            <button type="button" className="cursor-pointer text-primary underline" onClick={() => setFilter("all")}>
-              Show all
-            </button>
-          </p>
-        )}
-      </div>
+          {rows.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={14} className="py-6 text-center text-muted-foreground">
+                No templates match.{" "}
+                <button type="button" className="cursor-pointer text-primary underline" onClick={() => setFilter("all")}>
+                  Show all
+                </button>
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
     </div>
   );
 }
@@ -215,13 +211,12 @@ function TemplateRow({
 }) {
   const [open, setOpen] = useState(false);
   const panelId = `template-projects-${r.templateId}`;
-  const muted = "py-2 pl-3 text-right tabular-nums text-muted-foreground";
-  const cell = "py-2 pl-3 text-right tabular-nums";
+  const muted = "text-muted-foreground";
   const p = r.payers;
   return (
     <>
-      <tr id={`t-${r.templateId}`} className={open ? "bg-muted/40" : "border-b border-border/60 last:border-0"}>
-        <th scope="row" className="max-w-64 py-2 pr-3 text-left font-normal">
+      <TableRow id={`t-${r.templateId}`} rule={open ? "none" : "bottom"} className={cn(open && "bg-muted/40")}>
+        <TableRowHead className="max-w-64">
           <div className="flex items-start gap-1">
             {/* The name links to Railway, so expanding gets its own control. */}
             <button
@@ -271,66 +266,62 @@ function TemplateRow({
               </div>
             </div>
           </div>
-        </th>
-        <td className="py-2 pl-3 text-right whitespace-nowrap">
+        </TableRowHead>
+        <TableCell numeric>
           <Health r={r} />
-        </td>
-        <td className="py-2 pl-3 max-sm:hidden">
+        </TableCell>
+        <TableCell className="max-sm:hidden">
           <ActivityStrip r={r} scale={scale} />
-        </td>
-        <td className={r.newProjects ? cell : muted}>{fmtNum(r.newProjects)}</td>
-        <td className={cell}>{fmtNum(r.projects)}</td>
-        <td className={cell}>{fmtNum(r.activeProjects)}</td>
-        <td className={muted}>{r.running == null ? "—" : fmtNum(r.running)}</td>
-        <td className={`${muted} whitespace-nowrap`}>
+        </TableCell>
+        <TableCell numeric className={cn(!r.newProjects && muted)}>{fmtNum(r.newProjects)}</TableCell>
+        <TableCell numeric>{fmtNum(r.projects)}</TableCell>
+        <TableCell numeric>{fmtNum(r.activeProjects)}</TableCell>
+        <TableCell numeric className={muted}>{r.running == null ? "—" : fmtNum(r.running)}</TableCell>
+        <TableCell numeric className={muted}>
           {r.publishedAt ? fmtDay(r.publishedAt) : "—"}
-        </td>
-        <td className={`${muted} whitespace-nowrap`}>
+        </TableCell>
+        <TableCell numeric className={muted}>
           <LastDeploy at={r.lastDeployAt} after={r.lastDeployAfter} />
-        </td>
-        <td className={r.earnedCents ? `${cell} font-medium` : muted}>
+        </TableCell>
+        <TableCell numeric className={r.earnedCents ? "font-medium" : muted}>
           {fmtCents(r.earnedCents)}
-        </td>
-        <td className={r.perActive ? cell : muted}>{r.perActive == null ? "—" : fmtUsd(r.perActive)}</td>
-        <td
-          className={p?.payers ? cell : muted}
+        </TableCell>
+        <TableCell numeric className={cn(!r.perActive && muted)}>{r.perActive == null ? "—" : fmtUsd(r.perActive)}</TableCell>
+        <TableCell
+          numeric
+          className={cn(!p?.payers && muted)}
           title={p ? `${p.new} new · ${p.returning} returning · ${p.lapsed} lapsed` : undefined}
         >
           {byTemplateLoaded ? fmtNum(p?.payers ?? 0) : "—"}
-        </td>
-        <td className={cell}>
+        </TableCell>
+        <TableCell numeric>
           {r.lifetimeCents > 0 ? (
             <div className="flex flex-col items-end gap-1">
               {fmtCents(r.lifetimeCents)}
-              <span className="h-1 w-14 rounded-full bg-muted">
-                <span
-                  className="float-right block h-full rounded-full bg-(--chart-1) dark:opacity-60"
-                  style={{ width: `${Math.max(2, (r.lifetimeCents / lifetimeTotal) * 100)}%` }}
-                />
-              </span>
+              <TableMeter value={Math.max(0.02, r.lifetimeCents / lifetimeTotal)} />
             </div>
           ) : (
             <span className="text-muted-foreground">{fmtCents(0)}</span>
           )}
-        </td>
-        <td className={`${muted} whitespace-nowrap`}>
+        </TableCell>
+        <TableCell numeric className={muted}>
           {r.firstPaidAt && r.lastPaidAt
             ? fmtDay(r.firstPaidAt) === fmtDay(r.lastPaidAt)
               ? fmtDay(r.lastPaidAt)
               : `${fmtDay(r.firstPaidAt)} – ${fmtDay(r.lastPaidAt)}`
             : "—"}
-        </td>
-      </tr>
+        </TableCell>
+      </TableRow>
       {open && (
-        <tr id={panelId} className="border-b border-border/50 bg-muted/40 last:border-0">
+        <TableRow id={panelId} className="bg-muted/40">
           {/* Sticky to the scroller's left edge so the charts stay in view
               while the wide table is scrolled sideways. */}
-          <td colSpan={14} className="p-0">
+          <TableCell colSpan={14} className="p-0">
             <div className="sticky left-0 w-[min(56rem,calc(100vw-4rem))] px-5 pt-2 pb-6">
               <TemplateProjects templateId={r.templateId} />
             </div>
-          </td>
-        </tr>
+          </TableCell>
+        </TableRow>
       )}
     </>
   );

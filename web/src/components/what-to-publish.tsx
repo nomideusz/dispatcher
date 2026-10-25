@@ -2,6 +2,7 @@ import { type ReactNode, useMemo } from "react";
 import { CartesianGrid, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import { cursor, GROUPS, groupOf, Key, median, perDay, Tip, tick } from "~/components/chart-kit";
 import { ChartContainer } from "~/components/ui/chart";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead } from "~/components/ui/table";
 import { dayKey, fmtDay, fmtNum, fmtUsd } from "~/lib/format";
 import { KINDS, type TimelineResponse, type TimelineTemplate } from "~/queries/analytics";
 
@@ -189,50 +190,43 @@ function SegmentTable({
 }) {
   const best = Math.max(0, ...rows.map((r) => r.earned / r.templates));
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm sm:min-w-[34rem]">
-        <thead>
-          <tr className="border-b text-left text-xs whitespace-nowrap text-muted-foreground">
-            <th className="pb-2 font-medium">{title}</th>
-            <th className="pb-2 pl-3 text-right font-medium max-sm:hidden">Templates</th>
-            <th className="pb-2 pl-3 text-right font-medium max-sm:hidden">Earning</th>
-            <th className="pb-2 pl-3 text-right font-medium">30d</th>
-            <th className="pb-2 pl-3 font-medium">Per template</th>
-            <th className="pb-2 pl-3 text-right font-medium max-sm:hidden">Per active project</th>
-            <th className="pb-2 pl-3 text-right font-medium max-sm:hidden">First paid</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => {
-            const per = r.earned / r.templates;
-            return (
-              <tr key={r.key} className="border-b border-border/50 last:border-0">
-                <td className="py-2 whitespace-nowrap">{format(r.key)}</td>
-                <td className="py-2 pl-3 text-right tabular-nums max-sm:hidden">{fmtNum(r.templates)}</td>
-                <td className="py-2 pl-3 text-right tabular-nums text-muted-foreground max-sm:hidden">{fmtNum(r.earning)}</td>
-                <td className="py-2 pl-3 text-right tabular-nums">{fmtUsd(r.earned)}</td>
-                <td className="py-2 pl-3">
-                  <div className="flex items-center gap-2">
-                    <span className="w-12 text-right tabular-nums">{fmtUsd(per)}</span>
-                    <span className="h-1.5 min-w-10 flex-1 rounded-full bg-muted">
-                      <span
-                        className="block h-full rounded-full bg-(--chart-1)"
-                        style={{ width: `${best > 0 ? (per / best) * 100 : 0}%` }}
-                      />
-                    </span>
-                  </div>
-                </td>
-                <td className="py-2 pl-3 text-right tabular-nums text-muted-foreground max-sm:hidden">
-                  {r.active > 0 ? fmtUsd(r.earned / r.active) : "—"}
-                </td>
-                <td className="py-2 pl-3 text-right tabular-nums text-muted-foreground max-sm:hidden">
-                  {r.firstPaid == null ? "—" : `${r.firstPaid}d`}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+    <Table box="wide" className="sm:min-w-[34rem]">
+      <TableHeader>
+        <TableRow>
+          <TableHead>{title}</TableHead>
+          <TableHead numeric className="max-sm:hidden">Templates</TableHead>
+          <TableHead numeric className="max-sm:hidden">Earning</TableHead>
+          <TableHead numeric>30d</TableHead>
+          <TableHead>Per template</TableHead>
+          <TableHead numeric className="max-sm:hidden">Per active project</TableHead>
+          <TableHead numeric className="max-sm:hidden">First paid</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((r) => {
+          const per = r.earned / r.templates;
+          return (
+            <TableRow key={r.key}>
+              <TableRowHead className="whitespace-nowrap">{format(r.key)}</TableRowHead>
+              <TableCell numeric className="max-sm:hidden">{fmtNum(r.templates)}</TableCell>
+              <TableCell numeric className="text-muted-foreground max-sm:hidden">{fmtNum(r.earning)}</TableCell>
+              <TableCell numeric>{fmtUsd(r.earned)}</TableCell>
+              <TableCell>
+                <div className="flex items-center gap-2">
+                  <span className="w-12 text-right tabular-nums">{fmtUsd(per)}</span>
+                  <TableMeter value={best > 0 ? per / best : 0} className="w-auto min-w-10 flex-1" />
+                </div>
+              </TableCell>
+              <TableCell numeric className="text-muted-foreground max-sm:hidden">
+                {r.active > 0 ? fmtUsd(r.earned / r.active) : "—"}
+              </TableCell>
+              <TableCell numeric className="text-muted-foreground max-sm:hidden">
+                {r.firstPaid == null ? "—" : `${r.firstPaid}d`}
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
   );
 }

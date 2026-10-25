@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -157,6 +158,25 @@ FROM node:22-slim
 	// A release tagged v0.1.2 is offered as 0.1.2 too (see listTags).
 	if latest, behind, _ := newestTags("0.1.0", []string{"v0.1.2", "0.1.2"}); latest != "0.1.2" || behind != "patch" {
 		t.Errorf("newestTags(0.1.0) = %q, %q", latest, behind)
+	}
+}
+
+// A repo-built service keeps its build.dockerfilePath, so DataLens'
+// Dockerfile.ui or a monorepo's apps/web/Dockerfile is read instead of a
+// missing root Dockerfile.
+func TestTemplateImagesDockerfilePath(t *testing.T) {
+	var tpl workspaceTemplate
+	tpl.SerializedConfig.Services = map[string]json.RawMessage{
+		"a": json.RawMessage(`{"name":"ui","source":{"repo":"https://github.com/o/datalens","rootDirectory":"/"},"build":{"dockerfilePath":"Dockerfile.ui"}}`),
+		"b": json.RawMessage(`{"name":"db","source":{"image":"postgres:17"}}`),
+	}
+	got := fmt.Sprint(tpl.templateImages())
+	want := fmt.Sprint([]serviceImageRef{
+		{Service: "db", Image: "postgres", Tag: "17"},
+		{Service: "ui", Repo: "https://github.com/o/datalens", Root: "/", Dockerfile: "Dockerfile.ui"},
+	})
+	if got != want {
+		t.Errorf("templateImages =\n%s\nwant\n%s", got, want)
 	}
 }
 

@@ -73,7 +73,10 @@ type serviceImageRef struct {
 	Tag     string
 	Repo    string
 	Root    string
-	HA      string
+	// Dockerfile is the service's build.dockerfilePath under Root, empty
+	// for the default Dockerfile.
+	Dockerfile string
+	HA         string
 }
 
 // templateImages lists the image-based and repo-built services of a template.
@@ -87,6 +90,9 @@ func (t workspaceTemplate) templateImages() []serviceImageRef {
 				Repo          string `json:"repo"`
 				RootDirectory string `json:"rootDirectory"`
 			} `json:"source"`
+			Build struct {
+				DockerfilePath string `json:"dockerfilePath"`
+			} `json:"build"`
 			HATemplateCode string `json:"haTemplateCode"`
 		}
 		if json.Unmarshal(raw, &svc) != nil {
@@ -96,7 +102,7 @@ func (t workspaceTemplate) templateImages() []serviceImageRef {
 			image, tag := splitImageTag(svc.Source.Image)
 			refs = append(refs, serviceImageRef{Service: svc.Name, Image: image, Tag: tag, HA: svc.HATemplateCode})
 		} else if svc.Source.Repo != "" {
-			refs = append(refs, serviceImageRef{Service: svc.Name, Repo: svc.Source.Repo, Root: svc.Source.RootDirectory})
+			refs = append(refs, serviceImageRef{Service: svc.Name, Repo: svc.Source.Repo, Root: svc.Source.RootDirectory, Dockerfile: svc.Build.DockerfilePath})
 		}
 	}
 	sort.Slice(refs, func(i, j int) bool { return refs[i].Service < refs[j].Service })
@@ -335,14 +341,18 @@ func dockerfilePins(service, dockerfile string) []serviceImageRef {
 var githubRepoRe = regexp.MustCompile(`^https://github\.com/([^/]+/[^/]+?)(?:\.git)?/?$`)
 
 // fetchDockerfile reads the Dockerfile of a GitHub repo's default branch
-// under root. ok is false for repos with none (non-GitHub, or built without
+// under root: name (a build.dockerfilePath such as apps/web/Dockerfile or
+// Dockerfile.ui), or Dockerfile when empty. ok is false for repos with none (non-GitHub, or built without
 // a Dockerfile), which have nothing to compare.
-func fetchDockerfile(ctx context.Context, repo, root string) (dockerfile string, ok bool, err error) {
+func fetchDockerfile(ctx context.Context, repo, root, name string) (dockerfile string, ok bool, err error) {
 	m := githubRepoRe.FindStringSubmatch(repo)
 	if m == nil {
 		return "", false, nil
 	}
-	file := path.Join("/", root, "Dockerfile")
+	if name == "" {
+		name = "Dockerfile"
+	}
+	file := path.Join("/", root, name)
 	resp, err := registryGet(ctx, "https://raw.githubusercontent.com/"+m[1]+"/HEAD"+file, "")
 	if err != nil {
 		return "", false, err
@@ -586,7 +596,7 @@ func checkTemplateUpgrades(db *gorm.DB) error {
 				if ref.Repo == "" {
 					continue
 				}
-				dockerfile, ok, err := fetchDockerfile(ctx, ref.Repo, ref.Root)
+				dockerfile, ok, err := fetchDockerfile(ctx, ref.Repo, ref.Root, ref.Dockerfile)
 				if err != nil {
 					failed[i] = append(failed[i], ServiceImage{CheckedAt: checkedAt, TemplateID: t.ID, Service: ref.Service, Image: ref.Repo, Behind: "unknown", Error: err.Error()})
 				} else if ok {

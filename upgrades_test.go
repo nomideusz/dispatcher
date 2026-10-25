@@ -125,6 +125,8 @@ FROM --platform=linux/amd64 ${NEKO_IMAGE} AS base
 # upgrade: github pingdotgg/t3code
 ARG T3_VERSION=0.1.0
 ARG T3_SHA256=f770
+# upgrade: pypi laya
+ARG LAYA_VERSION=0.4.3
 # upgrade: npm @anthropic-ai/claude-code
 
 ARG CLAUDE_CODE_VERSION=2.1.302
@@ -144,6 +146,7 @@ FROM node:22-slim
 	want := fmt.Sprint([]serviceImageRef{
 		{Service: "svc", Image: "ghcr.io/m1k1o/neko/firefox", Tag: "3.1.6"},
 		{Service: "svc", Image: "github:pingdotgg/t3code", Tag: "0.1.0"},
+		{Service: "svc", Image: "pypi:laya", Tag: "0.4.3"},
 		{Service: "svc", Image: "caddy", Tag: "2.10.2"},
 		{Service: "svc", Image: "ubuntu", Tag: "24.04"},
 		{Service: "svc", Image: "node", Tag: "22-slim"},

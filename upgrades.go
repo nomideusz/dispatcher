@@ -41,7 +41,8 @@ type ServiceImage struct {
 	TemplateID string    `json:"templateId"`
 	Service    string    `json:"service"`
 	// Image is the repository as written in the template, without the tag,
-	// or "github:owner/repo" / "npm:package" for a marked Dockerfile ARG.
+	// or "github:owner/repo" / "npm:package" / "pypi:package" for a marked
+	// Dockerfile ARG.
 	Image string `json:"image"`
 	Tag   string `json:"tag"`
 	// Latest is the newest tag shaped like Tag on the same major version.
@@ -264,7 +265,7 @@ func haBlock(tag, major string, supported []int) string {
 	return ""
 }
 
-var upgradeMarkerRe = regexp.MustCompile(`^#\s*upgrade:\s*(?:(skip)\b|(github|npm)\s+(\S+))`)
+var upgradeMarkerRe = regexp.MustCompile(`^#\s*upgrade:\s*(?:(skip)\b|(github|npm|pypi)\s+(\S+))`)
 
 // dockerfilePins reads the upstream pins of a Dockerfile: every FROM image
 // that is not an earlier stage, with ARG defaults substituted, and every ARG
@@ -273,8 +274,9 @@ var upgradeMarkerRe = regexp.MustCompile(`^#\s*upgrade:\s*(?:(skip)\b|(github|np
 //	# upgrade: github pingdotgg/t3code
 //	ARG T3_VERSION=0.1.0
 //
-// (or "# upgrade: npm @anthropic-ai/claude-code"), returned with Image
-// "github:pingdotgg/t3code" or "npm:@anthropic-ai/claude-code". A FROM
+// (or "# upgrade: npm @anthropic-ai/claude-code", "# upgrade: pypi laya"),
+// returned with Image "github:pingdotgg/t3code", "npm:@anthropic-ai/claude-code"
+// or "pypi:laya". A FROM
 // under "# upgrade: skip" is left out: a base held back on purpose.
 func dockerfilePins(service, dockerfile string) []serviceImageRef {
 	refs := []serviceImageRef{}
@@ -357,7 +359,7 @@ func fetchDockerfile(ctx context.Context, repo, root string) (dockerfile string,
 }
 
 // listTags lists the versions behind an Image: registry tags, or for a
-// marked Dockerfile ARG the latest stable GitHub release or npm version.
+// marked Dockerfile ARG the latest stable GitHub release, npm or PyPI version.
 // Only the latest is fetched for those, which is enough for newestTags to
 // place it on the pinned line or a later major.
 func listTags(ctx context.Context, image string) ([]string, error) {
@@ -379,6 +381,17 @@ func listTags(ctx context.Context, image string) ([]string, error) {
 			return nil, err
 		}
 		return []string{latest.Version}, nil
+	}
+	if pkg, ok := strings.CutPrefix(image, "pypi:"); ok {
+		var project struct {
+			Info struct {
+				Version string `json:"version"`
+			} `json:"info"`
+		}
+		if err := getJSON(ctx, "https://pypi.org/pypi/"+pkg+"/json", &project); err != nil {
+			return nil, err
+		}
+		return []string{project.Info.Version}, nil
 	}
 	tags, err := listRegistryTags(ctx, image)
 	if image == "ubuntu" {

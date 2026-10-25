@@ -277,6 +277,7 @@ Every table in the app (templates, payers, payout ledger, upgrades, candidates, 
 - **TableHeader / TableHead:** 12px labels at weight 500 in ink-light, sticky on paper, with the hairline underline riding on the sticky cells. `numeric` right-aligns a label over figures.
 - **TableRow:** `rule="bottom"` (default) is a hairline at 60% under each row, none under the last; `rule="top"` opens a group (the grouped upgrade queue); `rule="none"` for rows inside a group or an expanded panel.
 - **TableCell / TableRowHead:** 8px vertical padding, 12px between columns, none before the first. `numeric` sets a figure: mono, right-aligned, unbroken. The cell that names its row (template, payer, segment) is a `TableRowHead`.
+- **TableBody:** at 80rem and wider, where a row runs too far for the eye to hold its line, even rows take a 75% carbon-well band; the one tint the docket allows, because hairlines alone lose the row at that width. Phones and tablets keep plain hairlines. Expanded panels don't count toward the parity, and an open row keeps its own tint. `banded={false}` for a grouped body whose rules already carry the grouping. On pointer devices the hovered row fills with carbon.
 - **TableMeter:** the hairline-thin, rounded share-of-column bar beside a figure (lifetime, deployed, per template), filled with a chart series and dimmed in the carbon copy.
 
 ## Do's and Don'ts

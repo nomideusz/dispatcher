@@ -215,7 +215,7 @@ function TemplateRow({
   const p = r.payers;
   return (
     <>
-      <TableRow id={`t-${r.templateId}`} rule={open ? "none" : "bottom"} className={cn(open && "bg-muted/40")}>
+      <TableRow id={`t-${r.templateId}`} data-open={open || undefined} rule={open ? "none" : "bottom"} className={cn(open && "bg-muted/40")}>
         <TableRowHead className="max-w-64">
           <div className="flex items-start gap-1">
             {/* The name links to Railway, so expanding gets its own control. */}
@@ -313,7 +313,7 @@ function TemplateRow({
         </TableCell>
       </TableRow>
       {open && (
-        <TableRow id={panelId} className="bg-muted/40">
+        <TableRow id={panelId} data-panel className="bg-muted/40">
           {/* Sticky to the scroller's left edge so the charts stay in view
               while the wide table is scrolled sideways. */}
           <TableCell colSpan={14} className="p-0">

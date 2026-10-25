@@ -117,7 +117,7 @@ export function UpgradeQueue() {
                 <TableHead numeric className="max-sm:hidden">Active</TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody banded={!grouped}>
               {grouped
                 ? byTemplate(shown).map((group) => {
                     const u = group[0];

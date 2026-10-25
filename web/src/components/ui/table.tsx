@@ -36,8 +36,10 @@ function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
   )
 }
 
-function TableBody(props: React.ComponentProps<"tbody">) {
-  return <tbody data-slot="table-body" {...props} />
+/** Rows band on wide screens (see app.css); a grouped body whose rules
+ * already separate its groups turns it off. */
+function TableBody({ banded = true, ...props }: React.ComponentProps<"tbody"> & { banded?: boolean }) {
+  return <tbody data-slot="table-body" data-banded={banded || undefined} {...props} />
 }
 
 const RULES = {

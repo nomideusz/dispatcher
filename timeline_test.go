@@ -109,4 +109,9 @@ func TestTimelineBucketsDeltasGapsAndLedger(t *testing.T) {
 	if !a.FirstSeenAt.Equal(t1) {
 		t.Errorf("first seen = %v, want %v", a.FirstSeenAt, t1)
 	}
+	// Railway reported no 30-day earnings; the payouts seen in the last 30
+	// days stand in for its lag.
+	if a.Earned30d == nil || *a.Earned30d != 4 {
+		t.Errorf("earned30d = %v, want 4 from the payouts seen", a.Earned30d)
+	}
 }

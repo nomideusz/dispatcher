@@ -263,6 +263,11 @@ func buildTimeline(days int, now, trackedSince time.Time, events []timelineEvent
 		byID[t.TemplateID] = t
 	}
 
+	// Railway's earningsLast30Days lags the payouts the snapshots see (a
+	// template's first cents can read $0 for a day), so Earned30d is
+	// whichever is larger.
+	monthAgo := now.Add(-30 * 24 * time.Hour)
+	own30 := map[*timelineTemplate]int64{}
 	perDay := map[string]*timelinePoint{}
 	perTemplateDay := map[string]map[string]*timelineActivity{}
 	var previousNew int64
@@ -283,6 +288,9 @@ func buildTimeline(days int, now, trackedSince time.Time, events []timelineEvent
 		}
 		if e.Ledger && !at.Before(trackedSince) {
 			continue
+		}
+		if t != nil && at.After(monthAgo) {
+			own30[t] += e.EarnedCents
 		}
 
 		if at.Before(windowStart) {
@@ -315,6 +323,11 @@ func buildTimeline(days int, now, trackedSince time.Time, events []timelineEvent
 		}
 		a.EarnedCents += e.EarnedCents
 		a.NewProjects += e.NewProjects
+	}
+	for t, cents := range own30 {
+		if own := float64(cents) / 100; t.Earned30d == nil || own > *t.Earned30d {
+			t.Earned30d = &own
+		}
 	}
 	if !trackedSince.After(previousStart) {
 		resp.Window.PreviousNewProjects = &previousNew

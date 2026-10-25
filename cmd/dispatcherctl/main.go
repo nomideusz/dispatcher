@@ -3,11 +3,13 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -22,6 +24,7 @@ type command struct {
 	method       string
 	path         string
 	requiresAuth bool
+	body         string // JSON request body, if any
 }
 
 func main() {
@@ -123,7 +126,12 @@ func runWithBrowser(args []string, getenv func(string) string, stdin io.Reader, 
 			return saveStoredSession(credentialsPath, client.baseURL, renewed)
 		}
 	}
-	body, err := client.request(context.Background(), cmd.method, cmd.path)
+	var payload io.Reader
+	contentType := ""
+	if cmd.body != "" {
+		payload, contentType = strings.NewReader(cmd.body), "application/json"
+	}
+	body, err := client.requestBody(context.Background(), cmd.method, cmd.path, payload, contentType)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
@@ -173,6 +181,17 @@ func parseCommand(args []string, stderr io.Writer) (command, error) {
 			method:       http.MethodGet,
 			path:         "/api/analytics/payout?days=" + strconv.Itoa(*days),
 			requiresAuth: true,
+		}, nil
+	case "kind":
+		if len(args) != 3 {
+			return command{}, fmt.Errorf("kind requires a template id and a kind (business, ai, media, desktop, agent, devtools, or \"\" to unsort)")
+		}
+		body, _ := json.Marshal(map[string]string{"kind": args[2]})
+		return command{
+			method:       http.MethodPut,
+			path:         "/api/templates/" + url.PathEscape(args[1]) + "/kind",
+			requiresAuth: true,
+			body:         string(body),
 		}, nil
 	case "get":
 		if len(args) != 2 {
@@ -252,6 +271,8 @@ Other commands:
   logout                   Remove the saved session for this instance
   refresh                  Collect a fresh analytics snapshot
   refresh-upgrades         Re-check every template image against its registry
+  kind TEMPLATE_ID KIND    Set a template's kind: business, ai, media, desktop,
+                           agent or devtools ("" leaves it unsorted)
   version                  Print the CLI version
   help                     Show this help
 `)

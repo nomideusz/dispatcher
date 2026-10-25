@@ -281,3 +281,16 @@ func TestRunSavesSessionRotatedByDispatcher(t *testing.T) {
 		t.Fatalf("stored session expires at %s", session.ExpiresAt)
 	}
 }
+
+func TestParseCommandKind(t *testing.T) {
+	cmd, err := parseCommand([]string{"kind", "1c1b713d-16dc", "business"}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmd.method != http.MethodPut || cmd.path != "/api/templates/1c1b713d-16dc/kind" || cmd.body != `{"kind":"business"}` || !cmd.requiresAuth {
+		t.Fatalf("cmd = %+v", cmd)
+	}
+	if _, err := parseCommand([]string{"kind", "only-id"}, &bytes.Buffer{}); err == nil {
+		t.Fatal("kind with one argument should fail")
+	}
+}

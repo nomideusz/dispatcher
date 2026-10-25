@@ -1,0 +1,386 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-25T18:52:31+00:00",
+  "title": "Design System: Dispatcher",
+  "extensions": {
+    "colorMeta": {
+      "docket-paper": {
+        "role": "neutral",
+        "displayName": "Docket Paper",
+        "tonalRamp": [
+          "#2a2822",
+          "#45423a",
+          "#615d52",
+          "#7e796c",
+          "#9b9686",
+          "#b9b4a3",
+          "#d8d3c3",
+          "#f6f4ee"
+        ]
+      },
+      "navy-ink": {
+        "role": "neutral",
+        "displayName": "Navy Ink",
+        "tonalRamp": [
+          "#0d121b",
+          "#1d2433",
+          "#2f3a50",
+          "#46536e",
+          "#64718c",
+          "#8792aa",
+          "#b1b9cb",
+          "#dde1ea"
+        ]
+      },
+      "ink-light": {
+        "role": "neutral",
+        "displayName": "Ink, Set Lighter"
+      },
+      "carbon": {
+        "role": "neutral",
+        "displayName": "Carbon",
+        "tonalRamp": [
+          "#3a3426",
+          "#544c38",
+          "#6f664c",
+          "#8b8062",
+          "#a79c7c",
+          "#c4b998",
+          "#e8e1cf",
+          "#f6f2e6"
+        ]
+      },
+      "carbon-well": {
+        "role": "neutral",
+        "displayName": "Carbon Well"
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline"
+      },
+      "field-rule": {
+        "role": "neutral",
+        "displayName": "Field Rule"
+      },
+      "top-sheet": {
+        "role": "neutral",
+        "displayName": "Top Sheet"
+      },
+      "action-blue": {
+        "role": "primary",
+        "displayName": "Action Blue",
+        "tonalRamp": [
+          "#0b2147",
+          "#13336b",
+          "#1f56a3",
+          "#3a73c4",
+          "#5d90d8",
+          "#8db8f2",
+          "#b9d3f7",
+          "#e3eefc"
+        ]
+      },
+      "held-red": {
+        "role": "secondary",
+        "displayName": "Held Red",
+        "tonalRamp": [
+          "#3d120d",
+          "#5f1c15",
+          "#86291f",
+          "#b23a2e",
+          "#d2594c",
+          "#ec8a7e",
+          "#f4b6ad",
+          "#fbe3df"
+        ]
+      },
+      "running-green": {
+        "role": "secondary",
+        "displayName": "Running Green",
+        "tonalRamp": [
+          "#0e2a1e",
+          "#1a4533",
+          "#2d6a4f",
+          "#3f8a68",
+          "#56a882",
+          "#6fbf97",
+          "#a6dbc0",
+          "#dcf2e6"
+        ]
+      },
+      "caution-ochre": {
+        "role": "tertiary",
+        "displayName": "Caution Ochre",
+        "tonalRamp": [
+          "#2e1f04",
+          "#4d3407",
+          "#8a5f0e",
+          "#9a6b12",
+          "#bf8c27",
+          "#d9b04a",
+          "#ead18c",
+          "#f8edcf"
+        ]
+      },
+      "series-teal": {
+        "role": "tertiary",
+        "displayName": "Series Teal"
+      },
+      "series-ochre": {
+        "role": "tertiary",
+        "displayName": "Series Ochre"
+      },
+      "series-plum": {
+        "role": "tertiary",
+        "displayName": "Series Plum"
+      },
+      "series-other": {
+        "role": "tertiary",
+        "displayName": "Series Other"
+      },
+      "carbon-copy-ground": {
+        "role": "neutral",
+        "displayName": "Carbon Copy Ground (dark)"
+      },
+      "carbon-copy-ink": {
+        "role": "neutral",
+        "displayName": "Carbon Copy Ink (dark)"
+      },
+      "carbon-copy-ink-light": {
+        "role": "neutral",
+        "displayName": "Carbon Copy Ink, Lighter (dark)"
+      },
+      "carbon-copy-tray": {
+        "role": "neutral",
+        "displayName": "Carbon Copy Tray (dark)"
+      },
+      "carbon-copy-rule": {
+        "role": "neutral",
+        "displayName": "Carbon Copy Rule (dark)"
+      },
+      "carbon-copy-sheet": {
+        "role": "neutral",
+        "displayName": "Carbon Copy Sheet (dark)"
+      },
+      "carbon-copy-bar": {
+        "role": "neutral",
+        "displayName": "Carbon Copy Bar (dark)"
+      },
+      "carbon-copy-action": {
+        "role": "primary",
+        "displayName": "Action Blue (dark)"
+      },
+      "carbon-copy-held": {
+        "role": "secondary",
+        "displayName": "Held Red (dark)"
+      },
+      "carbon-copy-running": {
+        "role": "secondary",
+        "displayName": "Running Green (dark)"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Docket Figure",
+        "purpose": "The four headline figures in the docket strip; 26px on phones, 34px from sm."
+      },
+      "headline": {
+        "displayName": "Page Title",
+        "purpose": "Today, Decide, Payouts."
+      },
+      "title": {
+        "displayName": "Section Title",
+        "purpose": "Section titles above a full-ink rule."
+      },
+      "subtitle": {
+        "displayName": "Block Title",
+        "purpose": "Sub-block titles within a section."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Descriptions, held reasons, dialog copy; descriptions max 75ch."
+      },
+      "figure": {
+        "displayName": "Figure",
+        "purpose": "Every number in tables, legends, deltas, toggles (.tabular-nums)."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Table headers, chips; codes use the mono face at this size."
+      },
+      "stamp": {
+        "displayName": "Stamp",
+        "purpose": "Wordmark and Held tray status only; inline, never an eyebrow."
+      }
+    },
+    "shadows": [
+      {
+        "name": "held-rule",
+        "value": "inset 0 1px 0 var(--destructive), inset 0 -1px 0 var(--destructive)",
+        "purpose": "Structural red rules on the held-mark row; not elevation."
+      },
+      {
+        "name": "header-rule",
+        "value": "inset 0 -1px 0 var(--border)",
+        "purpose": "Sticky table header underline that survives scrolling."
+      }
+    ],
+    "motion": [
+      {
+        "name": "held-mark",
+        "value": "900ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Held-mark wash settles from 28% to 9% once; skipped under reduced motion."
+      },
+      {
+        "name": "dialog",
+        "value": "100ms fade + zoom-in-95",
+        "purpose": "Dialog and scrim enter/exit."
+      },
+      {
+        "name": "scroll-fade",
+        "value": "2.5rem bottom mask, scroll-driven",
+        "purpose": "Scroll boxes fade their bottom edge while more rows remain."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      },
+      {
+        "name": "shell-max",
+        "value": "1600px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one committing action on a surface: Save, Sign in with Railway.",
+      "html": "<button class=\"ds-btn-primary\">Save</button>",
+      "css": ".ds-btn-primary{font-family:'IBM Plex Sans Condensed',ui-sans-serif,system-ui,sans-serif;height:32px;padding:0 10px;border:1px solid transparent;border-radius:0;background:var(--primary,#1f56a3);color:var(--primary-foreground,#fbfaf6);font-size:14px;font-weight:500;cursor:pointer;transition:all .15s}.ds-btn-primary:hover{background:color-mix(in oklab,var(--primary,#1f56a3) 88%,transparent)}.ds-btn-primary:focus-visible{outline:none;border-color:var(--ring,#1f56a3);box-shadow:0 0 0 3px color-mix(in oklab,var(--ring,#1f56a3) 50%,transparent)}.ds-btn-primary:active{transform:translateY(1px)}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "The default quiet action; bar controls and table tools.",
+      "html": "<button class=\"ds-btn-ghost\">Notifications</button>",
+      "css": ".ds-btn-ghost{font-family:'IBM Plex Sans Condensed',ui-sans-serif,system-ui,sans-serif;height:32px;padding:0 10px;border:1px solid transparent;border-radius:0;background:transparent;color:var(--foreground,#1d2433);font-size:14px;font-weight:500;cursor:pointer}.ds-btn-ghost:hover{background:var(--muted,#ece6d7)}.ds-btn-ghost:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in oklab,var(--ring,#1f56a3) 50%,transparent)}"
+    },
+    {
+      "name": "Filter Chips",
+      "kind": "chip",
+      "refersTo": "button-secondary",
+      "description": "Extra-small ghost buttons; pressed state is carbon, counts in mono.",
+      "html": "<div class=\"ds-chips\"><button class=\"ds-chip\" aria-pressed=\"true\">All <span>128</span></button><button class=\"ds-chip\">Earning <span>26</span></button><button class=\"ds-chip\">No projects <span>14</span></button></div>",
+      "css": ".ds-chips{display:flex;gap:4px}.ds-chip{font-family:'IBM Plex Sans Condensed',ui-sans-serif,system-ui,sans-serif;height:24px;padding:0 8px;border:0;border-radius:0;background:transparent;color:var(--foreground,#1d2433);font-size:12px;font-weight:500;cursor:pointer}.ds-chip span{font-family:'IBM Plex Mono',ui-monospace,monospace;letter-spacing:-0.02em;color:var(--muted-foreground,#4b5366)}.ds-chip[aria-pressed=true]{background:var(--secondary,#e8e1cf)}.ds-chip:hover{background:var(--muted,#ece6d7)}.ds-chip:focus-visible{outline:2px solid var(--ring,#1f56a3)}"
+    },
+    {
+      "name": "Range Toggle",
+      "kind": "custom",
+      "refersTo": "range-toggle",
+      "description": "Segmented day range in a carbon well; active segment lifted onto paper.",
+      "html": "<div class=\"ds-range\" role=\"group\"><button>7d</button><button aria-pressed=\"true\">30d</button><button>90d</button></div>",
+      "css": ".ds-range{display:inline-flex;padding:2px;border:1px solid var(--border,#cdc7b6);background:var(--muted,#ece6d7)}.ds-range button{font-family:'IBM Plex Mono',ui-monospace,monospace;letter-spacing:-0.02em;height:28px;min-width:44px;padding:0 8px;border:0;background:transparent;color:var(--muted-foreground,#4b5366);font-size:12px;font-weight:500;cursor:pointer}.ds-range button:hover{color:var(--foreground,#1d2433)}.ds-range button[aria-pressed=true]{background:var(--background,#f6f4ee);color:var(--foreground,#1d2433);box-shadow:0 0 0 1px color-mix(in oklab,var(--foreground,#1d2433) 25%,transparent)}.ds-range button:focus-visible{outline:2px solid var(--ring,#1f56a3)}"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "text-field",
+      "description": "Square field, field-rule border; code values in mono.",
+      "html": "<input class=\"ds-input\" value=\"0 9 * * *\" aria-label=\"Cron schedule\">",
+      "css": ".ds-input{font-family:'IBM Plex Mono',ui-monospace,monospace;letter-spacing:-0.02em;height:36px;padding:0 12px;border:1px solid var(--input,#a9a493);border-radius:0;background:transparent;color:var(--foreground,#1d2433);font-size:14px}.ds-input:focus-visible{outline:none;box-shadow:0 0 0 2px var(--ring,#1f56a3)}.ds-input[aria-invalid=true]{border-color:var(--destructive,#b23a2e)}"
+    },
+    {
+      "name": "Navy Bar",
+      "kind": "nav",
+      "refersTo": "nav-bar",
+      "description": "Sticky top bar; stamp wordmark, pages marked by a 3px bottom rule.",
+      "html": "<header class=\"ds-bar\"><span class=\"ds-mark\"><svg viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"currentColor\"><rect x=\"1\" y=\"3\" width=\"8\" height=\"2\"/><rect x=\"7\" y=\"7\" width=\"8\" height=\"2\"/><rect x=\"1\" y=\"11\" width=\"8\" height=\"2\"/></svg>Dispatcher</span><nav><a href=\"#\" aria-current=\"page\">Today</a><a href=\"#\">Decide</a><a href=\"#\">Payouts</a></nav></header>",
+      "css": ".ds-bar{font-family:'IBM Plex Sans Condensed',ui-sans-serif,system-ui,sans-serif;display:flex;align-items:center;gap:40px;height:56px;padding:0 24px;background:var(--bar,#1d2433);color:var(--bar-foreground,#f6f4ee)}.ds-mark{display:flex;align-items:center;gap:8px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}.ds-bar nav{display:flex;gap:28px;height:100%}.ds-bar a{display:flex;align-items:center;border-top:3px solid transparent;border-bottom:3px solid transparent;color:color-mix(in oklab,var(--bar-foreground,#f6f4ee) 72%,transparent);font-size:14px;font-weight:500;text-decoration:none}.ds-bar a:hover{color:var(--bar-foreground,#f6f4ee)}.ds-bar a[aria-current=page]{color:var(--bar-foreground,#f6f4ee);border-bottom-color:currentColor}.ds-bar a:focus-visible{outline:2px solid #8db8f2}"
+    },
+    {
+      "name": "Docket Strip",
+      "kind": "card",
+      "refersTo": "docket-cell",
+      "description": "Four hairline-boxed cells with mono display figures; replaces KPI cards.",
+      "html": "<section class=\"ds-docket\"><div><b>Today · UTC</b><strong>$1.97</strong><p>$20.38 yesterday</p></div><div><b>Last 30 days</b><strong>$184.42</strong><p><em>+55.1%</em> on the previous 30</p></div><div><b>Balance</b><strong>$252.53</strong><p>Withdrawable · auto-withdraw is off</p></div><div><b>Templates</b><strong>128</strong><p>1,176 active projects</p></div></section>",
+      "css": ".ds-docket{font-family:'IBM Plex Sans Condensed',ui-sans-serif,system-ui,sans-serif;display:grid;grid-template-columns:repeat(4,1fr);gap:1px;border:1px solid var(--border,#cdc7b6);background:var(--border,#cdc7b6);color:var(--foreground,#1d2433)}.ds-docket>div{background:var(--background,#f6f4ee);padding:16px 20px}.ds-docket b{display:block;font-size:14px;font-weight:600}.ds-docket strong{display:block;margin:6px 0;font-family:'IBM Plex Mono',ui-monospace,monospace;letter-spacing:-0.02em;font-size:34px;line-height:1;font-weight:600}.ds-docket p{margin:0;font-size:14px;color:var(--muted-foreground,#4b5366)}.ds-docket em{font-style:normal;color:#2d6a4f}"
+    },
+    {
+      "name": "Held Tray",
+      "kind": "custom",
+      "refersTo": "held-tray",
+      "description": "Carbon band naming each held template inline, then a Next line.",
+      "html": "<section class=\"ds-held\"><div><h2>Held · 2</h2><span><a href=\"#\">Pixelfed</a> deploy health 0%, 1 active</span><span><a href=\"#\">AzuraCast</a> deploy health 38%, 7 active</span></div><div class=\"ds-next\"><b>Next</b><a class=\"ds-act\" href=\"#\">80 templates behind on upgrades</a></div></section>",
+      "css": ".ds-held{font-family:'IBM Plex Sans Condensed',ui-sans-serif,system-ui,sans-serif;padding:14px 20px;background:var(--tray,#e8e1cf);color:var(--foreground,#1d2433);font-size:16px}.ds-held>div{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 24px}.ds-held h2{margin:0;font-size:14px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--destructive,#b23a2e)}.ds-held a{color:inherit;font-weight:600;text-decoration:underline;text-decoration-color:var(--destructive,#b23a2e);text-underline-offset:3px}.ds-held a:hover{text-decoration-thickness:2px}.ds-next{margin-top:8px;padding-top:8px;border-top:1px solid color-mix(in oklab,var(--foreground,#1d2433) 15%,transparent);font-size:14px}.ds-held .ds-act{color:var(--primary,#1f56a3);font-weight:400;text-decoration-color:currentColor}"
+    },
+    {
+      "name": "Consignment Row, Held Mark",
+      "kind": "custom",
+      "description": "Table row with mono code and figures; :target row keeps a held rule.",
+      "html": "<table class=\"ds-table\"><thead><tr><th>Code</th><th>Template</th><th>Earned 30d</th><th>Health</th></tr></thead><tbody><tr><td class=\"ds-code\">chatwoot-3</td><td>Chatwoot</td><td class=\"ds-num\">$6.77</td><td class=\"ds-num\">88%</td></tr><tr class=\"ds-marked\"><td class=\"ds-code\">azuracast</td><td>AzuraCast</td><td class=\"ds-num\">$12.16</td><td class=\"ds-num ds-heldcell\">held · 38%</td></tr></tbody></table>",
+      "css": ".ds-table{font-family:'IBM Plex Sans Condensed',ui-sans-serif,system-ui,sans-serif;width:100%;border-collapse:collapse;font-size:14px;color:var(--foreground,#1d2433)}.ds-table th{padding:0 12px 8px 0;text-align:left;font-size:12px;font-weight:500;color:var(--muted-foreground,#4b5366);box-shadow:inset 0 -1px 0 var(--border,#cdc7b6)}.ds-table td{padding:8px 12px 8px 0;border-bottom:1px solid color-mix(in oklab,var(--border,#cdc7b6) 60%,transparent)}.ds-code{font-family:'IBM Plex Mono',ui-monospace,monospace;letter-spacing:-0.02em;font-size:12px;color:var(--muted-foreground,#4b5366)}.ds-num{font-family:'IBM Plex Mono',ui-monospace,monospace;letter-spacing:-0.02em;text-align:right}.ds-heldcell{font-weight:600;color:var(--destructive,#b23a2e)}.ds-marked>td{background:color-mix(in oklab,var(--destructive,#b23a2e) 9%,transparent);box-shadow:inset 0 1px 0 var(--destructive,#b23a2e),inset 0 -1px 0 var(--destructive,#b23a2e)}@media (prefers-reduced-motion:no-preference){.ds-marked>td{animation:ds-held-mark 900ms cubic-bezier(.16,1,.3,1)}}@keyframes ds-held-mark{from{background:color-mix(in oklab,var(--destructive,#b23a2e) 28%,transparent)}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Dispatch Docket",
+    "overview": "Dispatcher is kept like a dispatch office's docket book. The ground is docket paper, the ink is navy, and structure comes from 1px rules and hairline-boxed cells, not from cards, tints or shadows. Words are set in IBM Plex Sans Condensed. Every figure and every template code is set in IBM Plex Mono, so columns of money line up like carbon copies. The page reads from the top in a fixed order: what is held, then the day's takings, then each template as a row in a consignment table.\n\nThe tone is Operate mode and leads with code. Density is high and rows are tight, and color is used only to say what is going on. Navy ink does the work, carbon trays group things, held red marks only what needs a person, and one action blue marks only what can be pressed. The dark theme is the carbon copy: navy ground with paper ink, and the same roles shifted lighter.\n\nThe page refuses the KPI-card grid with a chart hero. The headline numbers sit in one ruled docket strip, and the charts sit below the Held tray.",
+    "keyCharacteristics": [
+      "Docket paper ground, navy ink, 1px hairline rules and square corners everywhere.",
+      "Plex Sans Condensed for words, Plex Mono for every figure and code.",
+      "No cards and no shadows. Containers are hairline-boxed cells or carbon trays.",
+      "Held red and action blue are scarce. Each carries one meaning only.",
+      "A navy bar at the top. The dark theme is the carbon copy."
+    ],
+    "rules": [
+      {
+        "name": "The Ink, Not Grey Rule",
+        "body": "Secondary text is navy ink set lighter (#4b5366), never a neutral grey. A falling figure is information, not an alarm, so \"down\" is ink too.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Meaning Rule",
+        "body": "Blue means \"press this\". Red means \"this needs you\". Neither appears as decoration, as a heading color or as a fill for brand moments.",
+        "section": "colors"
+      },
+      {
+        "name": "The Carbon Column Rule",
+        "body": "If it is a number or a code, set it in Plex Mono. No figure is set in the sans.",
+        "section": "typography"
+      },
+      {
+        "name": "The Carbon, Not Shadow Rule",
+        "body": "To set something apart, put it on carbon or box it with a hairline. Never lift it.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** set every figure and template code in IBM Plex Mono at -0.02em.",
+      "**Do** open each section with a 20px title, a short plain description and a full-ink 1px rule.",
+      "**Do** group things with hairline-boxed cells (1px gaps over the hairline color) or a carbon tray.",
+      "**Do** keep held red for what needs a person now, and send chores to caution ochre.",
+      "**Do** keep every corner square (0px).",
+      "**Do** give dialogs the top-sheet tone with a navy scrim at 40%."
+    ],
+    "donts": [
+      "**Don't** build KPI cards or put a chart in the hero. Headline numbers go in the ruled docket strip.",
+      "**Don't** add drop shadows or rounded corners to any resting surface.",
+      "**Don't** use neutral grey for secondary text. Use ink set lighter.",
+      "**Don't** use action blue for anything that cannot be pressed, or held red for anything that is not held or broken.",
+      "**Don't** put a small uppercase eyebrow above a heading. The stamp is for the wordmark and the Held tray's status only.",
+      "**Don't** use Railway's train logo or wordmark. The mark is three staggered bars."
+    ]
+  }
+}

@@ -49,7 +49,7 @@ export function Tip({
   const top = extra?.(label) ?? [];
   const foot = footer?.(label);
   return (
-    <div className="min-w-48 rounded-md border bg-popover px-2.5 py-1.5 text-xs shadow-sm">
+    <div className="min-w-48 rounded-md border bg-popover px-2.5 py-1.5 text-xs">
       <div className="mb-1 font-medium">{title(label)}</div>
       {payload
         .filter((p) => typeof p.value === "number")

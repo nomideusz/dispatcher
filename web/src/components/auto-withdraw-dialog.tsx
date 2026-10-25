@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { Banknote, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "~/components/ui/button";
 import {
@@ -19,27 +19,44 @@ import {
   saveWithdrawSettings,
   SCHEDULE_PRESETS,
   scheduleDescription,
+  fmtRun,
   type WithdrawAccounts,
   withdrawAccountsQuery,
+  withdrawNextQuery,
+  type WithdrawSettings,
   withdrawSettingsQuery,
 } from "~/queries/withdraw";
 
 /**
  * AutoWithdraw is a header button that opens the auto-withdraw setup dialog:
  * pick a payout account, choose how often it runs, and turn it on or off.
+ * Nothing changes until Save; Cancel always leaves things as they were.
  */
 export function AutoWithdraw() {
   const qc = useQueryClient();
   const settings = useQuery(withdrawSettingsQuery);
   const [open, setOpen] = useState(false);
+  // What the last save stored, shown as the confirmation until the dialog
+  // closes.
+  const [saved, setSaved] = useState<WithdrawSettings | null>(null);
 
   const save = useMutation({
     mutationFn: saveWithdrawSettings,
     onSuccess: (data) => {
       qc.setQueryData(withdrawSettingsQuery.queryKey, data);
-      setOpen(false);
+      // Turning it on tries a withdrawal right away, so the balance moves.
+      qc.invalidateQueries({ queryKey: withdrawAccountsQuery.queryKey });
+      setSaved(data);
     },
   });
+
+  const onOpenChange = (next: boolean) => {
+    setOpen(next);
+    if (!next) {
+      setSaved(null);
+      save.reset();
+    }
+  };
 
   if (!settings.data) return null;
   const { enabled, withdrawalAccountId, schedule } = settings.data;
@@ -47,26 +64,53 @@ export function AutoWithdraw() {
   return (
     <>
       <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
-        <span className="sm:hidden">{enabled ? "Auto · On" : "Auto"}</span>
-        <span className="hidden sm:inline">
+        <Banknote className="sm:hidden" />
+        <span className="sr-only sm:not-sr-only">
           {enabled
             ? `Auto-withdraw · ${SCHEDULE_PRESETS.find((p) => p.spec === schedule)?.label ?? "Custom"}`
             : "Auto-withdraw"}
         </span>
       </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent>
-          <SetupView
-            enabled={enabled}
-            currentAccountId={withdrawalAccountId}
-            currentSchedule={schedule}
-            pending={save.isPending}
-            error={save.error}
-            onSave={save.mutate}
-            onCancel={() => setOpen(false)}
-          />
+          {saved ? (
+            <SavedView saved={saved} onDone={() => onOpenChange(false)} />
+          ) : (
+            <SetupView
+              enabled={enabled}
+              currentAccountId={withdrawalAccountId}
+              currentSchedule={schedule}
+              pending={save.isPending}
+              error={save.error}
+              onSave={save.mutate}
+              onCancel={() => onOpenChange(false)}
+            />
+          )}
         </DialogContent>
       </Dialog>
+    </>
+  );
+}
+
+function SavedView({ saved, onDone }: { saved: WithdrawSettings; onDone: () => void }) {
+  const next = useQuery({ ...withdrawNextQuery(saved.schedule), enabled: saved.enabled });
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>{saved.enabled ? "Auto-withdraw is on" : "Auto-withdraw is off"}</DialogTitle>
+        <DialogDescription role="status">
+          {saved.enabled
+            ? `Saved. It runs ${scheduleDescription(saved.schedule)}${
+                next.data?.[0] ? `; next on ${fmtRun(next.data[0])}` : ""
+              }. A withdrawal was also tried just now; it goes through only if the balance is over the minimum.`
+            : "Saved. Nothing will be withdrawn automatically until you turn it back on."}
+        </DialogDescription>
+      </DialogHeader>
+      <DialogFooter>
+        <Button onClick={onDone} autoFocus>
+          Done
+        </Button>
+      </DialogFooter>
     </>
   );
 }
@@ -93,9 +137,13 @@ function SetupView({
   onCancel: () => void;
 }) {
   const accounts = useQuery(withdrawAccountsQuery);
+  // Opening the dialog is how you turn it on, so the switch starts on; when
+  // it is already on, switching off only takes effect on Save.
+  const [on, setOn] = useState(true);
   const [picked, setPicked] = useState(currentAccountId);
   // Default to the first usable account (banks sort first) until the user picks.
   const selected = picked || accounts.data?.accounts.find(accountReady)?.id || "";
+  const account = accounts.data?.accounts.find((a) => a.id === selected);
 
   // A stored schedule that isn't one of the presets was hand-written, so open
   // straight into the cron editor with it.
@@ -103,107 +151,178 @@ function SetupView({
     !SCHEDULE_PRESETS.some((p) => p.spec === currentSchedule),
   );
   const [spec, setSpec] = useState(currentSchedule);
+  const next = useQuery({ ...withdrawNextQuery(spec.trim()), enabled: on && spec.trim() !== "" });
+  const specError = next.isError && "invalid" in next.error && next.error.invalid ? next.error.message : null;
+  const previewDown = next.isError && !specError;
+
+  const changed = on !== enabled || (on && (selected !== currentAccountId || spec.trim() !== currentSchedule));
+  const canSave =
+    changed && !pending && (!on || (selected !== "" && spec.trim() !== "" && !specError));
+
+  const balance = accounts.data?.availableBalance;
+  const minimum = accounts.data?.minimumBalance;
 
   return (
     <>
       <DialogHeader>
         <DialogTitle>Auto-withdraw</DialogTitle>
         <DialogDescription>
-          {accounts.data
-            ? `Available now: ${fmtCents(accounts.data.availableBalance)} · runs ${custom ? "on the cron schedule below" : scheduleDescription(spec)} once your balance is over ${fmtCents(accounts.data.minimumBalance)}.`
-            : "Automatically withdraw your Railway earnings to the account you choose."}
+          Sends your Railway balance to the account you choose, on a schedule, whenever it is over the
+          minimum
+          {minimum != null ? ` of ${fmtCents(minimum)}` : ""}.
         </DialogDescription>
       </DialogHeader>
 
-      <AccountList query={accounts} selected={selected} onSelect={setPicked} />
+      <label className="flex cursor-pointer items-center justify-between gap-3 border p-3">
+        <span className="text-sm font-medium">Withdraw automatically</span>
+        <input
+          type="checkbox"
+          role="switch"
+          checked={on}
+          onChange={(e) => setOn(e.target.checked)}
+          className="size-5 cursor-pointer"
+        />
+      </label>
 
-      <div className="grid gap-2">
-        <span className="text-sm font-medium">Frequency</span>
-        <div role="radiogroup" className="grid grid-cols-4 gap-1 rounded-lg border p-1">
-          {SCHEDULE_PRESETS.map((p) => {
-            const active = !custom && spec === p.spec;
-            return (
+      {on && (
+        <>
+          <AccountList query={accounts} selected={selected} onSelect={setPicked} />
+
+          <div className="grid gap-2">
+            <span id="frequency-label" className="text-sm font-medium">
+              Frequency
+            </span>
+            <div
+              role="radiogroup"
+              aria-labelledby="frequency-label"
+              className="grid grid-cols-4 gap-1 border p-1"
+            >
+              {SCHEDULE_PRESETS.map((p) => {
+                const active = !custom && spec === p.spec;
+                return (
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    key={p.spec}
+                    onClick={() => {
+                      setCustom(false);
+                      setSpec(p.spec);
+                    }}
+                    className={cn(
+                      "h-8 cursor-pointer px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-10",
+                      active
+                        ? "bg-secondary font-medium"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
               <button
                 type="button"
                 role="radio"
-                aria-checked={active}
-                key={p.spec}
-                onClick={() => {
-                  setCustom(false);
-                  setSpec(p.spec);
-                }}
+                aria-checked={custom}
+                onClick={() => setCustom(true)}
                 className={cn(
-                  "cursor-pointer rounded-md px-2 py-1.5 text-sm",
-                  active
-                    ? "bg-muted font-medium"
+                  "h-8 cursor-pointer px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-10",
+                  custom
+                    ? "bg-secondary font-medium"
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                {p.label}
+                Custom
               </button>
-            );
-          })}
-          <button
-            type="button"
-            role="radio"
-            aria-checked={custom}
-            onClick={() => setCustom(true)}
-            className={cn(
-              "cursor-pointer rounded-md px-2 py-1.5 text-sm",
-              custom
-                ? "bg-muted font-medium"
-                : "text-muted-foreground hover:text-foreground",
+            </div>
+            {custom && (
+              <>
+                <input
+                  value={spec}
+                  onChange={(e) => setSpec(e.target.value)}
+                  placeholder="0 8 * * *"
+                  spellCheck={false}
+                  aria-label="Cron schedule"
+                  aria-invalid={specError ? true : undefined}
+                  aria-describedby="cron-help"
+                  className="h-9 border border-input bg-transparent px-3 font-mono text-base outline-none focus-visible:ring-2 focus-visible:ring-ring aria-invalid:border-destructive sm:text-sm"
+                />
+                <p id="cron-help" className="text-xs text-muted-foreground">
+                  Cron format in UTC: minute, hour, day of month, month, day of
+                  week — e.g. <code>0 8 * * 5</code> is Fridays at 08:00.
+                </p>
+              </>
             )}
-          >
-            Custom
-          </button>
-        </div>
-        {custom && (
+          </div>
+        </>
+      )}
+
+      <p aria-live="polite" className="border-t pt-3 text-sm">
+        {!on ? (
+          enabled ? (
+            "Saving turns auto-withdraw off. Nothing is withdrawn until you turn it back on."
+          ) : (
+            "Auto-withdraw stays off."
+          )
+        ) : specError ? (
+          <span className="text-destructive">{specError}</span>
+        ) : previewDown ? (
+          <span className="text-muted-foreground">
+            Couldn&apos;t preview the next run right now. You can still save; the schedule is checked
+            when it is saved.
+          </span>
+        ) : next.data && next.data.length === 0 ? (
+          <span className="text-destructive">This schedule never runs.</span>
+        ) : (
           <>
-            <input
-              value={spec}
-              onChange={(e) => setSpec(e.target.value)}
-              placeholder="0 8 * * *"
-              spellCheck={false}
-              aria-label="Cron schedule"
-              className="h-9 rounded-md border border-input bg-transparent px-3 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-            <p className="text-xs text-muted-foreground">
-              Cron format in UTC: minute, hour, day of month, month, day of
-              week — e.g. <code>0 8 * * 5</code> is Fridays at 08:00.
-            </p>
+            {next.data?.[0] ? (
+              <>
+                Next run <strong className="font-semibold">{fmtRun(next.data[0])}</strong>
+              </>
+            ) : (
+              "Checking the schedule…"
+            )}
+            {balance != null && minimum != null && (
+              <>
+                {" "}
+                ·{" "}
+                {/* Mirrors runAutoWithdraw: strictly over the minimum, sent
+                    in whole $5 steps. */}
+                {balance > minimum
+                  ? `${fmtCents(Math.floor(balance / 500) * 500)} of ${fmtCents(balance)} to ${account ? accountLabel(account) : "the chosen account"} (whole $5 steps)`
+                  : `skipped unless the balance (now ${fmtCents(balance)}) is over ${fmtCents(minimum)}`}
+              </>
+            )}
+            {!enabled && balance != null && minimum != null && balance > minimum && (
+              <>. Turning it on also tries a withdrawal right away.</>
+            )}
           </>
         )}
-      </div>
+      </p>
 
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error.message}
+        </p>
+      )}
 
       <DialogFooter>
-        {enabled ? (
-          <Button
-            variant="ghost"
-            onClick={() => onSave({ enabled: false })}
-            disabled={pending}
-          >
-            Turn off
-          </Button>
-        ) : (
-          <Button variant="ghost" onClick={onCancel} disabled={pending}>
-            Cancel
-          </Button>
-        )}
+        <Button variant="ghost" onClick={onCancel} disabled={pending}>
+          Cancel
+        </Button>
         <Button
+          variant={enabled && !on ? "destructive" : "default"}
           onClick={() =>
-            onSave({
-              enabled: true,
-              withdrawalAccountId: selected,
-              schedule: spec.trim(),
-            })
+            onSave(
+              on
+                ? { enabled: true, withdrawalAccountId: selected, schedule: spec.trim() }
+                : { enabled: false },
+            )
           }
-          disabled={!selected || !spec.trim() || pending}
+          disabled={!canSave}
         >
           {pending && <Loader2 className="size-4 animate-spin" />}
-          {enabled ? "Save" : "Enable auto-withdraw"}
+          {!enabled ? "Turn on auto-withdraw" : on ? "Save changes" : "Turn off auto-withdraw"}
         </Button>
       </DialogFooter>
     </>
@@ -222,8 +341,8 @@ function AccountList({
   if (query.isPending) {
     return (
       <div className="space-y-2">
-        <Skeleton className="h-14 w-full rounded-lg" />
-        <Skeleton className="h-14 w-full rounded-lg" />
+        <Skeleton className="h-14 w-full" />
+        <Skeleton className="h-14 w-full" />
       </div>
     );
   }
@@ -265,7 +384,7 @@ function AccountList({
             disabled={!usable}
             onClick={() => onSelect(a.id)}
             className={cn(
-              "flex items-center gap-3 rounded-lg border p-3 text-left",
+              "flex items-center gap-3 border p-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
               usable ? "cursor-pointer hover:bg-muted/50" : "opacity-60",
               checked && "border-primary",
             )}

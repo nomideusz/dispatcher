@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, ChevronRight, CircleAlert } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { TemplateProjects } from "~/components/template-projects";
 import { Button } from "~/components/ui/button";
 import { fmtCents, fmtDay, fmtLongDay, fmtNum, fmtUsd } from "~/lib/format";
@@ -72,6 +72,13 @@ export function TemplatesTable({
     key: "lifetimeCents",
     desc: true,
   });
+  // A held name jumps to #t-<id>; a filter that hides the row would make
+  // the jump land nowhere.
+  useEffect(() => {
+    const show = () => window.location.hash.startsWith("#t-") && setFilter("all");
+    window.addEventListener("hashchange", show);
+    return () => window.removeEventListener("hashchange", show);
+  }, []);
 
   const payers = new Map(byTemplate?.map((p) => [p.templateId, p]));
   const all: Row[] = templates.map((t) => ({
@@ -122,6 +129,7 @@ export function TemplatesTable({
           <Button
             key={f}
             size="xs"
+            aria-pressed={f === filter}
             variant={f === filter ? "secondary" : "ghost"}
             onClick={() => setFilter(f)}
           >
@@ -135,8 +143,10 @@ export function TemplatesTable({
 
       <div className="scroll-fade max-h-[36rem] overflow-auto">
         <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b text-left text-xs text-muted-foreground">
+          {/* The rule rides on the sticky cells; a row border scrolls away. */}
+          <thead className="[&_th]:shadow-[inset_0_-1px_0_var(--border)]">
+            <tr className="text-left text-xs text-muted-foreground">
+              <th className="sticky top-0 z-10 bg-card pr-3 pb-2 font-medium max-sm:hidden">Code</th>
               {header("name", "Template", false)}
               <th className="sticky top-0 z-10 bg-card pb-2 pl-3 font-medium whitespace-nowrap">
                 Last {dates.length}d
@@ -187,7 +197,13 @@ function TemplateRow({
   const p = r.payers;
   return (
     <>
-      <tr className={open ? "bg-muted/40" : "border-b border-border/50 last:border-0"}>
+      <tr id={`t-${r.templateId}`} className={open ? "bg-muted/40" : "border-b border-border/60 last:border-0"}>
+        <td
+          className="max-w-28 truncate py-2 pr-3 align-top font-mono text-xs text-muted-foreground max-sm:hidden"
+          title={r.code || undefined}
+        >
+          {r.code || "—"}
+        </td>
         <td className="max-w-64 py-2 pr-3">
           <div className="flex items-start gap-1">
             {/* The name links to Railway, so expanding gets its own control. */}
@@ -207,7 +223,7 @@ function TemplateRow({
                   href={`https://railway.com/deploy/${r.code}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="block truncate font-medium hover:underline"
+                  className="block truncate font-medium underline-offset-3 hover:underline"
                   title={r.name}
                 >
                   {r.name}
@@ -277,7 +293,7 @@ function TemplateRow({
         <tr id={panelId} className="border-b border-border/50 bg-muted/40 last:border-0">
           {/* Sticky to the scroller's left edge so the charts stay in view
               while the wide table is scrolled sideways. */}
-          <td colSpan={14} className="p-0">
+          <td colSpan={15} className="p-0">
             <div className="sticky left-0 w-[min(56rem,calc(100vw-4rem))] px-5 pt-2 pb-6">
               <TemplateProjects templateId={r.templateId} />
             </div>
@@ -299,7 +315,7 @@ function KindSelect({ r }: { r: Row }) {
       value={kind}
       disabled={setKind.isPending}
       onChange={(e) => setKind.mutate({ templateId: r.templateId, kind: e.target.value as Kind | "" })}
-      className={`-mx-0.5 cursor-pointer appearance-none rounded-sm bg-transparent px-0.5 outline-none field-sizing-content hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${kind ? "" : "text-(--viz-critical)"}`}
+      className={`-mx-0.5 cursor-pointer appearance-none rounded-sm bg-transparent px-0.5 outline-none field-sizing-content hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${kind ? "" : "text-(--viz-caution)"}`}
     >
       <option value="">Unsorted</option>
       {KINDS.map((k) => (
@@ -345,9 +361,12 @@ function Health({ r }: { r: Row }) {
           support
         </span>
       )}
-      <span className={r.health != null && r.health < 50 ? "text-(--viz-critical)" : undefined}>
-        {r.health == null ? "—" : `${r.health.toFixed(0)}%`}
-      </span>
+      {/* The same rule that puts a template in the Held tray. */}
+      {r.activeProjects > 0 && r.health != null && r.health < 50 ? (
+        <span className="font-semibold text-(--viz-critical)">held · {r.health.toFixed(0)}%</span>
+      ) : (
+        <span>{r.health == null ? "—" : `${r.health.toFixed(0)}%`}</span>
+      )}
     </span>
   );
 }

@@ -44,6 +44,7 @@ func main() {
 	mux.Handle("GET /api/withdraw/settings", auth(handleWithdrawSettings(db)))
 	mux.Handle("POST /api/withdraw/settings", auth(handleUpdateWithdrawSettings(db)))
 	mux.Handle("GET /api/withdraw/accounts", auth(handleWithdrawAccounts(db)))
+	mux.Handle("GET /api/withdraw/next", auth(handleWithdrawNext()))
 	mux.Handle("GET /api/notify/targets", auth(handleNotificationTargets(db)))
 	mux.Handle("POST /api/notify/targets", auth(handleCreateNotificationTarget(db)))
 	mux.Handle("PUT /api/notify/targets/{id}", auth(handleUpdateNotificationTarget(db)))

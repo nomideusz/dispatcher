@@ -64,6 +64,7 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
             <Button
               key={v}
               size="xs"
+              aria-pressed={view === v}
               variant={view === v ? "secondary" : "ghost"}
               onClick={() => {
                 setView(v);
@@ -113,7 +114,7 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
               <th className="pb-2 pl-3" />
             </tr>
           </thead>
-          <tbody className="tabular-nums">
+          <tbody>
             {rows.slice(0, limit).map((g) => (
               <CandidateRow key={g.key} g={g} view={view} maxRecent={maxRecent} />
             ))}
@@ -170,7 +171,7 @@ function CandidateRow({ g, view, maxRecent }: { g: CandidateGroup; view: View; m
       </td>
       <td className="py-2 pl-3">
         <div className="flex items-center gap-2">
-          <span className="w-12 text-right">{fmtNum(g.recent)}</span>
+          <span className="w-12 text-right tabular-nums">{fmtNum(g.recent)}</span>
           <span className="h-1.5 w-24 rounded-full bg-muted">
             <span
               className="block h-full rounded-full bg-(--chart-3)"
@@ -179,12 +180,12 @@ function CandidateRow({ g, view, maxRecent }: { g: CandidateGroup; view: View; m
           </span>
         </div>
       </td>
-      <td className="py-2 pl-3 text-right">{fmtNum(g.active)}</td>
-      <td className="py-2 pl-3 text-right text-muted-foreground">{fmtNum(g.rivals)}</td>
+      <td className="py-2 pl-3 text-right tabular-nums">{fmtNum(g.active)}</td>
+      <td className="py-2 pl-3 text-right tabular-nums text-muted-foreground">{fmtNum(g.rivals)}</td>
       <td className="max-w-56 py-2 pl-3 text-xs whitespace-nowrap text-muted-foreground">
         {l.name ? (
           <div className="truncate">
-            <span className={weak ? "font-medium text-(--viz-critical)" : ""}>
+            <span className={weak ? "font-medium text-(--viz-caution)" : ""}>
               {l.health == null ? "—" : `${Math.round(l.health)}%`}
             </span>{" "}
             · {fmtNum(l.active)} active · {monthFmt.format(new Date(l.createdAt))}
@@ -286,7 +287,7 @@ function Originals({ groups, templates }: { groups: CandidateGroup[]; templates:
 function Copies({ copies }: { copies: MarketCopy[] }) {
   if (copies.length === 0) return null;
   return (
-    <div className="space-y-2 border-b pb-5">
+    <div id="copies" className="scroll-mt-24 space-y-2 border-b pb-5">
       <div className="text-sm font-medium text-(--viz-critical)">
         {copies.length === 1 ? "1 template by someone else builds" : `${fmtNum(copies.length)} templates by others build`} from our code
       </div>

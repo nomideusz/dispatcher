@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"slices"
+	"time"
 
 	"github.com/robfig/cron/v3"
 	"gorm.io/gorm"
@@ -20,6 +21,36 @@ func handleWithdrawSettings(db *gorm.DB) http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusOK, s)
 	}
+}
+
+// handleWithdrawNext previews a cron spec with the parser the job runs on:
+// the next three runs in UTC, or why the spec is rejected. The setup dialog
+// shows it before anything is saved.
+func handleWithdrawNext() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		runs, err := nextRuns(r.URL.Query().Get("schedule"), time.Now(), 3)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid schedule: " + err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string][]time.Time{"next": runs})
+	}
+}
+
+func nextRuns(spec string, from time.Time, n int) ([]time.Time, error) {
+	schedule, err := cron.ParseStandard(spec)
+	if err != nil {
+		return nil, err
+	}
+	runs := make([]time.Time, 0, n)
+	for t := from.UTC(); len(runs) < n; {
+		t = schedule.Next(t)
+		if t.IsZero() {
+			break
+		}
+		runs = append(runs, t)
+	}
+	return runs, nil
 }
 
 type withdrawAccountsResponse struct {

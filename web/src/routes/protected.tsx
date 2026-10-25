@@ -1,5 +1,5 @@
 import { ChevronDown, LogOut, RefreshCw } from "lucide-react";
-import { Link, Outlet, useRevalidator } from "react-router";
+import { Link, NavLink, Outlet, useLocation, useRevalidator } from "react-router";
 import { AutoWithdraw } from "~/components/auto-withdraw-dialog";
 import { Wordmark } from "~/components/brand";
 import { NotificationsDialog } from "~/components/notifications-dialog";
@@ -34,7 +34,7 @@ export default function Protected({ loaderData }: Route.ComponentProps) {
   if (!loaderData.user) {
     return (
       <main className="flex min-h-screen items-center justify-center p-6">
-        <Card className="w-full max-w-sm">
+        <Card className="w-full max-w-sm border bg-popover p-6">
           <CardHeader>
             <CardTitle>
               <Wordmark />
@@ -98,8 +98,17 @@ function RefreshButton() {
   );
 }
 
+const PAGES = [
+  ["/", "Today"],
+  ["/decide", "Decide"],
+  ["/payouts", "Payouts"],
+] as const;
+
 function Header({ user }: { user: User }) {
   const revalidator = useRevalidator();
+  // The range rides along between pages.
+  const { search } = useLocation();
+  const days = new URLSearchParams(search).get("days");
 
   const signOut = async () => {
     await api.post("auth/logout", { throwHttpErrors: false });
@@ -107,22 +116,36 @@ function Header({ user }: { user: User }) {
   };
 
   return (
-    <header className="sticky top-0 z-20 border-b bg-background/85 backdrop-blur-sm">
-      <div className="shell flex items-center justify-between py-3">
-        <Link to="/" className="text-foreground">
-          <Wordmark />
+    <header className="bar sticky top-0 z-20">
+      <div className="shell flex h-14 items-center gap-4 sm:gap-10">
+        <Link to={{ pathname: "/", search: days ? `?days=${days}` : "" }} aria-label="Dispatcher, today">
+          <Wordmark compact />
         </Link>
-        <div className="flex items-center gap-3">
+        <nav aria-label="Pages" className="flex h-full gap-4 text-sm sm:gap-7">
+          {PAGES.map(([to, label]) => (
+            <NavLink
+              key={to}
+              to={{ pathname: to, search: days ? `?days=${days}` : "" }}
+              end
+              className="flex items-center border-y-[3px] border-transparent font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:border-b-current aria-[current=page]:text-foreground"
+            >
+              {label}
+            </NavLink>
+          ))}
+        </nav>
+        <div className="ml-auto flex items-center sm:gap-2">
           <RefreshButton />
           <NotificationsDialog />
           <AutoWithdraw />
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="ghost" size="sm" />}>
+            <DropdownMenuTrigger
+              render={<Button variant="ghost" size="sm" aria-label={`Account: ${user.name}`} />}
+            >
               {user.avatar && (
                 <img src={user.avatar} alt="" className="size-5 rounded-full" />
               )}
-              {user.name}
-              <ChevronDown className="text-muted-foreground" />
+              <span className="hidden max-w-32 truncate md:inline">{user.name}</span>
+              <ChevronDown className="text-muted-foreground max-sm:hidden" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuGroup>

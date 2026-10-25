@@ -220,7 +220,7 @@ function DotTip({ active, payload }: { active?: boolean; payload?: { payload: Do
     ["Services", fmtNum(d.services)],
   ];
   return (
-    <div className="grid min-w-48 gap-1.5 rounded-lg border bg-background px-2.5 py-1.5 text-xs shadow-xl">
+    <div className="grid min-w-48 gap-1.5 rounded-lg border bg-background px-2.5 py-1.5 text-xs">
       <div className="font-medium">{d.name}</div>
       {rows.map(([k, v]) => (
         <div key={k} className="flex justify-between gap-4">

@@ -49,6 +49,7 @@ export function UpgradeQueue() {
             <Button
               key={f}
               size="xs"
+              aria-pressed={f === filter}
               variant={f === filter ? "secondary" : "ghost"}
               onClick={() => setFilter(f)}
             >
@@ -158,7 +159,7 @@ function ServiceRow({ u, template, earnings }: { u: ServiceUpgrade; template: st
       <td className="py-1.5 pl-3 font-mono text-xs">
         {u.tag}
         {(u.haBlock === "tag" || u.haBlock === "pinned") && (
-          <span className="font-sans text-(--viz-critical)" title={`${u.ha} cannot convert this tag`}>
+          <span className="font-sans text-(--viz-caution)" title={`${u.ha} cannot convert this tag`}>
             {" "}(no HA)
           </span>
         )}
@@ -170,7 +171,7 @@ function ServiceRow({ u, template, earnings }: { u: ServiceUpgrade; template: st
         {u.major}
         {u.major && u.ha && (u.haBlock === "" || u.haBlock === "major") && (
           <span
-            className={`font-sans ${u.haBlock === "major" ? "text-(--viz-critical)" : ""}`}
+            className={`font-sans ${u.haBlock === "major" ? "text-(--viz-caution)" : ""}`}
             title={u.haBlock === "major" ? `${u.ha} does not support this major yet` : `${u.ha} supports this major`}
           >
             {u.haBlock === "major" ? " (drops HA)" : " (HA ok)"}
@@ -200,7 +201,7 @@ function LineCell({ u }: { u: ServiceUpgrade }) {
     case "minor":
     case "patch":
       return (
-        <span className={u.behind === "minor" ? "text-(--viz-critical)" : undefined}>
+        <span className={u.behind === "minor" ? "text-(--viz-caution)" : undefined}>
           {u.latest} <span className="font-sans text-muted-foreground">({u.behind})</span>
         </span>
       );

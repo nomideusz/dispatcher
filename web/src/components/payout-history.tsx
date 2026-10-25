@@ -109,6 +109,7 @@ export function PayoutHistory({ days }: { days: number }) {
             {hasPayers && (
               <Button
                 size="xs"
+                aria-pressed={current === "payers"}
                 variant={current === "payers" ? "secondary" : "ghost"}
                 onClick={() => setView("payers")}
               >
@@ -118,6 +119,7 @@ export function PayoutHistory({ days }: { days: number }) {
             )}
             <Button
               size="xs"
+              aria-pressed={current === "ledger"}
               variant={current === "ledger" ? "secondary" : "ghost"}
               onClick={() => setView("ledger")}
             >
@@ -199,6 +201,7 @@ export function PayoutHistory({ days }: { days: number }) {
                       <Button
                         key={s}
                         size="xs"
+                        aria-pressed={s === payerSort}
                         variant={s === payerSort ? "secondary" : "ghost"}
                         onClick={() => setPayerSort(s)}
                       >

@@ -1,14 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Link } from "react-router";
 import { Delta } from "~/components/delta";
-import { PayoutHistory } from "~/components/payout-history";
-import { RangeToggle, type RangeDays } from "~/components/range-toggle";
+import { RangeToggle, type RangeDays, useRangeDays } from "~/components/range-toggle";
 import { TemplateFunnel } from "~/components/template-funnel";
 import { TemplateScatter } from "~/components/template-scatter";
 import { TemplatesTable } from "~/components/templates-table";
 import { Earnings } from "~/components/earnings";
-import { WhatToPublish } from "~/components/what-to-publish";
-import { Candidates } from "~/components/candidates";
+import { PageHeader, Section } from "~/components/page";
 import { behindTemplateCount, UpgradeQueue } from "~/components/upgrade-queue";
 import { Button } from "~/components/ui/button";
 import {
@@ -20,7 +19,7 @@ import {
   CardTitle,
 } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
-import { dayDate, dayKey, fmtAgo, fmtCents, fmtDay, fmtNum, shortNames } from "~/lib/format";
+import { dayDate, dayKey, fmtAgo, fmtCents, fmtDay, fmtNum, shortName, shortNames } from "~/lib/format";
 import { cn } from "~/lib/utils";
 import {
   qualifiesForBonus,
@@ -29,6 +28,7 @@ import {
   timelineQuery,
   useRefreshAnalytics,
 } from "~/queries/analytics";
+import { candidatesQuery } from "~/queries/candidates";
 import {
   type PayoutHistory as PayoutHistoryData,
   type PayoutTemplateTotal,
@@ -44,57 +44,41 @@ import {
 import type { Route } from "./+types/analytics";
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "Dispatcher" }];
+  return [{ title: "Today · Dispatcher" }];
 }
 
-export default function Analytics() {
-  const [days, setDays] = useState<RangeDays>(30);
+export default function Today() {
+  const [days, setDays] = useRangeDays();
   const timeline = useQuery(timelineQuery(days));
   const payouts = useQuery(payoutHistoryQuery(days));
   const data = timeline.data;
   const payers = new Map(payouts.data?.byTemplate.map((t) => [t.templateId, t.payers]));
 
   return (
-    <main className="viz shell space-y-5 py-6">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="font-heading text-2xl font-semibold tracking-tight">Kickback</h1>
-          <p className="text-sm text-muted-foreground">
-            {data
-              ? `Sampled ${fmtAgo(data.sampledAt, new Date().toISOString())} ago · tracking since ${fmtDay(data.trackedSince)}`
-              : "What your templates earn, who deploys them, and when"}
-          </p>
-        </div>
-        {data && (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <nav aria-label="Sections" className="flex flex-wrap gap-x-3 gap-y-1 text-sm">
-              {SECTIONS.map(([id, label]) => (
-                <a
-                  key={id}
-                  href={`#${id}`}
-                  className="rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {label}
-                </a>
-              ))}
-            </nav>
-            <RangeToggle value={days} onChange={setDays} />
-          </div>
-        )}
-      </header>
+    <main className="viz shell space-y-6 py-6">
+      <PageHeader
+        title="Today"
+        sub={
+          data
+            ? `Sampled ${fmtAgo(data.sampledAt, new Date().toISOString())} ago · tracking since ${fmtDay(data.trackedSince)}`
+            : "What your templates earn, what needs you, and what to do next"
+        }
+      >
+        {data && <RangeToggle value={days} onChange={setDays} />}
+      </PageHeader>
 
       {timeline.isPending && <DashboardSkeleton />}
       {timeline.isError && (
-        <p className="text-sm text-(--viz-critical)">
-          Failed to load analytics — is the API up?
+        <p role="alert" className="text-sm text-(--viz-critical)">
+          Couldn&apos;t load analytics. Check that the API is running, then reload.
         </p>
       )}
       {timeline.isSuccess && !data && <EmptyState />}
 
       {data && (
         <>
-          <KpiBand data={data} payouts={payouts.data} />
-          <Attention data={data} payouts={payouts.data} />
+          <Docket data={data} payouts={payouts.data} />
+          <Held data={data} payouts={payouts.data} />
 
           <Section
             id="earnings"
@@ -109,35 +93,13 @@ export default function Analytics() {
           </Section>
 
           <Section
-            id="publish"
-            title="What to publish"
-            text="What kind of template, how big and how old, against what it earns and how soon it starts paying."
-          >
-            <Card>
-              <CardContent>
-                <WhatToPublish data={data} />
-              </CardContent>
-            </Card>
-          </Section>
-
-          <Section
-            id="candidates"
-            title="Candidates"
-            text="What people deploy on Railway, one row per app, against what we already publish. Shortlist what to build next; skip what never will be."
-          >
-            <Card>
-              <CardContent>
-                <Candidates templates={data.templates} />
-              </CardContent>
-            </Card>
-          </Section>
-
-          <Section
             id="templates"
             title="Templates"
-            text="Which templates reach people and which of those pay, then every template to act on."
+            text="Every template as a consignment to act on, its upgrades, then which ones reach people and which of those pay."
           >
-            <div className="grid gap-4 lg:grid-cols-12">
+            <TemplatesCard data={data} days={days} byTemplate={payouts.data?.byTemplate} />
+
+            <div className="grid gap-x-8 border-t pt-2 lg:grid-cols-12">
               <Card className="lg:col-span-7">
                 <CardHeader>
                   <CardTitle>Reach vs money</CardTitle>
@@ -151,7 +113,7 @@ export default function Analytics() {
                   <TemplateScatter templates={data.templates} payers={payers} />
                 </CardContent>
               </Card>
-              <Card className="lg:col-span-5">
+              <Card className="max-lg:border-t lg:col-span-5 lg:border-l lg:pl-8">
                 <CardHeader>
                   <CardTitle>From deploy to kickback</CardTitle>
                   <CardDescription>What Railway counts, widest first, across all templates</CardDescription>
@@ -164,56 +126,10 @@ export default function Analytics() {
                 </CardContent>
               </Card>
             </div>
-
-            <TemplatesCard
-              data={data}
-              days={days}
-              byTemplate={payouts.data?.byTemplate}
-            />
-          </Section>
-
-          <Section
-            id="payouts"
-            title="Payouts"
-            text="Money that left Railway as cash or credits, who pays it, and every entry."
-          >
-            <PayoutHistory days={days} />
           </Section>
         </>
       )}
     </main>
-  );
-}
-
-const SECTIONS = [
-  ["earnings", "Earnings"],
-  ["publish", "What to publish"],
-  ["candidates", "Candidates"],
-  ["templates", "Templates"],
-  ["payouts", "Payouts"],
-] as const;
-
-function Section({
-  id,
-  title,
-  text,
-  children,
-}: {
-  id: (typeof SECTIONS)[number][0];
-  title: string;
-  text: string;
-  children: ReactNode;
-}) {
-  return (
-    <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-20 space-y-3 pt-3">
-      <div>
-        <h2 id={`${id}-title`} className="font-heading text-lg font-semibold tracking-tight">
-          {title}
-        </h2>
-        <p className="text-sm text-muted-foreground">{text}</p>
-      </div>
-      {children}
-    </section>
   );
 }
 
@@ -231,10 +147,26 @@ function TemplatesCard({
 }) {
   const [view, setView] = useState<"templates" | "upgrades">("templates");
   const upgrades = useQuery(upgradesQuery);
+
+  // Held names link to #t-<id> rows and the upgrades count to #upgrades;
+  // switch to the view that holds the target, then bring it into view.
+  useEffect(() => {
+    const follow = () => {
+      const hash = window.location.hash.slice(1);
+      if (hash !== "upgrades" && !hash.startsWith("t-")) return;
+      setView(hash === "upgrades" ? "upgrades" : "templates");
+      requestAnimationFrame(() =>
+        document.getElementById(hash)?.scrollIntoView({ block: hash === "upgrades" ? "start" : "center" }),
+      );
+    };
+    follow();
+    window.addEventListener("hashchange", follow);
+    return () => window.removeEventListener("hashchange", follow);
+  }, []);
   const behind = upgrades.data ? behindTemplateCount(upgrades.data) : null;
 
   return (
-    <Card>
+    <Card id="upgrades" className="scroll-mt-20">
       <CardHeader>
         <CardTitle>All templates</CardTitle>
         <CardDescription>
@@ -245,6 +177,7 @@ function TemplatesCard({
         <CardAction role="group" aria-label="Templates view">
           <Button
             size="xs"
+            aria-pressed={view === "templates"}
             variant={view === "templates" ? "secondary" : "ghost"}
             onClick={() => setView("templates")}
           >
@@ -252,6 +185,7 @@ function TemplatesCard({
           </Button>
           <Button
             size="xs"
+            aria-pressed={view === "upgrades"}
             variant={view === "upgrades" ? "secondary" : "ghost"}
             onClick={() => setView("upgrades")}
           >
@@ -277,7 +211,9 @@ function TemplatesCard({
   );
 }
 
-function KpiBand({
+/** The docket header: today's takings, the range, the balance and whether
+ * auto-withdraw will pay it, and the catalog. Each figure appears once. */
+function Docket({
   data,
   payouts,
 }: {
@@ -294,7 +230,6 @@ function KpiBand({
   const last = points[points.length - 1];
   const activeNow = templates.reduce((s, t) => s + t.activeProjects, 0);
   const runningNow = templates.reduce((s, t) => s + (t.running ?? 0), 0);
-  const projectsNow = templates.reduce((s, t) => s + t.projects, 0);
   const activeChange = first?.activeProjects != null ? activeNow - first.activeProjects : null;
   const since = points[0]?.date ?? "";
   const added = templates.filter((t) => t.publishedAt && dayKey(t.publishedAt) >= since).length;
@@ -319,202 +254,263 @@ function KpiBand({
   const autoAccount = auto && accounts.data?.accounts.find((a) => a.id === auto.withdrawalAccountId);
 
   return (
-    <section className="grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-foreground/10 ring-1 ring-foreground/10 md:grid-cols-3 xl:grid-cols-6 [&>*]:bg-card">
-      <BandCell label="Today · UTC">
-        <BandValue value={fmtCents(today?.earnedCents ?? 0)} />
-        {yesterday && (
-          <p className="text-xs text-muted-foreground">{fmtCents(yesterday.earnedCents)} yesterday</p>
-        )}
-        <p className="line-clamp-2 text-xs text-muted-foreground">
+    <section
+      aria-label="Docket"
+      className="grid grid-cols-2 gap-px border bg-border lg:grid-cols-4 [&>*]:bg-background"
+    >
+      <DocketCell label="Today · UTC" value={fmtCents(today?.earnedCents ?? 0)}>
+        {yesterday && <p>{fmtCents(yesterday.earnedCents)} yesterday</p>}
+        <p className="line-clamp-2">
           {earnedToday.length === 0
-            ? "Nothing yet"
+            ? "Nothing yet today"
             : [
                 ...earnedToday.slice(0, 3).map(([n, c]) => `${n} ${fmtCents(c)}`),
                 ...(earnedToday.length > 3 ? [`+${earnedToday.length - 3} more`] : []),
               ].join(" · ")}
         </p>
-      </BandCell>
+      </DocketCell>
 
-      <BandCell label={`Earned · last ${w.days}d`}>
-        <BandValue value={fmtCents(w.earnedCents)} />
+      <DocketCell label={`Last ${w.days} days`} value={fmtCents(w.earnedCents)}>
         <Delta
           pct={
             comparable && w.previousEarnedCents > 0
               ? ((w.earnedCents - w.previousEarnedCents) / w.previousEarnedCents) * 100
               : null
           }
-          suffix={`vs previous ${w.days}d`}
+          suffix={`on the previous ${w.days}`}
         />
-        <p className="text-xs text-muted-foreground">{fmtCents(perDay)} a day</p>
-      </BandCell>
-
-      <BandCell label="Balance">
-        {accounts.isPending ? (
-          <Skeleton className="h-7 w-24" />
-        ) : (
-          <BandValue value={balance != null ? fmtCents(balance) : "—"} />
-        )}
-        {balance != null && (
-          <>
-            <div className="h-1.5 rounded-full bg-muted" title={`${fmtCents(minimum)} minimum withdrawal`}>
-              <div
-                className="h-full rounded-full bg-(--chart-1)"
-                style={{ width: `${Math.min(100, (balance / minimum) * 100)}%` }}
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {balance >= minimum
-                ? auto?.enabled
-                  ? [
-                      "Auto-withdraw",
-                      scheduleDescription(auto.schedule),
-                      autoAccount ? accountLabel(autoAccount) : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")
-                  : "Withdrawable · auto-withdraw is off"
-                : `${fmtCents(minimum - balance)} to the ${fmtCents(minimum)} minimum${
-                    perDay > 0 ? ` · ~${Math.ceil((minimum - balance) / perDay)} days at this pace` : ""
-                  }`}
-            </p>
-          </>
-        )}
-      </BandCell>
-
-      <BandCell label="Lifetime kickback">
-        <BandValue value={fmtCents(lifetime)} />
-        <p className="text-xs text-muted-foreground">
-          {payouts ? `${fmtCents(payouts.totals.lifetimeCents)} of it paid out` : " "}
+        <p>
+          {fmtCents(perDay)} a day · {fmtCents(lifetime)} lifetime
+          {payouts ? `, ${fmtCents(payouts.totals.lifetimeCents)} paid out` : ""}
         </p>
-      </BandCell>
+      </DocketCell>
 
-      <BandCell label="Active projects">
-        <BandValue value={fmtNum(activeNow)} />
-        {activeChange != null && first && (
-          <p className="text-xs">
-            <span className={activeChange >= 0 ? "text-(--viz-up)" : "text-(--viz-down)"}>
-              {activeChange >= 0 ? "+" : ""}
-              {fmtNum(activeChange)}
-            </span>{" "}
-            <span className="text-muted-foreground">since {fmtDay(first.date)}</span>
+      <DocketCell
+        label="Balance"
+        value={accounts.isPending ? null : balance != null ? fmtCents(balance) : "—"}
+      >
+        {balance != null && (
+          <p>
+            {balance > minimum
+              ? auto?.enabled
+                ? [
+                    "Auto-withdraw",
+                    scheduleDescription(auto.schedule),
+                    autoAccount ? accountLabel(autoAccount) : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")
+                : "Withdrawable · auto-withdraw is off"
+              : `${fmtCents(minimum - balance)} to the ${fmtCents(minimum)} minimum${
+                  perDay > 0 ? ` · ~${Math.ceil((minimum - balance) / perDay)} days at this pace` : ""
+                }`}
           </p>
         )}
-        <p className="text-xs text-muted-foreground">
-          {fmtNum(runningNow)} running · {fmtNum(projectsNow)} ever
-        </p>
-      </BandCell>
+        {accounts.isError && <p>Couldn&apos;t read the balance from Railway.</p>}
+      </DocketCell>
 
-      <BandCell label="Templates">
-        <BandValue value={fmtNum(last?.published ?? templates.length)} />
-        <p className="text-xs text-muted-foreground">
-          {fmtNum(earning)} earned in {w.days}d · {fmtNum(added)} added
+      <DocketCell label="Templates" value={fmtNum(templates.length)}>
+        {last?.published != null && last.published !== templates.length && (
+          <p>
+            {fmtNum(last.published)} published on Railway, {fmtNum(Math.abs(last.published - templates.length))}{" "}
+            {last.published > templates.length ? "not in the list below" : "no longer published"}
+          </p>
+        )}
+        <p>
+          {fmtNum(activeNow)} active projects
+          {activeChange != null && first && (
+            <>
+              {" "}
+              <span className={activeChange >= 0 ? "text-(--viz-up)" : "text-(--viz-down)"}>
+                ({activeChange >= 0 ? "+" : ""}
+                {fmtNum(activeChange)} since {fmtDay(first.date)})
+              </span>
+            </>
+          )}
         </p>
-        <p className="text-xs text-muted-foreground">{fmtNum(last?.services ?? 0)} services</p>
-      </BandCell>
+        <p>
+          {fmtNum(runningNow)} running · {fmtNum(earning)} earned in {w.days} days · {fmtNum(added)} added
+        </p>
+      </DocketCell>
     </section>
   );
 }
 
-function BandCell({
+function DocketCell({
   label,
-  className,
+  value,
   children,
 }: {
   label: string;
-  className?: string;
+  /** null while loading. */
+  value: string | null;
   children: ReactNode;
 }) {
   return (
-    <div className={cn("space-y-1 p-4", className)}>
-      <div className="text-xs text-muted-foreground">{label}</div>
-      {children}
+    <div className="min-w-0 space-y-1.5 p-4 sm:px-5">
+      <div className="text-sm font-semibold">{label}</div>
+      {value == null ? (
+        <Skeleton className="h-9 w-28" />
+      ) : (
+        <div className="text-[1.625rem] leading-none font-semibold tabular-nums sm:text-[2.125rem]">
+          {value}
+        </div>
+      )}
+      <div className="space-y-0.5 text-sm text-muted-foreground">{children}</div>
     </div>
   );
 }
 
-function BandValue({ value }: { value: string }) {
-  return <div className="text-2xl font-semibold tabular-nums">{value}</div>;
-}
+type HeldItem = { key: string; text: ReactNode };
 
-function Attention({
+/** The held tray: what needs you, named, each name a jump to its
+ * consignment row; then chores and the next verifiable steps. Only facts the
+ * data shows, never a recommendation. */
+function Held({
   data,
   payouts,
 }: {
   data: TimelineResponse;
   payouts: PayoutHistoryData | undefined;
 }) {
-  const accounts = useQuery(withdrawAccountsQuery);
-  const withdraw = useQuery(withdrawSettingsQuery);
-  const items: { key: string; tone: "critical" | "muted"; text: string; title?: string }[] = [];
+  const upgrades = useQuery(upgradesQuery);
+  const candidates = useQuery(candidatesQuery);
+  const name = shortNames(data.templates.map((t) => t.name));
+  const jump = (t: { templateId: string; name: string }) => (
+    <a
+      href={`#t-${t.templateId}`}
+      className="font-semibold text-foreground underline decoration-(--viz-critical) decoration-1 hover:decoration-2"
+    >
+      {name(t.name)}
+    </a>
+  );
+  const list = (nodes: ReactNode[]) =>
+    nodes.flatMap((n, i) => (i === 0 ? [n] : [i === nodes.length - 1 ? " and " : ", ", n]));
 
-  const stale = Date.now() - Date.parse(data.sampledAt) > 24 * 3_600_000;
-  if (stale) {
-    items.push({
+  const held: HeldItem[] = [];
+  if (Date.now() - Date.parse(data.sampledAt) > 24 * 3_600_000) {
+    held.push({
       key: "stale",
-      tone: "critical",
-      text: `No snapshot since ${fmtDay(data.sampledAt)} — the collector has stopped`,
+      text: <>No snapshot since {fmtDay(data.sampledAt)}: the collector has stopped, so every figure below is old.</>,
     });
   }
-  const name = shortNames(data.templates.map((t) => t.name));
+  const failing = data.templates
+    .filter((t) => t.activeProjects > 0 && t.health != null && t.health < 50)
+    .sort((a, b) => (a.health ?? 0) - (b.health ?? 0));
+  for (const t of failing) {
+    held.push({
+      key: `health-${t.templateId}`,
+      text: (
+        <>
+          {jump(t)} deploy health {t.health?.toFixed(0)}%, {fmtNum(t.activeProjects)} active
+        </>
+      ),
+    });
+  }
   const atRisk = data.templates.filter((t) => !qualifiesForBonus(t));
   if (atRisk.length > 0) {
-    items.push({
+    held.push({
       key: "support",
-      tone: "critical",
-      text: `${atRisk.length} ${atRisk.length === 1 ? "template is" : "templates are"} below the ${SUPPORT_BONUS_THRESHOLD}% support-bonus line`,
-      title: atRisk.map((t) => name(t.name)).join(", "),
+      text: (
+        <>
+          {list([
+            ...atRisk.slice(0, 5).map((t) => <span key={t.templateId}>{jump(t)}</span>),
+            ...(atRisk.length > 5 ? [<span key="more">{fmtNum(atRisk.length - 5)} more</span>] : []),
+          ])}{" "}
+          {atRisk.length === 1 ? "is" : "are"} below the{" "}
+          {SUPPORT_BONUS_THRESHOLD}% support-bonus line
+        </>
+      ),
     });
   }
-  const failing = data.templates.filter(
-    (t) => t.activeProjects > 0 && t.health != null && t.health < 50,
-  );
-  if (failing.length > 0) {
-    items.push({
-      key: "health",
-      tone: "muted",
-      text: `${failing.length} deployed ${failing.length === 1 ? "template has" : "templates have"} deploy health under 50%`,
-      title: failing.map((t) => `${name(t.name)} ${t.health}%`).join(", "),
+  const copies = candidates.data?.copies ?? [];
+  if (copies.length > 0) {
+    held.push({
+      key: "copies",
+      text: (
+        <Link to="/decide#copies" className="font-semibold text-foreground underline decoration-(--viz-critical)">
+          {copies.length === 1
+            ? "1 template by someone else builds"
+            : `${fmtNum(copies.length)} templates by others build`}{" "}
+          from our code
+        </Link>
+      ),
+    });
+  }
+
+  const next: HeldItem[] = [];
+  const behind = upgrades.data ? behindTemplateCount(upgrades.data) : 0;
+  if (behind > 0) {
+    next.push({
+      key: "upgrades",
+      text: (
+        <a href="#upgrades" className="text-primary underline">
+          {fmtNum(behind)} {behind === 1 ? "template" : "templates"} behind on upgrades
+        </a>
+      ),
+    });
+  }
+  const shortlist = (candidates.data?.groups ?? []).filter((g) => g.status === "shortlist");
+  if (shortlist.length > 0) {
+    next.push({
+      key: "shortlist",
+      text: (
+        <>
+          Shortlisted to build:{" "}
+          <Link to="/decide" className="text-primary underline">
+            {shortlist.slice(0, 3).map((g) => shortName(g.leader.name)).join(", ")}
+            {shortlist.length > 3 ? ` +${shortlist.length - 3} more` : ""}
+          </Link>
+        </>
+      ),
     });
   }
   if (payouts && payouts.totals.pendingCount > 0) {
-    items.push({
+    next.push({
       key: "pending",
-      tone: "muted",
-      text: `${fmtCents(payouts.totals.pendingCents)} in flight · ${payouts.totals.pendingCount} pending`,
+      text: (
+        <Link to="/payouts" className="text-primary underline">
+          {fmtCents(payouts.totals.pendingCents)} in flight across {fmtNum(payouts.totals.pendingCount)} pending{" "}
+          {payouts.totals.pendingCount === 1 ? "payout" : "payouts"}
+        </Link>
+      ),
     });
   }
-  if (
-    withdraw.data &&
-    !withdraw.data.enabled &&
-    accounts.data &&
-    accounts.data.availableBalance > 0 &&
-    accounts.data.availableBalance >= accounts.data.minimumBalance
-  ) {
-    items.push({
-      key: "auto",
-      tone: "muted",
-      text: "Balance is withdrawable and auto-withdraw is off",
-    });
-  }
-  if (items.length === 0) return null;
 
   return (
-    <ul className="flex flex-wrap gap-2">
-      {items.map((item) => (
-        <li
-          key={item.key}
-          title={item.title}
+    <section aria-labelledby="held-title" aria-live="polite" className="bg-(--tray) px-4 py-3.5 sm:px-5">
+      <div className="flex flex-col gap-x-6 gap-y-1.5 sm:flex-row sm:items-baseline">
+        <h2
+          id="held-title"
           className={cn(
-            "rounded-md px-2.5 py-1 text-xs ring-1",
-            item.tone === "critical"
-              ? "bg-destructive/10 text-(--viz-critical) ring-destructive/20"
-              : "bg-card text-muted-foreground ring-foreground/10",
+            "shrink-0 text-sm font-bold tracking-[0.06em] uppercase",
+            held.length > 0 ? "text-(--viz-critical)" : "text-(--viz-up)",
           )}
         >
-          {item.text}
-        </li>
-      ))}
-    </ul>
+          {held.length > 0 ? `Held · ${held.length}` : "Nothing held"}
+        </h2>
+        {held.length > 0 ? (
+          <ul className="flex flex-col gap-x-6 gap-y-1 sm:flex-row sm:flex-wrap">
+            {held.map((h) => (
+              <li key={h.key}>{h.text}</li>
+            ))}
+          </ul>
+        ) : (
+          <p>
+            Every deployed template is over 50% deploy health and over the {SUPPORT_BONUS_THRESHOLD}%
+            support-bonus line.
+          </p>
+        )}
+      </div>
+      {next.length > 0 && (
+        <div className="mt-2 flex flex-col gap-x-6 gap-y-1 border-t border-foreground/15 pt-2 text-sm sm:flex-row sm:flex-wrap sm:items-baseline">
+          <span className="font-semibold">Next</span>
+          {next.map((n) => (
+            <span key={n.key}>{n.text}</span>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -543,24 +539,17 @@ function EmptyState() {
 function DashboardSkeleton() {
   return (
     <>
-      <section className="grid grid-cols-2 overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10 lg:grid-cols-5">
-        {Array.from({ length: 5 }, (_, i) => (
-          <div key={i} className="space-y-2 p-4">
-            <Skeleton className="h-3 w-20" />
-            <Skeleton className="h-7 w-24" />
-            <Skeleton className="h-3 w-28" />
+      <section className="grid grid-cols-2 gap-px border bg-border lg:grid-cols-4 [&>*]:bg-background">
+        {Array.from({ length: 4 }, (_, i) => (
+          <div key={i} className="space-y-2 p-4 sm:px-5">
+            <Skeleton className="h-3.5 w-20" />
+            <Skeleton className="h-9 w-28" />
+            <Skeleton className="h-3.5 w-36" />
           </div>
         ))}
       </section>
-      <Card>
-        <CardHeader>
-          <Skeleton className="h-4 w-36" />
-          <Skeleton className="h-3 w-56" />
-        </CardHeader>
-        <CardContent>
-          <Skeleton className="h-96 w-full" />
-        </CardContent>
-      </Card>
+      <Skeleton className="h-12 w-full" />
+      <Skeleton className="h-96 w-full" />
     </>
   );
 }

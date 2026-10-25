@@ -11,18 +11,19 @@ export function Mark({ className }: { className?: string }) {
       fill="currentColor"
       aria-hidden
     >
-      <rect x="1" y="3" width="8" height="2" rx="0.6" />
-      <rect x="7" y="7" width="8" height="2" rx="0.6" />
-      <rect x="1" y="11" width="8" height="2" rx="0.6" />
+      <rect x="1" y="3" width="8" height="2" />
+      <rect x="7" y="7" width="8" height="2" />
+      <rect x="1" y="11" width="8" height="2" />
     </svg>
   );
 }
 
-export function Wordmark({ className }: { className?: string }) {
+/** compact drops the name to the mark alone on phones, where the bar is full. */
+export function Wordmark({ className, compact }: { className?: string; compact?: boolean }) {
   return (
-    <span className={cn("flex items-center gap-2 font-heading font-semibold", className)}>
-      <Mark className="text-primary" />
-      Dispatcher
+    <span className={cn("flex items-center gap-2 font-bold tracking-[0.06em] uppercase", className)}>
+      <Mark />
+      <span className={compact ? "max-sm:sr-only" : undefined}>Dispatcher</span>
     </span>
   );
 }

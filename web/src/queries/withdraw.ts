@@ -71,6 +71,47 @@ export const withdrawAccountsQuery = queryOptions({
   }),
 });
 
+/** The next runs of a cron spec, from the parser the job runs on; rejects
+ * with the server's reason when the spec is invalid. */
+export const withdrawNextQuery = (schedule: string) =>
+  queryOptions({
+    queryKey: ["withdraw", "next", schedule],
+    queryFn: async ({ signal }) => {
+      const res = await api.get("withdraw/next", {
+        searchParams: { schedule },
+        signal,
+        throwHttpErrors: false,
+      });
+      const body = (await res.json().catch(() => null)) as { next?: string[]; error?: string } | null;
+      // 400 is the job's own parser rejecting the spec; anything else only
+      // means the preview is unavailable, and saving still validates it.
+      if (!res.ok)
+        throw Object.assign(new Error(body?.error ?? "Couldn’t preview the next run."), {
+          invalid: res.status === 400,
+        });
+      return body?.next ?? [];
+    },
+    enabled: schedule.trim() !== "",
+    retry: false,
+    staleTime: 60_000,
+    placeholderData: (previous) => previous,
+  });
+
+const runFmt = new Intl.DateTimeFormat("en-US", {
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+  timeZone: "UTC",
+});
+
+/** "Mon, Oct 26, 08:00 UTC". */
+export function fmtRun(iso: string): string {
+  return `${runFmt.format(new Date(iso))} UTC`;
+}
+
 export async function saveWithdrawSettings(body: {
   enabled: boolean;
   withdrawalAccountId?: string;

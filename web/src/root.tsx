@@ -25,11 +25,11 @@ export const links: Route.LinksFunction = () => [
   },
   {
     rel: "stylesheet",
-    href: "https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap",
+    href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap",
   },
 ];
 
-// Railway is dark-first; follow the OS preference. Runs inline before paint so
+// Follow the OS preference: the paper top copy by day, the carbon copy at night. Runs inline before paint so
 // there's no light flash, and keeps `.dark` in sync if the OS theme changes.
 const themeScript = `(function () {
   var mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -49,18 +49,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta
           name="theme-color"
           media="(prefers-color-scheme: light)"
-          content="#ffffff"
+          content="#1d2433"
         />
         <meta
           name="theme-color"
           media="(prefers-color-scheme: dark)"
-          content="#13111c"
+          content="#0d121b"
         />
         <Meta />
         <Links />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
-      <body className="rail-dots">
+      <body>
         {children}
         <ScrollRestoration />
         <Scripts />
@@ -78,48 +78,43 @@ export default function App() {
 }
 
 // Shown while the protected layout's clientLoader checks the session on first
-// load, instead of a blank screen. Mirrors the header + dashboard frame.
+// load, instead of a blank screen. Mirrors the bar and the docket header.
 export function HydrateFallback() {
   return (
     <>
-      <header className="sticky top-0 z-20 border-b bg-background/85 backdrop-blur-sm">
-        <div className="shell flex items-center justify-between py-3">
-          <Skeleton className="h-5 w-24" />
-          <div className="flex items-center gap-3">
-            <Skeleton className="size-6 rounded-full" />
-            <Skeleton className="h-4 w-28" />
-          </div>
+      <header className="bar h-14">
+        <div className="shell flex h-full items-center">
+          <Skeleton className="h-4 w-28 bg-white/15" />
         </div>
       </header>
       <main className="shell space-y-5 py-6">
-        <div className="space-y-2">
-          <Skeleton className="h-6 w-28" />
-          <Skeleton className="h-4 w-56" />
-        </div>
-        <div className="grid grid-cols-2 overflow-hidden rounded-xl lg:grid-cols-4">
+        <Skeleton className="h-7 w-32" />
+        <div className="grid grid-cols-2 border lg:grid-cols-4">
           {Array.from({ length: 4 }, (_, i) => (
-            <Skeleton key={i} className="h-24 w-full rounded-none" />
+            <div key={i} className="space-y-2 border-r p-4 last:border-r-0">
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-8 w-28" />
+              <Skeleton className="h-3 w-32" />
+            </div>
           ))}
         </div>
-        <div className="grid gap-4 lg:grid-cols-12">
-          <Skeleton className="h-80 w-full rounded-xl lg:col-span-8" />
-          <Skeleton className="h-80 w-full rounded-xl lg:col-span-4" />
-        </div>
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-80 w-full" />
       </main>
     </>
   );
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
-  let message = "Oops!";
-  let details = "An unexpected error occurred.";
+  let message = "Something broke";
+  let details = "Reload the page; if it keeps happening, check the server logs.";
   let stack: string | undefined;
 
   if (isRouteErrorResponse(error)) {
-    message = error.status === 404 ? "404" : "Error";
+    message = error.status === 404 ? "Not found" : `Error ${error.status}`;
     details =
       error.status === 404
-        ? "The requested page could not be found."
+        ? "There is no page at this address."
         : error.statusText || details;
   } else if (import.meta.env.DEV && error && error instanceof Error) {
     details = error.message;
@@ -127,11 +122,14 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   }
 
   return (
-    <main className="pt-16 p-4 container mx-auto">
-      <h1>{message}</h1>
-      <p>{details}</p>
+    <main className="shell space-y-3 py-16">
+      <h1 className="text-2xl font-semibold">{message}</h1>
+      <p className="text-muted-foreground">{details}</p>
+      <a href="/" className="inline-block text-primary underline">
+        Back to Today
+      </a>
       {stack && (
-        <pre className="w-full p-4 overflow-x-auto">
+        <pre className="w-full overflow-x-auto border p-4 text-xs">
           <code>{stack}</code>
         </pre>
       )}

@@ -204,18 +204,18 @@ function SegmentTable({
             <th className="pb-2 pl-3 text-right font-medium">First paid</th>
           </tr>
         </thead>
-        <tbody className="tabular-nums">
+        <tbody>
           {rows.map((r) => {
             const per = r.earned / r.templates;
             return (
               <tr key={r.key} className="border-b border-border/50 last:border-0">
                 <td className="py-2 whitespace-nowrap">{format(r.key)}</td>
-                <td className="py-2 pl-3 text-right">{fmtNum(r.templates)}</td>
-                <td className="py-2 pl-3 text-right text-muted-foreground">{fmtNum(r.earning)}</td>
-                <td className="py-2 pl-3 text-right">{fmtUsd(r.earned)}</td>
+                <td className="py-2 pl-3 text-right tabular-nums">{fmtNum(r.templates)}</td>
+                <td className="py-2 pl-3 text-right tabular-nums text-muted-foreground">{fmtNum(r.earning)}</td>
+                <td className="py-2 pl-3 text-right tabular-nums">{fmtUsd(r.earned)}</td>
                 <td className="py-2 pl-3">
                   <div className="flex items-center gap-2">
-                    <span className="w-12 text-right">{fmtUsd(per)}</span>
+                    <span className="w-12 text-right tabular-nums">{fmtUsd(per)}</span>
                     <span className="h-1.5 min-w-10 flex-1 rounded-full bg-muted">
                       <span
                         className="block h-full rounded-full bg-(--chart-1)"
@@ -224,10 +224,10 @@ function SegmentTable({
                     </span>
                   </div>
                 </td>
-                <td className="py-2 pl-3 text-right text-muted-foreground">
+                <td className="py-2 pl-3 text-right tabular-nums text-muted-foreground">
                   {r.active > 0 ? fmtUsd(r.earned / r.active) : "—"}
                 </td>
-                <td className="py-2 pl-3 text-right text-muted-foreground">
+                <td className="py-2 pl-3 text-right tabular-nums text-muted-foreground">
                   {r.firstPaid == null ? "—" : `${r.firstPaid}d`}
                 </td>
               </tr>

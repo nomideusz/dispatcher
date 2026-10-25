@@ -21,6 +21,7 @@ import {
   scheduleDescription,
   fmtRun,
   type WithdrawAccounts,
+  type WithdrawAttempt,
   withdrawAccountsQuery,
   withdrawNextQuery,
   type WithdrawSettings,
@@ -31,14 +32,17 @@ import {
  * AutoWithdraw is a header button that opens the auto-withdraw setup dialog:
  * pick a payout account, choose how often it runs, and turn it on or off.
  * Nothing changes until Save; Cancel always leaves things as they were.
+ * `inline` renders the trigger as a text link, for use inside a sentence.
  */
-export function AutoWithdraw() {
+export function AutoWithdraw({ inline = false }: { inline?: boolean }) {
   const qc = useQueryClient();
   const settings = useQuery(withdrawSettingsQuery);
   const [open, setOpen] = useState(false);
   // What the last save stored, shown as the confirmation until the dialog
   // closes.
-  const [saved, setSaved] = useState<WithdrawSettings | null>(null);
+  const [saved, setSaved] = useState<(WithdrawSettings & { attempt?: WithdrawAttempt }) | null>(
+    null,
+  );
 
   const save = useMutation({
     mutationFn: saveWithdrawSettings,
@@ -63,14 +67,24 @@ export function AutoWithdraw() {
 
   return (
     <>
-      <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
-        <Banknote className="sm:hidden" />
-        <span className="sr-only sm:not-sr-only">
-          {enabled
-            ? `Auto-withdraw · ${SCHEDULE_PRESETS.find((p) => p.spec === schedule)?.label ?? "Custom"}`
-            : "Auto-withdraw"}
-        </span>
-      </Button>
+      {inline ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="cursor-pointer text-primary underline underline-offset-2 outline-none hover:decoration-2 focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {enabled ? "Change" : "Set up auto-withdraw"}
+        </button>
+      ) : (
+        <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
+          <Banknote className="sm:hidden" />
+          <span className="sr-only sm:not-sr-only">
+            {enabled
+              ? `Auto-withdraw · ${SCHEDULE_PRESETS.find((p) => p.spec === schedule)?.label ?? "Custom"}`
+              : "Auto-withdraw"}
+          </span>
+        </Button>
+      )}
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent>
           {saved ? (
@@ -92,8 +106,15 @@ export function AutoWithdraw() {
   );
 }
 
-function SavedView({ saved, onDone }: { saved: WithdrawSettings; onDone: () => void }) {
+function SavedView({
+  saved,
+  onDone,
+}: {
+  saved: WithdrawSettings & { attempt?: WithdrawAttempt };
+  onDone: () => void;
+}) {
   const next = useQuery({ ...withdrawNextQuery(saved.schedule), enabled: saved.enabled });
+  const { sentCents, skipped } = saved.attempt ?? {};
   return (
     <>
       <DialogHeader>
@@ -102,7 +123,13 @@ function SavedView({ saved, onDone }: { saved: WithdrawSettings; onDone: () => v
           {saved.enabled
             ? `Saved. It runs ${scheduleDescription(saved.schedule)}${
                 next.data?.[0] ? `; next on ${fmtRun(next.data[0])}` : ""
-              }. A withdrawal was also tried just now; it goes through only if the balance is over the minimum.`
+              }. ${
+                sentCents
+                  ? `Withdrawal of ${fmtCents(sentCents)} requested just now; it shows on Payouts as pending.`
+                  : skipped
+                    ? `Nothing was withdrawn just now: ${skipped}.`
+                    : ""
+              }`
             : "Saved. Nothing will be withdrawn automatically until you turn it back on."}
         </DialogDescription>
       </DialogHeader>
@@ -159,6 +186,9 @@ function SetupView({
   const canSave =
     changed && !pending && (!on || (selected !== "" && spec.trim() !== "" && !specError));
 
+  // Accounts loaded but none can receive money yet: saving can't work.
+  const noAccount = accounts.isSuccess && !accounts.data.accounts.some(accountReady);
+
   const balance = accounts.data?.availableBalance;
   const minimum = accounts.data?.minimumBalance;
 
@@ -197,43 +227,33 @@ function SetupView({
               aria-labelledby="frequency-label"
               className="grid grid-cols-4 gap-1 border p-1"
             >
-              {SCHEDULE_PRESETS.map((p) => {
-                const active = !custom && spec === p.spec;
+              {[...SCHEDULE_PRESETS, { spec: "", label: "Custom" }].map((p) => {
+                const isCustom = p.spec === "";
+                const active = isCustom ? custom : !custom && spec === p.spec;
                 return (
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    key={p.spec}
-                    onClick={() => {
-                      setCustom(false);
-                      setSpec(p.spec);
-                    }}
+                  <label
+                    key={p.label}
                     className={cn(
-                      "h-8 cursor-pointer px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-10",
+                      "flex h-8 cursor-pointer items-center justify-center px-2 text-sm has-focus-visible:ring-2 has-focus-visible:ring-ring pointer-coarse:h-10",
                       active
                         ? "bg-secondary font-medium"
                         : "text-muted-foreground hover:text-foreground",
                     )}
                   >
+                    <input
+                      type="radio"
+                      name="frequency"
+                      className="sr-only"
+                      checked={active}
+                      onChange={() => {
+                        setCustom(isCustom);
+                        if (!isCustom) setSpec(p.spec);
+                      }}
+                    />
                     {p.label}
-                  </button>
+                  </label>
                 );
               })}
-              <button
-                type="button"
-                role="radio"
-                aria-checked={custom}
-                onClick={() => setCustom(true)}
-                className={cn(
-                  "h-8 cursor-pointer px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-10",
-                  custom
-                    ? "bg-secondary font-medium"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                Custom
-              </button>
             </div>
             {custom && (
               <>
@@ -264,6 +284,19 @@ function SetupView({
           ) : (
             "Auto-withdraw stays off."
           )
+        ) : noAccount ? (
+          <span className="text-destructive">
+            No account can receive money yet. Finish its setup in{" "}
+            <a
+              href="https://railway.com/workspace/earn"
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-2"
+            >
+              Railway earnings settings
+            </a>
+            , then come back.
+          </span>
         ) : specError ? (
           <span className="text-destructive">{specError}</span>
         ) : previewDown ? (
@@ -306,7 +339,10 @@ function SetupView({
         </p>
       )}
 
-      <DialogFooter>
+      <DialogFooter className="items-center">
+        {on && !changed && (
+          <span className="mr-auto text-xs text-muted-foreground">Nothing changed yet.</span>
+        )}
         <Button variant="ghost" onClick={onCancel} disabled={pending}>
           Cancel
         </Button>
@@ -371,25 +407,29 @@ function AccountList({
   }
 
   return (
-    <div role="radiogroup" className="grid gap-2">
+    <div role="radiogroup" aria-label="Withdrawal account" className="grid gap-2">
       {query.data.accounts.map((a) => {
         const usable = accountReady(a);
         const checked = selected === a.id;
         return (
-          <button
-            type="button"
-            role="radio"
-            aria-checked={checked}
+          <label
             key={a.id}
-            disabled={!usable}
-            onClick={() => onSelect(a.id)}
             className={cn(
-              "flex items-center gap-3 border p-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "flex items-center gap-3 border p-3 has-focus-visible:ring-2 has-focus-visible:ring-ring",
               usable ? "cursor-pointer hover:bg-muted/50" : "opacity-60",
               checked && "border-primary",
             )}
           >
+            <input
+              type="radio"
+              name="withdrawal-account"
+              className="sr-only"
+              checked={checked}
+              disabled={!usable}
+              onChange={() => onSelect(a.id)}
+            />
             <span
+              aria-hidden
               className={cn(
                 "size-4 shrink-0 rounded-full border",
                 checked ? "border-[5px] border-primary" : "border-input",
@@ -399,11 +439,11 @@ function AccountList({
               <span className="block text-sm font-medium">{accountLabel(a)}</span>
               {!usable && (
                 <span className="block text-xs text-muted-foreground">
-                  Finish setup in Railway to use this account
+                  Can&apos;t receive money until its setup is finished in Railway
                 </span>
               )}
             </span>
-          </button>
+          </label>
         );
       })}
     </div>

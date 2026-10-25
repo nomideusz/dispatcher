@@ -44,12 +44,11 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
   if (q.isPending) return <Skeleton className="h-64 w-full" />;
   if (q.isError) return <p className="text-sm text-(--viz-critical)">Failed to load the marketplace.</p>;
   if (!q.data.fetchedAt) {
-    return <p className="text-sm text-muted-foreground">The marketplace has not been read yet; it is read daily at 06:20 UTC and on first start.</p>;
+    return <p className="text-sm text-muted-foreground">Railway&apos;s marketplace hasn&apos;t been read yet. It&apos;s read daily at 06:20 UTC and on startup.</p>;
   }
 
   return (
     <div className="space-y-5">
-      <Copies copies={q.data.copies ?? []} />
       <Originals groups={groups} templates={templates} />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -95,7 +94,7 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search apps"
             aria-label="Search apps"
-            className="h-7 w-40 rounded-md border bg-background px-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-7 w-40 border bg-background px-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
           />
         </div>
       </div>
@@ -130,8 +129,8 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
         <span>
-          Railway&apos;s public marketplace, read {fmtAgo(q.data.fetchedAt, new Date().toISOString())} ago.
-          Templates with the same name are one app; templates counts other creators&apos; only.
+          From Railway&apos;s marketplace, read {fmtAgo(q.data.fetchedAt, new Date().toISOString())} ago.
+          Same-name templates count as one app; Templates counts other creators only.
         </span>
         {rows.length > limit && (
           <Button size="xs" variant="ghost" onClick={() => setLimit(rows.length)}>
@@ -206,13 +205,13 @@ function CandidateRow({ g, view, maxRecent }: { g: CandidateGroup; view: View; m
             aria-label={`Note on ${g.key}`}
             placeholder="Add a note"
             onBlur={(e) => e.target.value.trim() !== g.note && set(g.status, e.target.value)}
-            className="w-full min-w-40 rounded-sm bg-transparent px-1 py-0.5 text-foreground outline-none placeholder:text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+            className="w-full min-w-40 border-b border-dashed border-border bg-transparent px-1 py-0.5 text-foreground outline-none placeholder:text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
           />
         )}
       </td>
       <td className="py-2 pl-3 text-right whitespace-nowrap">
         {view === "shortlist" ? (
-          <Button size="xs" variant="ghost" disabled={mark.isPending} onClick={() => set("")}>
+          <Button size="xs" variant="ghost" className="text-muted-foreground" disabled={mark.isPending} onClick={() => set("")}>
             Remove
           </Button>
         ) : view === "skip" ? (
@@ -268,9 +267,8 @@ function Originals({ groups, templates }: { groups: CandidateGroup[]; templates:
         sub={`${fmtUsd(alone.earned)} total · with rivals: ${fmtNum(rest.earning)} of ${fmtNum(rest.n)}`}
       />
       <p className="text-xs text-muted-foreground sm:pb-0.5">
-        Templates of an app no one else publishes on Railway, like Laya, the first of its kind.
-        Market demand only shows apps that are already here; an original starts without a
-        leader to beat.{" "}
+        Our templates of apps no one else publishes on Railway. Market data only covers apps
+        already here; an original has no leader to beat.{" "}
         {earners.length > 0 && (
           <span className="text-foreground">
             Earning: {earners.slice(0, 5).join(" · ")}
@@ -284,11 +282,11 @@ function Originals({ groups, templates }: { groups: CandidateGroup[]; templates:
 
 /** Other creators' templates built from our repos. Their deploys pay them,
  * and they run whatever we push to main. */
-function Copies({ copies }: { copies: MarketCopy[] }) {
+export function Copies({ copies }: { copies: MarketCopy[] }) {
   if (copies.length === 0) return null;
   return (
-    <div id="copies" className="scroll-mt-24 space-y-2 border-b pb-5">
-      <div className="text-sm font-medium text-(--viz-critical)">
+    <div className="space-y-2">
+      <div className="text-sm font-medium text-(--viz-caution)">
         {copies.length === 1 ? "1 template by someone else builds" : `${fmtNum(copies.length)} templates by others build`} from our code
       </div>
       <ul className="space-y-1 text-sm">
@@ -309,9 +307,6 @@ function Copies({ copies }: { copies: MarketCopy[] }) {
           </li>
         ))}
       </ul>
-      <p className="text-xs text-muted-foreground">
-        Deploys of these pay their creator, not us, and they build whatever we push to main.
-      </p>
     </div>
   );
 }

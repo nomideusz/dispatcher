@@ -74,8 +74,16 @@ export default function Protected({ loaderData }: Route.ComponentProps) {
   }
   return (
     <>
+      <a
+        href="#content"
+        className="sr-only z-30 bg-background px-3 py-2 text-sm focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:ring-2 focus:ring-ring"
+      >
+        Skip to content
+      </a>
       <Header user={loaderData.user} />
-      <Outlet context={loaderData.user} />
+      <div id="content" tabIndex={-1} className="outline-none">
+        <Outlet context={loaderData.user} />
+      </div>
     </>
   );
 }
@@ -99,9 +107,11 @@ function RefreshButton() {
 }
 
 const PAGES = [
-  ["/", "Today"],
-  ["/decide", "Decide"],
-  ["/payouts", "Payouts"],
+  ["/", "Money"],
+  ["/templates", "Templates"],
+  ["/upgrades", "Upgrades"],
+  ["/patterns", "Patterns"],
+  ["/candidates", "Candidates"],
 ] as const;
 
 function Header({ user }: { user: User }) {
@@ -117,11 +127,18 @@ function Header({ user }: { user: User }) {
 
   return (
     <header className="bar sticky top-0 z-20">
-      <div className="shell flex h-14 items-center gap-4 sm:gap-10">
-        <Link to={{ pathname: "/", search: days ? `?days=${days}` : "" }} aria-label="Dispatcher, today">
+      <div className="shell flex flex-wrap items-center gap-x-4 sm:gap-x-10">
+        <Link
+          to={{ pathname: "/", search: days ? `?days=${days}` : "" }}
+          aria-label="Dispatcher, money"
+          className="flex h-14 items-center"
+        >
           <Wordmark compact />
         </Link>
-        <nav aria-label="Pages" className="flex h-full gap-4 text-sm sm:gap-7">
+        <nav
+          aria-label="Pages"
+          className="flex h-14 gap-5 overflow-x-auto text-sm whitespace-nowrap max-lg:order-last max-lg:h-11 max-lg:w-full sm:gap-7"
+        >
           {PAGES.map(([to, label]) => (
             <NavLink
               key={to}
@@ -144,7 +161,7 @@ function Header({ user }: { user: User }) {
               {user.avatar && (
                 <img src={user.avatar} alt="" className="size-5 rounded-full" />
               )}
-              <span className="hidden max-w-32 truncate md:inline">{user.name}</span>
+              <span className="hidden max-w-32 truncate xl:inline">{user.name}</span>
               <ChevronDown className="text-muted-foreground max-sm:hidden" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">

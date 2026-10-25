@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ChevronRight, CircleAlert } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { TemplateProjects } from "~/components/template-projects";
 import { Button } from "~/components/ui/button";
@@ -110,13 +110,17 @@ export function TemplatesTable({
       >
         <button
           type="button"
-          className={`inline-flex items-center gap-0.5 whitespace-nowrap hover:text-foreground ${on ? "text-foreground" : ""}`}
+          className={`group inline-flex items-center gap-0.5 whitespace-nowrap outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${on ? "text-foreground" : ""}`}
           onClick={() =>
             setSort({ key, desc: on ? !sort.desc : key !== "name" })
           }
         >
           {label}
-          {on && (sort.desc ? <ArrowDown className="size-3" /> : <ArrowUp className="size-3" />)}
+          {on ? (
+            sort.desc ? <ArrowDown className="size-3" /> : <ArrowUp className="size-3" />
+          ) : (
+            <ArrowUpDown className="size-3 opacity-30 group-hover:opacity-70 group-focus-visible:opacity-70" />
+          )}
         </button>
       </th>
     );
@@ -129,6 +133,7 @@ export function TemplatesTable({
           <Button
             key={f}
             size="xs"
+            disabled={f !== "all" && f !== filter && !all.some(FILTERS[f].test)}
             aria-pressed={f === filter}
             variant={f === filter ? "secondary" : "ghost"}
             onClick={() => setFilter(f)}
@@ -140,15 +145,20 @@ export function TemplatesTable({
           </Button>
         ))}
       </div>
+      <p className="text-xs text-muted-foreground">
+        Projects: ever made from it. Active: live today. Running: service instances up now.
+        $/active: 30-day kickback per active project. Strip: new projects above the line, kickback
+        below. Support: support health under {SUPPORT_BONUS_THRESHOLD}%, so no +10% bonus.
+      </p>
 
       <div className="scroll-fade max-h-[36rem] overflow-auto">
         <table className="w-full text-sm">
           {/* The rule rides on the sticky cells; a row border scrolls away. */}
           <thead className="[&_th]:shadow-[inset_0_-1px_0_var(--border)]">
             <tr className="text-left text-xs text-muted-foreground">
-              <th className="sticky top-0 z-10 bg-card pr-3 pb-2 font-medium max-sm:hidden">Code</th>
               {header("name", "Template", false)}
-              <th className="sticky top-0 z-10 bg-card pb-2 pl-3 font-medium whitespace-nowrap">
+              {header("health", "Health")}
+              <th className="sticky top-0 z-10 bg-card pb-2 pl-3 font-medium whitespace-nowrap max-sm:hidden">
                 Last {dates.length}d
               </th>
               {header("newProjects", "New")}
@@ -162,17 +172,27 @@ export function TemplatesTable({
               {header("payers", "Payers")}
               {header("lifetimeCents", "Lifetime")}
               {header("lastPaidAt", "Paid")}
-              {header("health", "Health")}
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
-              <TemplateRow key={r.templateId} r={r} scale={scale} lifetimeTotal={lifetimeTotal} />
+              <TemplateRow
+                key={r.templateId}
+                r={r}
+                scale={scale}
+                lifetimeTotal={lifetimeTotal}
+                byTemplateLoaded={byTemplate != null}
+              />
             ))}
           </tbody>
         </table>
         {rows.length === 0 && (
-          <p className="py-6 text-center text-sm text-muted-foreground">No templates match.</p>
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            No templates match.{" "}
+            <button type="button" className="cursor-pointer text-primary underline" onClick={() => setFilter("all")}>
+              Show all
+            </button>
+          </p>
         )}
       </div>
     </div>
@@ -185,10 +205,13 @@ function TemplateRow({
   r,
   scale,
   lifetimeTotal,
+  byTemplateLoaded,
 }: {
   r: Row;
   scale: Scale;
   lifetimeTotal: number;
+  /** Payers come from the payout query; until it loads, "—" means unknown. */
+  byTemplateLoaded: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const panelId = `template-projects-${r.templateId}`;
@@ -198,13 +221,7 @@ function TemplateRow({
   return (
     <>
       <tr id={`t-${r.templateId}`} className={open ? "bg-muted/40" : "border-b border-border/60 last:border-0"}>
-        <td
-          className="max-w-28 truncate py-2 pr-3 align-top font-mono text-xs text-muted-foreground max-sm:hidden"
-          title={r.code || undefined}
-        >
-          {r.code || "—"}
-        </td>
-        <td className="max-w-64 py-2 pr-3">
+        <th scope="row" className="max-w-64 py-2 pr-3 text-left font-normal">
           <div className="flex items-start gap-1">
             {/* The name links to Railway, so expanding gets its own control. */}
             <button
@@ -213,7 +230,7 @@ function TemplateRow({
               aria-controls={panelId}
               aria-label={`${open ? "Hide" : "Show"} projects over time for ${r.name}`}
               onClick={() => setOpen((o) => !o)}
-              className="-ml-1 mt-0.5 shrink-0 rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              className="-mt-0.5 -ml-1.5 flex size-6 shrink-0 cursor-pointer items-center justify-center text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             >
               <ChevronRight className={`size-4 transition-transform ${open ? "rotate-90" : ""}`} />
             </button>
@@ -233,17 +250,35 @@ function TemplateRow({
                   {r.name}
                 </div>
               )}
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                {r.services} {r.services === 1 ? "service" : "services"} ·
+              <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+                {r.code && (
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="max-w-32 truncate font-mono" title={r.code}>
+                      {r.code}
+                    </span>
+                    ·
+                  </span>
+                )}
+                <span className="whitespace-nowrap">
+                  {r.services} {r.services === 1 ? "service" : "services"} ·
+                </span>
                 <KindSelect r={r} />
+              </div>
+              {/* On a phone the money columns are off-screen, so the row
+                  carries what it earned under the name. */}
+              <div className="text-xs sm:hidden">
+                <span className="tabular-nums">{fmtCents(r.earnedCents)}</span> in {scale.dates.length}d
               </div>
             </div>
           </div>
+        </th>
+        <td className="py-2 pl-3 text-right whitespace-nowrap">
+          <Health r={r} />
         </td>
-        <td className="py-2 pl-3">
+        <td className="py-2 pl-3 max-sm:hidden">
           <ActivityStrip r={r} scale={scale} />
         </td>
-        <td className={r.newProjects ? cell : muted}>{r.newProjects ? fmtNum(r.newProjects) : "—"}</td>
+        <td className={r.newProjects ? cell : muted}>{fmtNum(r.newProjects)}</td>
         <td className={cell}>{fmtNum(r.projects)}</td>
         <td className={cell}>{fmtNum(r.activeProjects)}</td>
         <td className={muted}>{r.running == null ? "—" : fmtNum(r.running)}</td>
@@ -254,14 +289,14 @@ function TemplateRow({
           <LastDeploy at={r.lastDeployAt} after={r.lastDeployAfter} />
         </td>
         <td className={r.earnedCents ? `${cell} font-medium` : muted}>
-          {r.earnedCents ? fmtCents(r.earnedCents) : "—"}
+          {fmtCents(r.earnedCents)}
         </td>
-        <td className={r.perActive ? cell : muted}>{r.perActive ? fmtUsd(r.perActive) : "—"}</td>
+        <td className={r.perActive ? cell : muted}>{r.perActive == null ? "—" : fmtUsd(r.perActive)}</td>
         <td
           className={p?.payers ? cell : muted}
           title={p ? `${p.new} new · ${p.returning} returning · ${p.lapsed} lapsed` : undefined}
         >
-          {p?.payers ? fmtNum(p.payers) : "—"}
+          {byTemplateLoaded ? fmtNum(p?.payers ?? 0) : "—"}
         </td>
         <td className={cell}>
           {r.lifetimeCents > 0 ? (
@@ -269,13 +304,13 @@ function TemplateRow({
               {fmtCents(r.lifetimeCents)}
               <span className="h-1 w-14 rounded-full bg-muted">
                 <span
-                  className="float-right block h-full rounded-full bg-(--chart-1)"
+                  className="float-right block h-full rounded-full bg-(--chart-1) dark:opacity-60"
                   style={{ width: `${Math.max(2, (r.lifetimeCents / lifetimeTotal) * 100)}%` }}
                 />
               </span>
             </div>
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">{fmtCents(0)}</span>
           )}
         </td>
         <td className={`${muted} whitespace-nowrap`}>
@@ -285,15 +320,12 @@ function TemplateRow({
               : `${fmtDay(r.firstPaidAt)} – ${fmtDay(r.lastPaidAt)}`
             : "—"}
         </td>
-        <td className={`${cell} whitespace-nowrap`}>
-          <Health r={r} />
-        </td>
       </tr>
       {open && (
         <tr id={panelId} className="border-b border-border/50 bg-muted/40 last:border-0">
           {/* Sticky to the scroller's left edge so the charts stay in view
               while the wide table is scrolled sideways. */}
-          <td colSpan={15} className="p-0">
+          <td colSpan={14} className="p-0">
             <div className="sticky left-0 w-[min(56rem,calc(100vw-4rem))] px-5 pt-2 pb-6">
               <TemplateProjects templateId={r.templateId} />
             </div>
@@ -315,7 +347,7 @@ function KindSelect({ r }: { r: Row }) {
       value={kind}
       disabled={setKind.isPending}
       onChange={(e) => setKind.mutate({ templateId: r.templateId, kind: e.target.value as Kind | "" })}
-      className={`-mx-0.5 cursor-pointer appearance-none rounded-sm bg-transparent px-0.5 outline-none field-sizing-content hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${kind ? "" : "text-(--viz-caution)"}`}
+      className={`-mx-0.5 min-h-6 cursor-pointer appearance-none border-b border-dashed border-current/40 bg-transparent px-0.5 outline-none field-sizing-content hover:border-current hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${kind ? "" : "text-(--viz-caution)"}`}
     >
       <option value="">Unsorted</option>
       {KINDS.map((k) => (
@@ -363,9 +395,11 @@ function Health({ r }: { r: Row }) {
       )}
       {/* The same rule that puts a template in the Held tray. */}
       {r.activeProjects > 0 && r.health != null && r.health < 50 ? (
-        <span className="font-semibold text-(--viz-critical)">held · {r.health.toFixed(0)}%</span>
+        <span className="font-semibold text-(--viz-critical)">
+          held · <span className="tabular-nums">{r.health.toFixed(0)}%</span>
+        </span>
       ) : (
-        <span>{r.health == null ? "—" : `${r.health.toFixed(0)}%`}</span>
+        <span className="tabular-nums">{r.health == null ? "—" : `${r.health.toFixed(0)}%`}</span>
       )}
     </span>
   );

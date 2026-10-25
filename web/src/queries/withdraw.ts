@@ -112,11 +112,17 @@ export function fmtRun(iso: string): string {
   return `${runFmt.format(new Date(iso))} UTC`;
 }
 
+/** What the withdrawal tried on save did: the amount requested, or why not. */
+export interface WithdrawAttempt {
+  sentCents?: number;
+  skipped?: string;
+}
+
 export async function saveWithdrawSettings(body: {
   enabled: boolean;
   withdrawalAccountId?: string;
   schedule?: string;
-}): Promise<WithdrawSettings> {
+}): Promise<WithdrawSettings & { attempt?: WithdrawAttempt }> {
   // Surface the server's message (e.g. why a cron spec was rejected) instead
   // of ky's generic HTTPError text.
   const res = await api.post("withdraw/settings", {
@@ -129,7 +135,7 @@ export async function saveWithdrawSettings(body: {
     } | null;
     throw new Error(detail?.error ?? "Couldn’t save — please try again.");
   }
-  return res.json<WithdrawSettings>();
+  return res.json<WithdrawSettings & { attempt?: WithdrawAttempt }>();
 }
 
 /** Human label for a Stripe Connect payout destination. */

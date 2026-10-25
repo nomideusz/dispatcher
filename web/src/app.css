@@ -18,7 +18,7 @@ body {
 
 /* Shared dashboard width — header, hydrate fallback, and page share it. */
 .shell {
-  @apply mx-auto w-full max-w-[1600px] px-4 sm:px-6 lg:px-10;
+  @apply mx-auto w-full max-w-[2000px] px-4 sm:px-6 lg:px-8;
 }
 
 /* Every figure is set in Plex Mono, so columns of money line up like a
@@ -166,7 +166,7 @@ html.dark {
   --viz-up: #2d6a4f;
   --viz-down: #4b5366;
   --viz-critical: #b23a2e;
-  --viz-caution: #8a5f0e;
+  --viz-caution: #7d560c;
 }
 
 .dark .viz {
@@ -253,4 +253,11 @@ html {
   a {
     text-underline-offset: 3px;
   }
+}
+
+/* Recharts surfaces take keyboard focus; show it like every other control. */
+.recharts-surface:focus-visible,
+.recharts-wrapper:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }

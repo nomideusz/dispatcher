@@ -7,7 +7,7 @@ import type { TimelineTemplate } from "~/queries/analytics";
 export const GROUPS = [
   { label: "1 service", short: "1", color: "var(--chart-3)", has: (s: number) => s === 1 },
   { label: "2–3 services", short: "2–3", color: "var(--chart-5)", has: (s: number) => s >= 2 && s <= 3 },
-  { label: "4+ services", short: "4+", color: "var(--chart-4)", has: (s: number) => s >= 4 },
+  { label: "4+ services", short: "4+", color: "var(--chart-1)", has: (s: number) => s >= 4 },
 ] as const;
 export const groupOf = (t: TimelineTemplate) => GROUPS.findIndex((g) => g.has(t.services)) as 0 | 1 | 2;
 

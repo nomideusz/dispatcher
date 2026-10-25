@@ -134,7 +134,7 @@ export function NotificationsDialog() {
     <>
       <Button variant="ghost" size="sm" onClick={() => setOpen(true)} aria-label="Notifications">
         <Bell />
-        <span className="hidden lg:inline">Notifications</span>
+        <span className="hidden xl:inline">Notifications</span>
       </Button>
       <Dialog open={open} onOpenChange={handleOpen}>
         <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-xl">
@@ -230,16 +230,15 @@ function NotificationTargetList({
   return (
     <>
       <DialogHeader>
-        <div className="flex items-center justify-between gap-4 pr-8">
-          <DialogTitle>Notifications</DialogTitle>
-          <Button size="sm" onClick={onAdd} disabled={!presetsReady}>
-            <Plus />
-            Add target
-          </Button>
-        </div>
+        <DialogTitle>Notifications</DialogTitle>
         <DialogDescription>
           Send payout, health, and weekly template updates to your webhooks.
         </DialogDescription>
+        {/* Below the description, away from the close button. */}
+        <Button size="sm" className="mt-1 self-start" onClick={onAdd} disabled={!presetsReady}>
+          <Plus />
+          Add target
+        </Button>
       </DialogHeader>
 
       {targets.isPending && (

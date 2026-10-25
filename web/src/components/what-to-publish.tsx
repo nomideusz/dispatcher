@@ -75,7 +75,7 @@ export function WhatToPublish({ data }: { data: TimelineResponse }) {
       <Key items={GROUPS.map((g) => ({ label: g.label, color: g.color, line: true }))} />
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="min-w-0 space-y-2">
-          <h3 className="text-sm font-medium">Kickback per published template, 7-day average</h3>
+          <h3 className="text-sm font-medium">Kickback per published template, 7-day average, last 90 days</h3>
           <ChartContainer config={{}} className="aspect-auto h-44 w-full">
             <LineChart data={trend} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid vertical={false} />
@@ -92,9 +92,8 @@ export function WhatToPublish({ data }: { data: TimelineResponse }) {
             </LineChart>
           </ChartContainer>
           <p className="text-xs text-muted-foreground">
-            The day&apos;s kickback from templates of that size, divided across every one published
-            by then. A falling line with a growing catalog means new templates of that size earn
-            less than the old ones.
+            Daily kickback per published template of that size. If it falls while the catalog
+            grows, new templates of that size earn less than older ones.
           </p>
         </section>
 
@@ -116,8 +115,8 @@ export function WhatToPublish({ data }: { data: TimelineResponse }) {
             </LineChart>
           </ChartContainer>
           <p className="text-xs text-muted-foreground">
-            Of the templates at least that old, the share that had paid any kickback, over their
-            whole life. Where a line flattens, waiting longer stops helping.
+            Share of templates at least that old that have earned any kickback. Where a line
+            flattens, waiting longer doesn&apos;t help.
           </p>
         </section>
       </div>
@@ -147,10 +146,9 @@ export function WhatToPublish({ data }: { data: TimelineResponse }) {
         />
       </div>
       <p className="text-xs text-muted-foreground">
-        Kind is set per template in All templates, under its name. Earning and 30d are
-        Railway&apos;s trailing 30 days, whatever range is picked. Per template
-        divides that kickback across every template in the row, earning or not; first paid is
-        the median wait of those that have paid.
+        Earning and 30d always cover the last 30 days. Per template splits that across every
+        template in the row, earning or not. First paid: median wait among those that paid. Set a
+        template&apos;s kind under its name on Templates.
       </p>
     </div>
   );
@@ -192,16 +190,16 @@ function SegmentTable({
   const best = Math.max(0, ...rows.map((r) => r.earned / r.templates));
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[34rem] text-sm">
+      <table className="w-full text-sm sm:min-w-[34rem]">
         <thead>
           <tr className="border-b text-left text-xs whitespace-nowrap text-muted-foreground">
             <th className="pb-2 font-medium">{title}</th>
-            <th className="pb-2 pl-3 text-right font-medium">Templates</th>
-            <th className="pb-2 pl-3 text-right font-medium">Earning</th>
+            <th className="pb-2 pl-3 text-right font-medium max-sm:hidden">Templates</th>
+            <th className="pb-2 pl-3 text-right font-medium max-sm:hidden">Earning</th>
             <th className="pb-2 pl-3 text-right font-medium">30d</th>
             <th className="pb-2 pl-3 font-medium">Per template</th>
-            <th className="pb-2 pl-3 text-right font-medium">Per active project</th>
-            <th className="pb-2 pl-3 text-right font-medium">First paid</th>
+            <th className="pb-2 pl-3 text-right font-medium max-sm:hidden">Per active project</th>
+            <th className="pb-2 pl-3 text-right font-medium max-sm:hidden">First paid</th>
           </tr>
         </thead>
         <tbody>
@@ -210,8 +208,8 @@ function SegmentTable({
             return (
               <tr key={r.key} className="border-b border-border/50 last:border-0">
                 <td className="py-2 whitespace-nowrap">{format(r.key)}</td>
-                <td className="py-2 pl-3 text-right tabular-nums">{fmtNum(r.templates)}</td>
-                <td className="py-2 pl-3 text-right tabular-nums text-muted-foreground">{fmtNum(r.earning)}</td>
+                <td className="py-2 pl-3 text-right tabular-nums max-sm:hidden">{fmtNum(r.templates)}</td>
+                <td className="py-2 pl-3 text-right tabular-nums text-muted-foreground max-sm:hidden">{fmtNum(r.earning)}</td>
                 <td className="py-2 pl-3 text-right tabular-nums">{fmtUsd(r.earned)}</td>
                 <td className="py-2 pl-3">
                   <div className="flex items-center gap-2">
@@ -224,10 +222,10 @@ function SegmentTable({
                     </span>
                   </div>
                 </td>
-                <td className="py-2 pl-3 text-right tabular-nums text-muted-foreground">
+                <td className="py-2 pl-3 text-right tabular-nums text-muted-foreground max-sm:hidden">
                   {r.active > 0 ? fmtUsd(r.earned / r.active) : "—"}
                 </td>
-                <td className="py-2 pl-3 text-right tabular-nums text-muted-foreground">
+                <td className="py-2 pl-3 text-right tabular-nums text-muted-foreground max-sm:hidden">
                   {r.firstPaid == null ? "—" : `${r.firstPaid}d`}
                 </td>
               </tr>

@@ -13,7 +13,7 @@ Two people: the repo owner and their co-author, who publish and maintain a catal
 Dispatcher runs the template catalog as a business. A session does one or more of three jobs:
 
 - **Check earnings:** what kickback did, whether payouts landed, which template earned each one, whether anything broke.
-- **Decide what to build:** Candidates (what people deploy on Railway against what we already publish) and What to publish (kind, size and age against earnings and time to first payout) pick the next template.
+- **Decide what to build:** Candidates (what people deploy on Railway against what we already publish) and Patterns (kind, size and age against earnings and time to first payout) pick the next template.
 - **Maintain the catalog:** the upgrade queue, template-health drops and broken deploys flag templates that fell behind or failed.
 
 Success means more kickback for less maintenance: the next template gets picked on evidence, a regression gets caught before it costs deploys, and money never goes unnoticed.
@@ -28,7 +28,7 @@ It answers questions Railway's own template metrics cannot. It attributes each k
 - Login is Railway OAuth only. Railway stays the authority on who you are.
 
 ## Capabilities and Constraints
-- Three routes under one navy bar: `/` Today (docket of today, the range, balance and catalog; the Held tray with its Next line; Earnings; Templates with the upgrade queue, reach vs money and the funnel), `/decide` (What to publish, Candidates, copies of our templates) and `/payouts` (cash and credits, history). The range rides in `?days`. Dialogs for auto-withdraw and notification targets live in the bar.
+- Five pages under one navy bar, each named with a noun: `/` Money (docket of today, the range, balance and catalog; the Held tray with its Next line; Earnings; Payouts with cash, credits and history), `/templates` (the catalog table, reach vs money and the funnel, copies of our templates by others), `/upgrades` (the image and Dockerfile upgrade queue), `/patterns` (kind, size and age against earnings) and `/candidates` (the shortlist and the market). `/payouts` redirects to `/#payouts` and `/decide` to `/patterns`. The range rides in `?days`. Dialogs for auto-withdraw and notification targets live in the bar.
 - Data comes from Railway's GraphQL API, sampled hourly. Payouts from before tracking began are `untracked`, unexplained ones are `pending` and then `unknown`, and cash withdrawals are never attributed. Those states are facts the UI must show, not hide.
 - Range is selectable in days. Metrics depend on Railway's definitions, which the UI explains where they appear.
 - Daily auto-withdraw and notification delivery are real money and messaging actions.

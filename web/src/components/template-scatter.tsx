@@ -197,11 +197,9 @@ export function TemplateScatter({
         </ScatterChart>
       </ChartContainer>
       <p className="text-xs text-muted-foreground">
-        {fmtNum(earning.length)} templates earned in the last 30 days, {fmtNum(above)} of them $1 or
-        more per active project. {fmtNum(idle.length)} have live projects and earned nothing (the
-        bottom row)
-        {hidden > 0 ? `; ${fmtNum(hidden)} more have neither and are not shown` : ""}. Both axes
-        are logarithmic.
+        {fmtNum(earning.length)} templates earned in the last 30 days, {fmtNum(above)} of them $1+ per
+        active project. {fmtNum(idle.length)} have live projects but earned nothing (bottom row)
+        {hidden > 0 ? `; ${fmtNum(hidden)} with neither are hidden` : ""}. Both axes are logarithmic.
       </p>
     </div>
   );

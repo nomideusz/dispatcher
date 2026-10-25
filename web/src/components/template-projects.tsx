@@ -34,7 +34,7 @@ const fullFmt = new Intl.DateTimeFormat("en-US", {
 
 const METRICS = [
   { key: "activeProjects", label: "Active projects" },
-  { key: "recentProjects", label: "Recent projects", note: "last 90 days" },
+  { key: "recentProjects", label: "Recent projects", note: "made in the 90 days before each day" },
   { key: "projects", label: "Total projects" },
 ] as const;
 

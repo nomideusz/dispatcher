@@ -4,7 +4,7 @@ import {
   CircleCheck,
   Clock,
 } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Delta } from "~/components/delta";
 import { PayoutHistoryChart } from "~/components/payout-history-chart";
 import { Button } from "~/components/ui/button";
@@ -26,11 +26,11 @@ import {
   payoutHistoryQuery,
 } from "~/queries/payouts";
 
-const dayFmt = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-});
+const dayFmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+const yearFmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" });
+/** "Aug 17", with the year only when it isn't this one. */
+const fmtDate = (d: Date) =>
+  (d.getFullYear() === new Date().getFullYear() ? dayFmt : yearFmt).format(d);
 // Hover detail for date cells: billing rhythm is a time-of-day fingerprint, so
 // the exact minute matters when reading payer chains. Local time plus UTC.
 const timeFmt = new Intl.DateTimeFormat("en-US", {
@@ -46,7 +46,7 @@ function DateCell({ iso, className }: { iso: string; className: string }) {
   const d = new Date(iso);
   return (
     <td className={className} title={`${timeFmt.format(d)} (${utcFmt.format(d)} UTC)`}>
-      {dayFmt.format(d)}
+      {fmtDate(d)}
     </td>
   );
 }
@@ -101,8 +101,7 @@ export function PayoutHistory({ days }: { days: number }) {
       <CardHeader>
         <CardTitle>Cash and credits</CardTitle>
         <CardDescription>
-          Paid out over the range. Kickback still in the Railway balance counts as earned
-          above, not here.
+          Paid out in this range. The balance still in Railway is on the docket above.
         </CardDescription>
         {data && data.totalRows > 0 && (
           <CardAction>
@@ -147,8 +146,8 @@ export function PayoutHistory({ days }: { days: number }) {
       {data && data.totalRows === 0 && (
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            No payouts recorded yet. Railway pays out once your balance clears{" "}
-            {fmtCents(10000)}; the collector picks them up on each refresh.
+            No payouts yet. Railway pays out once your balance is over {fmtCents(10000)}; payouts
+            show up here on the next refresh.
           </p>
         </CardContent>
       )}
@@ -174,14 +173,7 @@ export function PayoutHistory({ days }: { days: number }) {
                   note={`${data.totals.pendingCount} pending`}
                 />
               )}
-              {data.window.count === 0 && (
-                <p className="max-w-md self-center text-sm text-muted-foreground">
-                  Nothing paid out in the last {days} days
-                  {data.totals.lastPayoutAt &&
-                    ` — the last payout was ${dayFmt.format(new Date(data.totals.lastPayoutAt))}`}
-                  . Kickback is accruing in the Railway balance instead.
-                </p>
-              )}
+              <DueFigure payers={data.payers} />
             </div>
             {data.window.count > 0 && <PayoutHistoryChart points={data.points} />}
           </CardContent>
@@ -192,9 +184,8 @@ export function PayoutHistory({ days }: { days: number }) {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-xs text-muted-foreground">
                     {fmtNum(statusCount("returning"))} returning · {fmtNum(statusCount("new"))} new ·{" "}
-                    {fmtNum(statusCount("lapsed"))} lapsed. One line per deployer, under a stable
-                    pseudonym: returning paid again on their billing date, lapsed missed a due
-                    invoice.
+                    {fmtNum(statusCount("lapsed"))} lapsed. One row per deployer, under a made-up name.
+                    Returning: paid again on their billing date. Lapsed: missed a due invoice.
                   </p>
                   <div role="group" aria-label="Sort payers" className="flex gap-1">
                     {(["rank", "status", "due"] as const).map((s) => (
@@ -214,15 +205,15 @@ export function PayoutHistory({ days }: { days: number }) {
                   <table className={STICKY_HEAD}>
                     <thead>
                       <tr className="border-b text-left text-xs text-muted-foreground">
-                        <th className="pb-2 text-right font-medium">#</th>
-                        <th className="pb-2 pl-3 font-medium">Payer</th>
-                        <th className="pb-2 pl-3 font-medium">Template</th>
-                        <th className="pb-2 pl-3 font-medium">Status</th>
-                        <th className="pb-2 pl-3 font-medium">First</th>
-                        <th className="pb-2 pl-3 font-medium">Last</th>
-                        <th className="pb-2 pl-3 font-medium">Next due</th>
-                        <th className="pb-2 pl-3 text-right font-medium">Invoices</th>
-                        <th className="pb-2 pl-3 text-right font-medium">Last amount</th>
+                        <th className="pb-2 text-right font-medium max-sm:hidden">#</th>
+                        <th className="pb-2 font-medium sm:pl-3">Payer</th>
+                        <th className="pb-2 pl-3 font-medium max-sm:hidden">Template</th>
+                        <th className="pb-2 pl-3 font-medium max-sm:hidden">Status</th>
+                        <th className="pb-2 pl-3 font-medium max-sm:hidden">First</th>
+                        <th className="pb-2 pl-3 font-medium max-sm:hidden">Last</th>
+                        <th className="pb-2 pl-3 font-medium max-sm:hidden">Next due</th>
+                        <th className="pb-2 pl-3 text-right font-medium max-sm:hidden">Invoices</th>
+                        <th className="pb-2 pl-3 text-right font-medium max-sm:hidden">Last amount</th>
                         <th className="pb-2 pl-3 text-right font-medium">Total</th>
                       </tr>
                     </thead>
@@ -249,7 +240,7 @@ export function PayoutHistory({ days }: { days: number }) {
                       <tr className="border-b text-left text-xs text-muted-foreground">
                         <th className="pb-2 font-medium">Date</th>
                         <th className="pb-2 pl-3 font-medium">Template</th>
-                        <th className="pb-2 pl-3 font-medium">Destination</th>
+                        <th className="pb-2 pl-3 font-medium max-sm:hidden">Destination</th>
                         <th className="pb-2 pl-3 font-medium">Status</th>
                         <th className="pb-2 pl-3 text-right font-medium">Amount</th>
                       </tr>
@@ -283,8 +274,14 @@ function WindowFigure({ days, data }: { days: number; data: PayoutHistoryData })
   return (
     <div>
       <div className="text-xs text-muted-foreground">Paid out · last {days}d</div>
-      <div className="text-xl font-semibold">{fmtCents(totalCents)}</div>
-      {changePct != null ? (
+      <div className="text-xl font-semibold tabular-nums">{fmtCents(totalCents)}</div>
+      {count === 0 ? (
+        <div className="text-xs text-muted-foreground">
+          {data.totals.lastPayoutAt
+            ? `last payout ${fmtDate(new Date(data.totals.lastPayoutAt))}`
+            : "no payouts yet"}
+        </div>
+      ) : changePct != null ? (
         <Delta pct={changePct} suffix={`vs previous ${days}d`} />
       ) : (
         <div className="text-xs text-muted-foreground">
@@ -295,8 +292,7 @@ function WindowFigure({ days, data }: { days: number; data: PayoutHistoryData })
   );
 }
 
-/** Inline stat figure. Proportional (not tabular) digits — these sit alone,
- * not in a column, and equal-width digits read loose at this size. */
+/** Inline stat figure, in mono like every figure. */
 function Figure({
   label,
   value,
@@ -304,14 +300,32 @@ function Figure({
 }: {
   label: string;
   value: string;
-  note?: string;
+  note?: ReactNode;
 }) {
   return (
     <div>
       <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-xl font-semibold">{value}</div>
+      <div className="text-xl font-semibold tabular-nums">{value}</div>
       {note && <div className="text-xs text-muted-foreground">{note}</div>}
     </div>
+  );
+}
+
+/** Kickback the current payers should bring in over the next 30 days: each
+ * one's last amount, if they're due again in that time. */
+function DueFigure({ payers }: { payers: PayerChain[] }) {
+  const horizon = new Date(Date.now() + 30 * 86_400_000).toISOString();
+  const due = payers.filter((p) => p.status !== "lapsed" && p.nextDueAt <= horizon);
+  if (due.length === 0) return null;
+  const now = new Date().toISOString();
+  const upcoming = due.filter((p) => p.nextDueAt >= now);
+  const next = upcoming.length ? upcoming.reduce((a, b) => (a.nextDueAt < b.nextDueAt ? a : b)) : null;
+  return (
+    <Figure
+      label="Due in the next 30 days"
+      value={`~${fmtCents(due.reduce((s, p) => s + p.lastCents, 0))}`}
+      note={`${due.length} ${due.length === 1 ? "payer" : "payers"}${next ? `, next ${fmtDate(new Date(next.nextDueAt))}` : ""}`}
+    />
   );
 }
 
@@ -324,27 +338,33 @@ function PayerRow({ chain }: { chain: PayerChain }) {
         : "text-muted-foreground";
   return (
     <tr className="border-b border-border/50 last:border-0">
-      <td className="py-2 text-right tabular-nums text-muted-foreground">{chain.rank}</td>
-      <td className="py-2 pl-3 font-medium capitalize">{chain.name}</td>
+      <td className="py-2 text-right tabular-nums text-muted-foreground max-sm:hidden">{chain.rank}</td>
+      <td className="py-2 sm:pl-3">
+        <div className="font-medium capitalize">{chain.name}</div>
+        {/* A phone shows only payer and total; the rest rides here. */}
+        <div className="text-xs text-muted-foreground sm:hidden">
+          {chain.templateName} · <span className={tone}>{chain.status}</span>
+        </div>
+      </td>
       <td
         className={
           PSEUDO_TEMPLATE_IDS.has(chain.templateId)
-            ? "py-2 pl-3 text-muted-foreground"
-            : "py-2 pl-3"
+            ? "py-2 pl-3 text-muted-foreground max-sm:hidden"
+            : "py-2 pl-3 max-sm:hidden"
         }
       >
         {chain.templateName}
       </td>
-      <td className={`py-2 pl-3 ${tone}`}>{chain.status}</td>
-      <DateCell iso={chain.firstAt} className="whitespace-nowrap py-2 pl-3 tabular-nums" />
-      <DateCell iso={chain.lastAt} className="whitespace-nowrap py-2 pl-3 tabular-nums" />
+      <td className={`py-2 pl-3 max-sm:hidden ${tone}`}>{chain.status}</td>
+      <DateCell iso={chain.firstAt} className="whitespace-nowrap py-2 pl-3 tabular-nums max-sm:hidden" />
+      <DateCell iso={chain.lastAt} className="whitespace-nowrap py-2 pl-3 tabular-nums max-sm:hidden" />
       {chain.status === "lapsed" ? (
-        <td className="whitespace-nowrap py-2 pl-3 tabular-nums text-muted-foreground">—</td>
+        <td className="whitespace-nowrap py-2 pl-3 tabular-nums text-muted-foreground max-sm:hidden">—</td>
       ) : (
-        <DateCell iso={chain.nextDueAt} className="whitespace-nowrap py-2 pl-3 tabular-nums text-muted-foreground" />
+        <DateCell iso={chain.nextDueAt} className="whitespace-nowrap py-2 pl-3 tabular-nums text-muted-foreground max-sm:hidden" />
       )}
-      <td className="py-2 pl-3 text-right tabular-nums">{fmtNum(chain.invoices)}</td>
-      <td className="py-2 pl-3 text-right tabular-nums">{fmtCents(chain.lastCents)}</td>
+      <td className="py-2 pl-3 text-right tabular-nums max-sm:hidden">{fmtNum(chain.invoices)}</td>
+      <td className="py-2 pl-3 text-right tabular-nums max-sm:hidden">{fmtCents(chain.lastCents)}</td>
       <td className="py-2 pl-3 text-right tabular-nums">{fmtCents(chain.totalCents)}</td>
     </tr>
   );
@@ -368,7 +388,7 @@ function PayoutRow({ payout }: { payout: Payout }) {
               ? "pending"
               : "—")}
       </td>
-      <td className="py-2.5 pl-3 text-muted-foreground">{payout.destination}</td>
+      <td className="py-2.5 pl-3 text-muted-foreground max-sm:hidden">{payout.destination}</td>
       <td className="py-2.5 pl-3">
         <PayoutStatus status={payout.status} />
       </td>

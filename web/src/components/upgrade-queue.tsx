@@ -1,12 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { Fragment, useState } from "react";
+import { Fragment, type ReactNode, useState } from "react";
+import { Link } from "react-router";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { fmtAgo, fmtNum, fmtUsd, shortNames } from "~/lib/format";
 import { type ServiceUpgrade, upgradesQuery, useRefreshUpgrades } from "~/queries/upgrades";
 
 /** How many templates pin something with a newer release on its major
- * line: the count the Templates card puts on its Upgrades tab. */
+ * line: the count the Held tray links to the Upgrades page with. */
 export const behindTemplateCount = (rows: ServiceUpgrade[]) => templateCount(rows.filter(MATCHES.behind));
 
 /** behind: a newer release on the pinned major line (the queue). majors: a
@@ -34,7 +35,9 @@ export function UpgradeQueue() {
   const upgrades = useQuery(upgradesQuery);
   const refresh = useRefreshUpgrades();
   const [filter, setFilter] = useState<UpgradeFilter>("behind");
-  const [grouped, setGrouped] = useState(false);
+  // One heading per template, so its earnings show once instead of on
+  // every service row.
+  const [grouped, setGrouped] = useState(true);
   const rows = upgrades.data ?? [];
   const names = shortNames(rows.map((u) => u.name ?? u.templateId));
   const shown = rows.filter(MATCHES[filter]);
@@ -61,8 +64,13 @@ export function UpgradeQueue() {
               )}
             </Button>
           ))}
-          <Button size="xs" variant={grouped ? "secondary" : "ghost"} onClick={() => setGrouped(!grouped)}>
-            Group
+          <Button
+            size="xs"
+            aria-pressed={grouped}
+            variant={grouped ? "secondary" : "ghost"}
+            onClick={() => setGrouped(!grouped)}
+          >
+            Group by template
           </Button>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -71,7 +79,13 @@ export function UpgradeQueue() {
               Checked {fmtAgo(checkedAt, new Date().toISOString())} ago · daily at 06:08 UTC
             </span>
           )}
-          <Button size="xs" variant="ghost" disabled={refresh.isPending} onClick={() => refresh.mutate()}>
+          <Button
+            size="xs"
+            variant="ghost"
+            className="text-muted-foreground"
+            disabled={refresh.isPending}
+            onClick={() => refresh.mutate()}
+          >
             {refresh.isPending ? "Checking…" : "Re-check"}
           </Button>
         </div>
@@ -90,17 +104,16 @@ export function UpgradeQueue() {
           </p>
         )}
         {shown.length > 0 && (
-          <table className="w-full text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10 [&_thead_th]:bg-card">
+          <table className="w-full text-sm [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10 [&_thead_th]:bg-card [&_thead_th]:shadow-[inset_0_-1px_0_var(--border)]">
             <thead>
-              <tr className="border-b text-left text-xs text-muted-foreground">
+              <tr className="text-left text-xs whitespace-nowrap text-muted-foreground">
                 <th className="pb-2 font-medium">Template</th>
                 <th className="pb-2 pl-3 font-medium">Service</th>
-                <th className="pb-2 pl-3 font-medium">Image</th>
-                <th className="pb-2 pl-3 font-medium">Pinned</th>
-                <th className="pb-2 pl-3 font-medium">Newest on line</th>
-                <th className="pb-2 pl-3 font-medium">Later major</th>
-                <th className="pb-2 pl-3 text-right font-medium">Earned 30d</th>
-                <th className="pb-2 pl-3 text-right font-medium">Active</th>
+                <th className="pb-2 pl-3 font-medium max-md:hidden">Image</th>
+                <th className="pb-2 pl-3 font-medium">Pinned → newest on line</th>
+                <th className="pb-2 pl-3 font-medium max-sm:hidden">Later major</th>
+                <th className="pb-2 pl-3 text-right font-medium max-sm:hidden">Earned 30d</th>
+                <th className="pb-2 pl-3 text-right font-medium max-sm:hidden">Active</th>
               </tr>
             </thead>
             <tbody>
@@ -112,8 +125,10 @@ export function UpgradeQueue() {
                     return (
                       <Fragment key={u.templateId}>
                         <tr className="border-t first:border-0">
-                          <td className="pt-3 pb-1 font-medium">{names(u.name ?? u.templateId)}</td>
-                          <td colSpan={5} className="pt-3 pb-1 pl-3 text-xs text-muted-foreground">
+                          <th scope="rowgroup" className="pt-3 pb-1 text-left font-medium">
+                            <TemplateLink u={u} name={names(u.name ?? u.templateId)} />
+                          </th>
+                          <td colSpan={4} className="pt-3 pb-1 pl-3 text-xs text-muted-foreground">
                             {checked.length === 0
                               ? "nothing pinned"
                               : `${fmtNum(checked.length)} pinned${behind ? `, ${fmtNum(behind)} behind` : ""}`}
@@ -130,7 +145,7 @@ export function UpgradeQueue() {
                     <ServiceRow
                       key={`${u.templateId}-${u.service}-${u.image}`}
                       u={u}
-                      template={names(u.name ?? u.templateId)}
+                      template={<TemplateLink u={u} name={names(u.name ?? u.templateId)} />}
                       earnings
                     />
                   ))}
@@ -148,26 +163,46 @@ export function UpgradeQueue() {
   );
 }
 
-function ServiceRow({ u, template, earnings }: { u: ServiceUpgrade; template: string; earnings?: boolean }) {
+/** The template name, linking to its row in the Money page's table. */
+function TemplateLink({ u, name }: { u: ServiceUpgrade; name: string }) {
+  return (
+    <Link to={`/templates#t-${u.templateId}`} className="underline-offset-3 hover:underline">
+      {name}
+    </Link>
+  );
+}
+
+function ServiceRow({
+  u,
+  template,
+  earnings,
+}: {
+  u: ServiceUpgrade;
+  template: ReactNode;
+  earnings?: boolean;
+}) {
+  const moved = u.behind === "minor" || u.behind === "patch";
   return (
     <tr className={earnings ? "border-b last:border-0" : undefined}>
-      <td className="py-1.5">{template}</td>
-      <td className="py-1.5 pl-3 text-muted-foreground">{u.service}</td>
-      <td className="max-w-64 truncate py-1.5 pl-3 font-mono text-xs" title={u.image}>
+      <td className="py-2">{template}</td>
+      <td className="py-2 pl-3 text-muted-foreground" title={u.image}>
+        {u.service}
+      </td>
+      <td className="max-w-64 truncate py-2 pl-3 font-mono text-xs max-md:hidden" title={u.image}>
         {u.image}
       </td>
-      <td className="py-1.5 pl-3 font-mono text-xs">
+      <td className="py-2 pl-3 font-mono text-xs whitespace-nowrap">
         {u.tag}
         {(u.haBlock === "tag" || u.haBlock === "pinned") && (
           <span className="font-sans text-(--viz-caution)" title={`${u.ha} cannot convert this tag`}>
             {" "}(no HA)
           </span>
         )}
-      </td>
-      <td className="py-1.5 pl-3 font-mono text-xs">
+        {u.tag && " "}
+        {moved && <span className="font-sans text-muted-foreground">→ </span>}
         <LineCell u={u} />
       </td>
-      <td className="py-1.5 pl-3 font-mono text-xs text-muted-foreground">
+      <td className="py-2 pl-3 font-mono text-xs text-muted-foreground max-sm:hidden">
         {u.major}
         {u.major && u.ha && (u.haBlock === "" || u.haBlock === "major") && (
           <span
@@ -178,7 +213,7 @@ function ServiceRow({ u, template, earnings }: { u: ServiceUpgrade; template: st
           </span>
         )}
       </td>
-      {earnings ? <EarningCells u={u} /> : <td colSpan={2} />}
+      {earnings ? <EarningCells u={u} /> : <td colSpan={2} className="max-sm:hidden" />}
     </tr>
   );
 }
@@ -186,10 +221,10 @@ function ServiceRow({ u, template, earnings }: { u: ServiceUpgrade; template: st
 function EarningCells({ u }: { u: ServiceUpgrade }) {
   return (
     <>
-      <td className="py-1.5 pl-3 text-right tabular-nums">
+      <td className="py-2 pl-3 text-right tabular-nums max-sm:hidden">
         {u.earningsLast30Days == null ? "—" : fmtUsd(u.earningsLast30Days)}
       </td>
-      <td className="py-1.5 pl-3 text-right tabular-nums">
+      <td className="py-2 pl-3 text-right tabular-nums max-sm:hidden">
         {u.activeProjects == null ? "—" : fmtNum(u.activeProjects)}
       </td>
     </>

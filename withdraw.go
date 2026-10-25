@@ -153,12 +153,18 @@ func handleUpdateWithdrawSettings(db *gorm.DB) http.HandlerFunc {
 			log.Printf("auto-withdraw: reschedule: %v", err)
 		}
 		// Attempt a withdrawal right away instead of waiting for the next
-		// tick; runAutoWithdraw re-checks all guardrails so this is safe even
-		// when the balance is below the minimum or one is already pending.
+		// tick, and say what happened; runAutoWithdraw re-checks all
+		// guardrails so this is safe even when the balance is below the
+		// minimum or one is already pending.
+		resp := struct {
+			AutoWithdrawSettings
+			Attempt *withdrawAttempt `json:"attempt,omitempty"`
+		}{AutoWithdrawSettings: s}
 		if req.Enabled {
-			go runAutoWithdraw(db)
+			a := runAutoWithdraw(db)
+			resp.Attempt = &a
 		}
-		writeJSON(w, http.StatusOK, s)
+		writeJSON(w, http.StatusOK, resp)
 	}
 }
 

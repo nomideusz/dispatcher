@@ -1,23 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState, type ReactNode } from "react";
-import { Link } from "react-router";
+import type { ReactNode } from "react";
+import { Link, useLocation } from "react-router";
 import { Delta } from "~/components/delta";
-import { RangeToggle, type RangeDays, useRangeDays } from "~/components/range-toggle";
-import { TemplateFunnel } from "~/components/template-funnel";
-import { TemplateScatter } from "~/components/template-scatter";
-import { TemplatesTable } from "~/components/templates-table";
+import { RangeToggle, useRangeDays } from "~/components/range-toggle";
 import { Earnings } from "~/components/earnings";
-import { PageHeader, Section } from "~/components/page";
-import { behindTemplateCount, UpgradeQueue } from "~/components/upgrade-queue";
+import { PageHeader, Section, useHashFollow } from "~/components/page";
+import { behindTemplateCount } from "~/components/upgrade-queue";
+import { AutoWithdraw } from "~/components/auto-withdraw-dialog";
+import { PayoutHistory } from "~/components/payout-history";
 import { Button } from "~/components/ui/button";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "~/components/ui/card";
+import { Card, CardContent } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 import { dayDate, dayKey, fmtAgo, fmtCents, fmtDay, fmtNum, shortName, shortNames } from "~/lib/format";
 import { cn } from "~/lib/utils";
@@ -29,11 +21,7 @@ import {
   useRefreshAnalytics,
 } from "~/queries/analytics";
 import { candidatesQuery } from "~/queries/candidates";
-import {
-  type PayoutHistory as PayoutHistoryData,
-  type PayoutTemplateTotal,
-  payoutHistoryQuery,
-} from "~/queries/payouts";
+import { type PayoutHistory as PayoutHistoryData, payoutHistoryQuery } from "~/queries/payouts";
 import { upgradesQuery } from "~/queries/upgrades";
 import {
   accountLabel,
@@ -44,24 +32,25 @@ import {
 import type { Route } from "./+types/analytics";
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "Today · Dispatcher" }];
+  return [{ title: "Money · Dispatcher" }];
 }
 
-export default function Today() {
+export default function Money() {
   const [days, setDays] = useRangeDays();
   const timeline = useQuery(timelineQuery(days));
   const payouts = useQuery(payoutHistoryQuery(days));
   const data = timeline.data;
-  const payers = new Map(payouts.data?.byTemplate.map((t) => [t.templateId, t.payers]));
+  // Old /payouts links land on #payouts.
+  useHashFollow(!!data);
 
   return (
     <main className="viz shell space-y-6 py-6">
       <PageHeader
-        title="Today"
+        title="Money"
         sub={
           data
             ? `Sampled ${fmtAgo(data.sampledAt, new Date().toISOString())} ago · tracking since ${fmtDay(data.trackedSince)}`
-            : "What your templates earn, what needs you, and what to do next"
+            : "Earnings, payouts, what needs you and what is next"
         }
       >
         {data && <RangeToggle value={days} onChange={setDays} />}
@@ -77,13 +66,13 @@ export default function Today() {
 
       {data && (
         <>
-          <Docket data={data} payouts={payouts.data} />
+          <Docket data={data} />
           <Held data={data} payouts={payouts.data} />
 
           <Section
             id="earnings"
             title="Earnings"
-            text="Everything earned so far against how much of the catalog is deployed, live and paying, and what each day added. Hover a day to see which templates earned."
+            text="Kickback over time, how much of the catalog is in use, and what each day earned. Hover a day to see which templates earned."
           >
             <Card>
               <CardContent>
@@ -93,39 +82,11 @@ export default function Today() {
           </Section>
 
           <Section
-            id="templates"
-            title="Templates"
-            text="Every template as a consignment to act on, its upgrades, then which ones reach people and which of those pay."
+            id="payouts"
+            title="Payouts"
+            text="Kickback paid out as cash or credits, what is due next, and the deployers behind it."
           >
-            <TemplatesCard data={data} days={days} byTemplate={payouts.data?.byTemplate} />
-
-            <div className="grid gap-x-8 border-t pt-2 lg:grid-cols-12">
-              <Card className="lg:col-span-7">
-                <CardHeader>
-                  <CardTitle>Reach vs money</CardTitle>
-                  <CardDescription>
-                    Each template by its live projects and its last 30 days of kickback. Up and
-                    left of a diagonal, each project pays more; far right and low is popular but
-                    unpaid.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <TemplateScatter templates={data.templates} payers={payers} />
-                </CardContent>
-              </Card>
-              <Card className="max-lg:border-t lg:col-span-5 lg:border-l lg:pl-8">
-                <CardHeader>
-                  <CardTitle>From deploy to kickback</CardTitle>
-                  <CardDescription>What Railway counts, widest first, across all templates</CardDescription>
-                </CardHeader>
-                <CardContent className="flex-1">
-                  <TemplateFunnel
-                    templates={data.templates}
-                    payers={payouts.data?.byTemplate.reduce((s, t) => s + t.payers, 0)}
-                  />
-                </CardContent>
-              </Card>
-            </div>
+            <PayoutHistory days={days} />
           </Section>
         </>
       )}
@@ -133,93 +94,9 @@ export default function Today() {
   );
 }
 
-/** Every template, two ways: what it earns and how it is deployed, or what
- * it pins that has a newer release. Both are lists to act on, per template,
- * so they share one card and one place on the page. */
-function TemplatesCard({
-  data,
-  days,
-  byTemplate,
-}: {
-  data: TimelineResponse;
-  days: RangeDays;
-  byTemplate: PayoutTemplateTotal[] | undefined;
-}) {
-  const [view, setView] = useState<"templates" | "upgrades">("templates");
-  const upgrades = useQuery(upgradesQuery);
-
-  // Held names link to #t-<id> rows and the upgrades count to #upgrades;
-  // switch to the view that holds the target, then bring it into view.
-  useEffect(() => {
-    const follow = () => {
-      const hash = window.location.hash.slice(1);
-      if (hash !== "upgrades" && !hash.startsWith("t-")) return;
-      setView(hash === "upgrades" ? "upgrades" : "templates");
-      requestAnimationFrame(() =>
-        document.getElementById(hash)?.scrollIntoView({ block: hash === "upgrades" ? "start" : "center" }),
-      );
-    };
-    follow();
-    window.addEventListener("hashchange", follow);
-    return () => window.removeEventListener("hashchange", follow);
-  }, []);
-  const behind = upgrades.data ? behindTemplateCount(upgrades.data) : null;
-
-  return (
-    <Card id="upgrades" className="scroll-mt-20">
-      <CardHeader>
-        <CardTitle>All templates</CardTitle>
-        <CardDescription>
-          {view === "templates"
-            ? `New and earned are for the last ${days} days; payers and $/active for the last 30. Last deploy is when a new project last appeared; paid is the first and latest kickback.`
-            : "Each template's pinned images, and the versions its Dockerfiles mark, against the newest release of the same shape. Behind first, most earning first."}
-        </CardDescription>
-        <CardAction role="group" aria-label="Templates view">
-          <Button
-            size="xs"
-            aria-pressed={view === "templates"}
-            variant={view === "templates" ? "secondary" : "ghost"}
-            onClick={() => setView("templates")}
-          >
-            Earnings
-          </Button>
-          <Button
-            size="xs"
-            aria-pressed={view === "upgrades"}
-            variant={view === "upgrades" ? "secondary" : "ghost"}
-            onClick={() => setView("upgrades")}
-          >
-            Upgrades
-            {behind != null && behind > 0 && (
-              <span className="tabular-nums text-muted-foreground">{fmtNum(behind)}</span>
-            )}
-          </Button>
-        </CardAction>
-      </CardHeader>
-      <CardContent>
-        {view === "templates" ? (
-          <TemplatesTable
-            templates={data.templates}
-            byTemplate={byTemplate}
-            dates={data.points.map((p) => p.date)}
-          />
-        ) : (
-          <UpgradeQueue />
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
 /** The docket header: today's takings, the range, the balance and whether
  * auto-withdraw will pay it, and the catalog. Each figure appears once. */
-function Docket({
-  data,
-  payouts,
-}: {
-  data: TimelineResponse;
-  payouts: PayoutHistoryData | undefined;
-}) {
+function Docket({ data }: { data: TimelineResponse }) {
   const accounts = useQuery(withdrawAccountsQuery);
   const withdraw = useQuery(withdrawSettingsQuery);
   const { window: w, points, templates } = data;
@@ -259,14 +136,22 @@ function Docket({
       className="grid grid-cols-2 gap-px border bg-border lg:grid-cols-4 [&>*]:bg-background"
     >
       <DocketCell label="Today · UTC" value={fmtCents(today?.earnedCents ?? 0)}>
-        {yesterday && <p>{fmtCents(yesterday.earnedCents)} yesterday</p>}
+        {yesterday && (
+          <p>
+            <Fig>{fmtCents(yesterday.earnedCents)}</Fig> yesterday
+          </p>
+        )}
         <p className="line-clamp-2">
           {earnedToday.length === 0
             ? "Nothing yet today"
             : [
-                ...earnedToday.slice(0, 3).map(([n, c]) => `${n} ${fmtCents(c)}`),
-                ...(earnedToday.length > 3 ? [`+${earnedToday.length - 3} more`] : []),
-              ].join(" · ")}
+                ...earnedToday.slice(0, 3).map(([n, c]) => (
+                  <span key={n}>
+                    {n} <Fig>{fmtCents(c)}</Fig>
+                  </span>
+                )),
+                ...(earnedToday.length > 3 ? [<span key="more">+{earnedToday.length - 3} more</span>] : []),
+              ].flatMap((n, i) => (i === 0 ? [n] : [" · ", n]))}
         </p>
       </DocketCell>
 
@@ -280,8 +165,7 @@ function Docket({
           suffix={`on the previous ${w.days}`}
         />
         <p>
-          {fmtCents(perDay)} a day · {fmtCents(lifetime)} lifetime
-          {payouts ? `, ${fmtCents(payouts.totals.lifetimeCents)} paid out` : ""}
+          <Fig>{fmtCents(perDay)}</Fig> a day · <Fig>{fmtCents(lifetime)}</Fig> lifetime
         </p>
       </DocketCell>
 
@@ -301,9 +185,22 @@ function Docket({
                     .filter(Boolean)
                     .join(" · ")
                 : "Withdrawable · auto-withdraw is off"
-              : `${fmtCents(minimum - balance)} to the ${fmtCents(minimum)} minimum${
-                  perDay > 0 ? ` · ~${Math.ceil((minimum - balance) / perDay)} days at this pace` : ""
-                }`}
+              : (
+                  <>
+                    <Fig>{fmtCents(minimum - balance)}</Fig> to the <Fig>{fmtCents(minimum)}</Fig> minimum
+                    {perDay > 0 && (
+                      <>
+                        {" "}
+                        · ~<Fig>{Math.ceil((minimum - balance) / perDay)}</Fig> days at this pace
+                      </>
+                    )}
+                  </>
+                )}
+          </p>
+        )}
+        {balance != null && (
+          <p>
+            <AutoWithdraw inline />
           </p>
         )}
         {accounts.isError && <p>Couldn&apos;t read the balance from Railway.</p>}
@@ -312,24 +209,25 @@ function Docket({
       <DocketCell label="Templates" value={fmtNum(templates.length)}>
         {last?.published != null && last.published !== templates.length && (
           <p>
-            {fmtNum(last.published)} published on Railway, {fmtNum(Math.abs(last.published - templates.length))}{" "}
-            {last.published > templates.length ? "not in the list below" : "no longer published"}
+            <Fig>{fmtNum(last.published)}</Fig> published on Railway,{" "}
+            <Fig>{fmtNum(Math.abs(last.published - templates.length))}</Fig>{" "}
+            {last.published > templates.length ? "not in our catalog yet" : "no longer published"}
           </p>
         )}
         <p>
-          {fmtNum(activeNow)} active projects
+          <Fig>{fmtNum(activeNow)}</Fig> active projects
           {activeChange != null && first && (
             <>
               {" "}
               <span className={activeChange >= 0 ? "text-(--viz-up)" : "text-(--viz-down)"}>
-                ({activeChange >= 0 ? "+" : ""}
-                {fmtNum(activeChange)} since {fmtDay(first.date)})
+                (<Fig>{`${activeChange >= 0 ? "+" : ""}${fmtNum(activeChange)}`}</Fig> since {fmtDay(first.date)})
               </span>
             </>
           )}
         </p>
         <p>
-          {fmtNum(runningNow)} running · {fmtNum(earning)} earned in {w.days} days · {fmtNum(added)} added
+          <Fig>{fmtNum(runningNow)}</Fig> running · <Fig>{fmtNum(earning)}</Fig> earned in {w.days} days ·{" "}
+          <Fig>{fmtNum(added)}</Fig> added
         </p>
       </DocketCell>
     </section>
@@ -361,6 +259,11 @@ function DocketCell({
   );
 }
 
+/** An inline figure inside sans prose, set in mono like every figure. */
+function Fig({ children }: { children: ReactNode }) {
+  return <span className="tabular-nums">{children}</span>;
+}
+
 type HeldItem = { key: string; text: ReactNode };
 
 /** The held tray: what needs you, named, each name a jump to its
@@ -375,14 +278,15 @@ function Held({
 }) {
   const upgrades = useQuery(upgradesQuery);
   const candidates = useQuery(candidatesQuery);
+  const { search } = useLocation();
   const name = shortNames(data.templates.map((t) => t.name));
   const jump = (t: { templateId: string; name: string }) => (
-    <a
-      href={`#t-${t.templateId}`}
+    <Link
+      to={`/templates${search}#t-${t.templateId}`}
       className="font-semibold text-foreground underline decoration-(--viz-critical) decoration-1 hover:decoration-2"
     >
       {name(t.name)}
-    </a>
+    </Link>
   );
   const list = (nodes: ReactNode[]) =>
     nodes.flatMap((n, i) => (i === 0 ? [n] : [i === nodes.length - 1 ? " and " : ", ", n]));
@@ -423,12 +327,15 @@ function Held({
       ),
     });
   }
+  const next: HeldItem[] = [];
+  // Someone else's template building from our code needs no one today, so it
+  // is a next step in caution ochre, not held red.
   const copies = candidates.data?.copies ?? [];
   if (copies.length > 0) {
-    held.push({
+    next.push({
       key: "copies",
       text: (
-        <Link to="/decide#copies" className="font-semibold text-foreground underline decoration-(--viz-critical)">
+        <Link to={`/templates${search}#copies`} className="text-(--viz-caution) underline">
           {copies.length === 1
             ? "1 template by someone else builds"
             : `${fmtNum(copies.length)} templates by others build`}{" "}
@@ -437,16 +344,14 @@ function Held({
       ),
     });
   }
-
-  const next: HeldItem[] = [];
   const behind = upgrades.data ? behindTemplateCount(upgrades.data) : 0;
   if (behind > 0) {
     next.push({
       key: "upgrades",
       text: (
-        <a href="#upgrades" className="text-primary underline">
+        <Link to="/upgrades" className="text-primary underline">
           {fmtNum(behind)} {behind === 1 ? "template" : "templates"} behind on upgrades
-        </a>
+        </Link>
       ),
     });
   }
@@ -457,7 +362,7 @@ function Held({
       text: (
         <>
           Shortlisted to build:{" "}
-          <Link to="/decide" className="text-primary underline">
+          <Link to="/candidates" className="text-primary underline">
             {shortlist.slice(0, 3).map((g) => shortName(g.leader.name)).join(", ")}
             {shortlist.length > 3 ? ` +${shortlist.length - 3} more` : ""}
           </Link>
@@ -469,10 +374,10 @@ function Held({
     next.push({
       key: "pending",
       text: (
-        <Link to="/payouts" className="text-primary underline">
+        <a href="#payouts" className="text-primary underline">
           {fmtCents(payouts.totals.pendingCents)} in flight across {fmtNum(payouts.totals.pendingCount)} pending{" "}
           {payouts.totals.pendingCount === 1 ? "payout" : "payouts"}
-        </Link>
+        </a>
       ),
     });
   }
@@ -488,6 +393,9 @@ function Held({
           )}
         >
           {held.length > 0 ? `Held · ${held.length}` : "Nothing held"}
+          {held.length > 0 && (
+            <span className="ml-2 font-normal tracking-normal normal-case text-muted-foreground">needs you</span>
+          )}
         </h2>
         {held.length > 0 ? (
           <ul className="flex flex-col gap-x-6 gap-y-1 sm:flex-row sm:flex-wrap">
@@ -520,8 +428,7 @@ function EmptyState() {
     <Card>
       <CardContent className="flex flex-col items-start gap-3">
         <p className="text-sm text-muted-foreground">
-          No snapshots yet. The collector runs hourly, or you can grab the first
-          one right now.
+          No data yet. It&apos;s collected every hour, or you can collect it now.
         </p>
         <Button onClick={() => refresh.mutate()} disabled={refresh.isPending}>
           {refresh.isPending ? "Refreshing…" : "Refresh now"}

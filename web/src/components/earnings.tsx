@@ -152,7 +152,7 @@ export function Earnings({ data }: { data: TimelineResponse }) {
             }),
           ]}
         />
-        <ChartContainer config={{}} className="aspect-auto h-60 w-full">
+        <ChartContainer config={{}} className="aspect-auto h-72 w-full lg:h-[26rem]">
           <ComposedChart {...sync}>
             <defs>
               <linearGradient id="life-fill" x1="0" y1="0" x2="0" y2="1">
@@ -206,9 +206,8 @@ export function Earnings({ data }: { data: TimelineResponse }) {
           </ComposedChart>
         </ChartContainer>
         <p className="text-xs text-muted-foreground">
-          Kickback reads on the left axis, templates on the right. Deployed: someone has made a
-          project from it. Active: one of those projects is live today. Earning: it paid in
-          Railway&apos;s trailing 30 days.
+          Left axis: kickback. Right axis: templates. Deployed: someone made a project from it.
+          Active: one of those projects is live today. Earning: it paid in the last 30 days.
         </p>
       </section>
 
@@ -227,13 +226,13 @@ export function Earnings({ data }: { data: TimelineResponse }) {
             ]}
           />
         </div>
-        <ChartContainer config={{}} className="aspect-auto h-40 w-full">
-          <ComposedChart {...sync}>
+        <ChartContainer config={{}} className="aspect-auto h-52 w-full lg:h-72">
+          {/* The right margin stands in for the template axis above, so the
+              panels line up day for day; a hidden axis takes no width. */}
+          <ComposedChart {...sync} margin={{ ...sync.margin, right: 36 }}>
             <CartesianGrid vertical={false} />
             <XAxis dataKey="date" scale="band" {...tick} tickMargin={8} minTickGap={40} tickFormatter={fmtDay} />
             <YAxis width={52} {...tick} tickCount={3} tickFormatter={fmtUsdTick} />
-            {/* Matches the template axis above, so the panels line up day for day. */}
-            <YAxis yAxisId="pad" orientation="right" width={36} hide />
             <Tooltip
               isAnimationActive={false}
               cursor={cursor}

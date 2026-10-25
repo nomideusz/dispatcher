@@ -262,51 +262,53 @@ var autoWithdrawMu sync.Mutex
 // the balance clears the $100 minimum, skip while a withdrawal is still
 // pending (idempotency), and round down to a $5 multiple before requesting.
 // Safe to call directly for a one-off run; every invocation re-checks the
-// guardrails.
-func runAutoWithdraw(db *gorm.DB) {
+// guardrails. The result says what happened, for the save that triggered it.
+func runAutoWithdraw(db *gorm.DB) (res withdrawAttempt) {
 	if !autoWithdrawMu.TryLock() {
 		log.Printf("auto-withdraw: run already in progress, skipping")
-		return
+		return withdrawAttempt{Skipped: "another run was already in progress"}
 	}
 	defer autoWithdrawMu.Unlock()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
+	unreachable := withdrawAttempt{Skipped: "Railway couldn't be reached; the next run tries again"}
 	s, err := loadAutoWithdrawSettings(ctx, db)
 	if err != nil {
 		log.Printf("auto-withdraw: load settings: %v", err)
-		return
+		return withdrawAttempt{Skipped: "the settings couldn't be read"}
 	}
 	if !s.Enabled || s.WithdrawalAccountID == "" {
-		return
+		return withdrawAttempt{Skipped: "auto-withdraw is off"}
 	}
 
 	token, customerID, err := workspaceCustomer(ctx, db)
 	if err != nil {
 		log.Printf("auto-withdraw: %v", err)
-		return
+		return unreachable
 	}
 
 	balance, err := getAvailableBalance(ctx, token, customerID)
 	if err != nil {
 		log.Printf("auto-withdraw: balance: %v", err)
-		return
+		return unreachable
 	}
 	if balance <= withdrawMinimumCents {
 		log.Printf("auto-withdraw: balance $%.2f not above $%.2f minimum, skipping",
 			float64(balance)/100, float64(withdrawMinimumCents)/100)
-		return
+		return withdrawAttempt{Skipped: fmt.Sprintf("the balance ($%.2f) isn't over the $%.2f minimum",
+			float64(balance)/100, float64(withdrawMinimumCents)/100)}
 	}
 
 	pending, err := getPendingWithdrawalCount(ctx, token, customerID)
 	if err != nil {
 		log.Printf("auto-withdraw: pending check: %v", err)
-		return
+		return unreachable
 	}
 	if pending > 0 {
 		log.Printf("auto-withdraw: %d pending withdrawal(s), skipping", pending)
-		return
+		return withdrawAttempt{Skipped: "a withdrawal is already pending"}
 	}
 
 	// Railway rounds cash withdrawals to $5 increments — floor to a whole $5
@@ -315,7 +317,7 @@ func runAutoWithdraw(db *gorm.DB) {
 
 	if err := createCashWithdrawal(ctx, token, customerID, s.WithdrawalAccountID, amount); err != nil {
 		log.Printf("auto-withdraw: create: %v", err)
-		return
+		return withdrawAttempt{Skipped: "Railway refused the withdrawal: " + err.Error()}
 	}
 	log.Printf("auto-withdraw: requested $%.2f withdrawal", float64(amount)/100)
 	// Pull the new PENDING row in now so the dashboard reflects the request
@@ -333,4 +335,12 @@ func runAutoWithdraw(db *gorm.DB) {
 			AccountID:   s.WithdrawalAccountID,
 		},
 	})
+	return withdrawAttempt{SentCents: amount}
+}
+
+// withdrawAttempt is the outcome of one runAutoWithdraw: the amount requested,
+// or why nothing was.
+type withdrawAttempt struct {
+	SentCents int64  `json:"sentCents,omitempty"`
+	Skipped   string `json:"skipped,omitempty"`
 }

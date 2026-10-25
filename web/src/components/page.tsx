@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 
 /** The page's title line: what the page is, how fresh it is, and its range. */
 export function PageHeader({
@@ -33,7 +33,7 @@ export function Section({
   children: ReactNode;
 }) {
   return (
-    <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-20 space-y-3 pt-4">
+    <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-28 space-y-3 pt-4 lg:scroll-mt-20">
       <div className="border-b border-foreground pb-2">
         <h2 id={`${id}-title`} className="text-xl font-semibold">
           {title}
@@ -43,4 +43,21 @@ export function Section({
       {children}
     </section>
   );
+}
+
+/** Bring the URL's #target into view once the page has drawn it: the rows
+ * and sections that links point at exist only after the data loads. */
+export function useHashFollow(ready: boolean) {
+  useEffect(() => {
+    if (!ready) return;
+    const follow = () => {
+      const hash = window.location.hash.slice(1);
+      if (!hash) return;
+      const block = hash.startsWith("t-") ? "center" : "start";
+      requestAnimationFrame(() => document.getElementById(hash)?.scrollIntoView({ block }));
+    };
+    follow();
+    window.addEventListener("hashchange", follow);
+    return () => window.removeEventListener("hashchange", follow);
+  }, [ready]);
 }

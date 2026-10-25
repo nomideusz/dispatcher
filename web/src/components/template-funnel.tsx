@@ -28,28 +28,28 @@ export function TemplateFunnel({
       value: deployments,
       color: "var(--chart-other)",
       of: null,
-      text: "Every deploy of your templates, yours included: test runs and deploys into existing projects. Only goes up. Railway's metrics page calls these Deployments.",
+      text: "Every deploy of your templates, including your own tests and deploys into existing projects. It never goes down.",
     },
     {
       label: "Projects",
       value: projects,
       color: "var(--chart-3)",
       of: pct(projects, deployments) + " of deployments",
-      text: "Projects other people created from a template, all time. The public template page shows this as “Total deploys”.",
+      text: "Projects other people created from your templates, all time. Railway's template page calls this “Total deploys”.",
     },
     {
       label: "Active projects",
       value: active,
       color: "var(--chart-3)",
       of: pct(active, projects) + " of projects",
-      text: "Those projects still live today. Deleting a project drops it from here, never from Projects.",
+      text: "Those projects still live today. A deleted project leaves this count but stays in Projects.",
     },
     {
       label: "Paying",
       value: payers,
       color: "var(--chart-1)",
       of: payers != null ? pct(payers, active) + " of active" : null,
-      text: "Deployers whose invoice paid you kickback in the last 30 days, told apart by billing date. Kickback is 15% of what they pay, +10% while support health is 80%+.",
+      text: "Deployers whose invoice paid you kickback in the last 30 days. Kickback is 15% of what they pay, +10% while support health is 80% or more.",
     },
   ];
 
@@ -67,9 +67,9 @@ export function TemplateFunnel({
                 </span>
               </span>
             </div>
-            <div className="h-2 rounded-full bg-muted">
+            <div className="h-2 bg-muted">
               <div
-                className="h-full rounded-full"
+                className="h-full"
                 style={{
                   width: `${deployments > 0 ? Math.max(1, ((s.value ?? 0) / deployments) * 100) : 0}%`,
                   background: s.color,
@@ -81,8 +81,9 @@ export function TemplateFunnel({
       </ol>
 
       <p className="border-t pt-3 text-xs text-muted-foreground">
-        <span className="font-medium text-foreground">{fmtUsd(earned)}</span> kickback over
-        30 days: <span className="text-foreground">{active > 0 ? fmtUsd(earned / active) : "—"}</span>{" "}
+        <span className="font-medium text-foreground">{fmtUsd(earned)}</span> kickback in
+        Railway&apos;s 30-day count (the docket adds up our hourly samples, so it can differ a
+        little): <span className="text-foreground">{active > 0 ? fmtUsd(earned / active) : "—"}</span>{" "}
         per active project
         {payers ? (
           <>
@@ -108,16 +109,16 @@ export function TemplateFunnel({
           <div>
             <dt className="font-medium text-foreground">Running · {fmtNum(running)}</dt>
             <dd>
-              What Railway&apos;s metrics page labels “Active”: service instances running right
-              now, not projects. A four-service project counts up to four; a crashed or removed
-              service counts none. So running can outnumber active projects, or trail them.
+              Railway&apos;s metrics page calls this “Active”, but it counts running services, not
+              projects. A four-service project counts up to four; a crashed or removed service
+              counts zero.
             </dd>
           </div>
           <div>
             <dt className="font-medium text-foreground">“Activated”, “Recent projects”</dt>
             <dd>
-              “Activated” isn&apos;t a Railway term. Railway also shows Recent projects: projects
-              created in the last 90 days.
+              “Activated” isn&apos;t a Railway term. “Recent projects” are projects created in the
+              last 90 days.
             </dd>
           </div>
         </dl>

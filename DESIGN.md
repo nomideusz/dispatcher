@@ -13,7 +13,7 @@ colors:
   action-blue: "#1f56a3"
   held-red: "#b23a2e"
   running-green: "#2d6a4f"
-  caution-ochre: "#8a5f0e"
+  caution-ochre: "#7d560c"
   series-teal: "#2e7d8c"
   series-ochre: "#9a6b12"
   series-plum: "#8a4f86"
@@ -198,9 +198,9 @@ Warm paper and navy ink, with two scarce signal colors and a chart series that s
 
 ### Hierarchy
 - **Display** (Mono 600, 34px on desktop and 26px on phones, line-height 1): the four headline figures in the docket strip, and nothing else.
-- **Headline** (600, 28px, tight): the page title (Today, Decide, Payouts) with a one-line freshness sub under it.
+- **Headline** (600, 28px, tight): the page title (Money, Templates, Upgrades, Patterns, Candidates) with a one-line freshness sub under it.
 - **Title** (600, 20px): section titles that sit above a full-ink rule, with a description of at most 75ch under them.
-- **Subtitle** (600, 16px): titles for sub-blocks inside a section, such as All templates and Kickback per day.
+- **Subtitle** (600, 16px): titles for sub-blocks inside a section, such as Reach vs money and Kickback per day.
 - **Body** (400, 14px): descriptions, held reasons and dialog copy.
 - **Figure** (Mono 400, 14px, -0.02em): every number in tables, legends, deltas and toggles. The tabular-nums utility switches to the mono face.
 - **Label** (500, 12px): table headers and filter chips. Template codes use 12px Mono in ink-light.
@@ -211,7 +211,7 @@ Warm paper and navy ink, with two scarce signal colors and a chart series that s
 
 ## Layout
 
-The layout is one shell, at most 1600px wide, with side padding of 16, 24 and 40px at the base, sm and lg breakpoints. The navy bar and every page share it. Pages stack vertically with 24px between blocks. Each section opens with a title and description above a full-ink 1px rule. Under the rule, sub-blocks split across a 12-column grid (7/5 on lg) with a 32px gutter and a hairline divider between them.
+The layout is one shell, at most 2000px wide, with side padding of 16, 24 and 32px at the base, sm and lg breakpoints. The navy bar and every page share it. Pages stack vertically with 24px between blocks. Each section opens with a title and description above a full-ink 1px rule. Under the rule, sub-blocks split across a 12-column grid (7/5 on lg) with a 32px gutter and a hairline divider between them.
 
 The docket strip is a ruled grid of four cells, made by laying 1px gaps over the hairline color. It shows 2 columns on phones and 4 on lg. Each cell has 16px of padding (20px horizontal from sm up). The Held tray spans the full width directly below it. Tables run full-bleed inside their section, with tight 8px row padding and hairline row rules. They scroll inside a 36rem box whose bottom edge fades while more rows remain.
 
@@ -258,7 +258,7 @@ Square, compact and quiet. Ink-colored ghost buttons are the norm, and the actio
 - **Error:** a held-red border, with the message in red below.
 
 ### Navigation
-- **Style:** a sticky navy bar 56px tall that holds the stamp wordmark and three page links (Today, Decide, Payouts) in 14px weight 500. Its ink is re-scoped to paper so stock ghost buttons read on it. Inactive links are paper at 72% and active links are full paper with a 3px bottom rule. The links carry the range (`?days`) between pages.
+- **Style:** a sticky navy bar 56px tall that holds the stamp wordmark and five page links (Money, Templates, Upgrades, Patterns, Candidates) in 14px weight 500; below 1024px the links drop to a second 44px row of the bar. Its ink is re-scoped to paper so stock ghost buttons read on it. Inactive links are paper at 72% and active links are full paper with a 3px bottom rule. The links carry the range (`?days`) between pages.
 
 ### Docket Strip (signature)
 Four hairline-boxed cells: Today, Last N days with delta, Balance with auto-withdraw state, and Templates. Each cell has a 14px weight-600 label, a mono display figure and two or three ink-light meta lines.

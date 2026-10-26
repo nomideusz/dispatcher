@@ -153,7 +153,7 @@ export function Earnings({ data }: { data: TimelineResponse }) {
           ]}
         />
         <ChartContainer config={{}} className="aspect-auto h-72 w-full lg:h-[26rem]">
-          <ComposedChart {...sync}>
+          <ComposedChart {...sync} title="Lifetime kickback against the catalog, day by day">
             <defs>
               <linearGradient id="life-fill" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={MONEY} stopOpacity={0.22} />
@@ -229,7 +229,7 @@ export function Earnings({ data }: { data: TimelineResponse }) {
         <ChartContainer config={{}} className="aspect-auto h-52 w-full lg:h-72">
           {/* The right margin stands in for the template axis above, so the
               panels line up day for day; a hidden axis takes no width. */}
-          <ComposedChart {...sync} margin={{ ...sync.margin, right: 36 }}>
+          <ComposedChart {...sync} margin={{ ...sync.margin, right: 36 }} title="Kickback per day, by template size">
             <CartesianGrid vertical={false} />
             <XAxis dataKey="date" scale="band" {...tick} tickMargin={8} minTickGap={40} tickFormatter={fmtDay} />
             <YAxis width={52} {...tick} tickCount={3} tickFormatter={fmtUsdTick} />

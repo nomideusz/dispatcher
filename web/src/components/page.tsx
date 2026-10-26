@@ -1,4 +1,6 @@
 import { type ReactNode, useEffect } from "react";
+import { Skeleton } from "~/components/ui/skeleton";
+import { cn } from "~/lib/utils";
 
 /** The page's title line: what the page is, how fresh it is, and its range. */
 export function PageHeader({
@@ -43,6 +45,48 @@ export function Section({
       {children}
     </section>
   );
+}
+
+/** The docket grid: cells on paper, split by 1px hairlines. Add the columns. */
+export const DOCKET = "grid gap-px border bg-border [&>*]:bg-background";
+
+/** One docket cell: a label, its figure, and the notes under it. `small` sets
+ * the figure for a strip inside a section, a step below the page's docket. */
+export function DocketCell({
+  label,
+  value,
+  small,
+  children,
+}: {
+  label: string;
+  /** null while loading. */
+  value: ReactNode | null;
+  small?: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <div className={cn("min-w-0 space-y-1.5", small ? "px-4 py-3" : "p-4 sm:px-5")}>
+      <div className={cn("font-semibold", small ? "text-xs" : "text-sm")}>{label}</div>
+      {value == null ? (
+        <Skeleton className="h-9 w-28" />
+      ) : (
+        <div
+          className={cn(
+            "leading-none font-semibold tabular-nums",
+            small ? "text-xl" : "text-[1.625rem] sm:text-[2.125rem]",
+          )}
+        >
+          {value}
+        </div>
+      )}
+      {children && <div className={cn("space-y-0.5 text-muted-foreground", small ? "text-xs" : "text-sm")}>{children}</div>}
+    </div>
+  );
+}
+
+/** An inline figure inside sans prose, set in mono like every figure. */
+export function Fig({ children }: { children: ReactNode }) {
+  return <span className="tabular-nums">{children}</span>;
 }
 
 /** Bring the URL's #target into view once the page has drawn it: the rows

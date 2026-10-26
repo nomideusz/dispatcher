@@ -45,6 +45,13 @@ export function UpgradeQueue() {
   const shown = rows.filter(MATCHES[filter]);
   const pins = shown.filter((u) => u.behind !== "unchecked").length;
   const checkedAt = rows.find((u) => u.behind !== "unchecked")?.checkedAt;
+  const groups = byTemplate(shown);
+  const rowCount = grouped
+    ? groups.reduce((n, g) => n + 1 + g.filter((u) => u.behind !== "unchecked").length, 0)
+    : shown.length;
+  // The server orders behind-first, most-earning-first, so the first
+  // template behind is the one to upgrade next.
+  const first = byTemplate(rows.filter(MATCHES.behind))[0];
 
   return (
     <div className="space-y-3">
@@ -66,32 +73,23 @@ export function UpgradeQueue() {
               )}
             </Button>
           ))}
-          <Button
-            size="xs"
-            aria-pressed={grouped}
-            variant={grouped ? "secondary" : "ghost"}
-            onClick={() => setGrouped(!grouped)}
-          >
-            Group by template
-          </Button>
         </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+          <label className="flex items-center gap-1.5">
+            <input type="checkbox" checked={grouped} onChange={(e) => setGrouped(e.target.checked)} />
+            Group by template
+          </label>
           {checkedAt && (
             <span>
               Checked {fmtAgo(checkedAt, new Date().toISOString())} ago · daily at 06:08 UTC
             </span>
           )}
-          <Button
-            size="xs"
-            variant="ghost"
-            className="text-muted-foreground"
-            disabled={refresh.isPending}
-            onClick={() => refresh.mutate()}
-          >
+          <Button size="xs" variant="outline" disabled={refresh.isPending} onClick={() => refresh.mutate()}>
             {refresh.isPending ? "Checking…" : "Re-check"}
           </Button>
         </div>
       </div>
+      {first && <FirstUp group={first} name={names(first[0].name ?? first[0].templateId)} />}
       {refresh.isError && (
         <p className="text-xs text-(--viz-critical)">Re-check failed: {refresh.error.message}</p>
       )}
@@ -105,7 +103,7 @@ export function UpgradeQueue() {
         </p>
       )}
       {shown.length > 0 && (
-          <Table>
+          <Table rows={rowCount}>
             <TableHeader>
               <TableRow>
                 <TableHead>Template</TableHead>
@@ -119,7 +117,7 @@ export function UpgradeQueue() {
             </TableHeader>
             <TableBody banded={!grouped}>
               {grouped
-                ? byTemplate(shown).map((group) => {
+                ? groups.map((group) => {
                     const u = group[0];
                     const checked = group.filter((g) => g.behind !== "unchecked");
                     const behind = group.filter(MATCHES.behind).length;
@@ -133,6 +131,10 @@ export function UpgradeQueue() {
                             {checked.length === 0
                               ? "nothing pinned"
                               : `${fmtNum(checked.length)} pinned${behind ? `, ${fmtNum(behind)} behind` : ""}`}
+                            {/* A phone hides the earning columns; the heading carries them. */}
+                            {u.earningsLast30Days != null && (
+                              <span className="sm:hidden"> · <span className="tabular-nums">{fmtUsd(u.earningsLast30Days)}</span> in 30d</span>
+                            )}
                           </TableCell>
                           <EarningCells u={u} className="pt-3 pb-1" />
                         </TableRow>
@@ -163,7 +165,35 @@ export function UpgradeQueue() {
   );
 }
 
-/** The template name, linking to its row in the Money page's table. */
+/** The upgrade to do next: the first template behind on its line, its
+ * services and versions, and what it earns. */
+function FirstUp({ group, name }: { group: ServiceUpgrade[]; name: string }) {
+  const behind = group.filter(MATCHES.behind);
+  const u = group[0];
+  const latest = new Set(behind.map((b) => b.latest));
+  return (
+    <p className="text-sm">
+      <span className="font-semibold">Do first:</span> <TemplateLink u={u} name={name} />, {behind.map((b) => b.service).join(", ")}
+      {latest.size === 1 && (
+        <>
+          {" "}to <span className="font-mono text-xs">{behind[0].latest}</span>
+        </>
+      )}
+      {u.earningsLast30Days != null && (
+        <span className="text-muted-foreground">
+          {" "}· <span className="tabular-nums">{fmtUsd(u.earningsLast30Days)}</span> in 30 days
+          {u.activeProjects != null && (
+            <>
+              , <span className="tabular-nums">{fmtNum(u.activeProjects)}</span> active
+            </>
+          )}
+        </span>
+      )}
+    </p>
+  );
+}
+
+/** The template name, linking to its row in the Templates page's table. */
 function TemplateLink({ u, name }: { u: ServiceUpgrade; name: string }) {
   return (
     <Link to={`/templates#t-${u.templateId}`} className="underline-offset-3 hover:underline">
@@ -187,11 +217,14 @@ function ServiceRow({
       <TableCell>{template}</TableCell>
       <TableCell className="text-muted-foreground" title={u.image}>
         {u.service}
+        {/* Without the Image column, seven "Backend" rows need their image. */}
+        <div className="font-mono text-xs md:hidden">{u.image.split("/").pop()}</div>
       </TableCell>
-      <TableCell className="max-w-64 truncate font-mono text-xs max-md:hidden" title={u.image}>
-        {u.image}
+      <TableCell className="font-mono text-xs max-md:hidden" title={u.image}>
+        {/* A cell ignores max-width; the div inside holds the line. */}
+        <div className="max-w-64 truncate">{u.image}</div>
       </TableCell>
-      <TableCell className="font-mono text-xs whitespace-nowrap">
+      <TableCell className="font-mono text-xs">
         {u.tag}
         {(u.haBlock === "tag" || u.haBlock === "pinned") && (
           <span className="font-sans text-(--viz-caution)" title={`${u.ha} cannot convert this tag`}>

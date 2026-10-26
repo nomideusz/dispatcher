@@ -1,9 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { DOCKET, DocketCell, Fig, Section } from "~/components/page";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead } from "~/components/ui/table";
 import { fmtAgo, fmtDay, fmtNum, fmtUsd, shortNames } from "~/lib/format";
+import { cn } from "~/lib/utils";
 import type { TimelineTemplate } from "~/queries/analytics";
 import { type CandidateGroup, candidatesQuery, type MarketCopy, useMarkCandidate } from "~/queries/candidates";
 
@@ -27,37 +29,54 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
   const [limit, setLimit] = useState(PAGE);
 
   const groups = q.data?.groups ?? [];
-  const counts = {
-    shortlist: groups.filter((g) => g.status === "shortlist").length,
-    skip: groups.filter((g) => g.status === "skip").length,
-  };
-  const needle = search.trim().toLowerCase();
-  const rows = groups.filter((g) => {
-    if (needle && !g.key.includes(needle) && !g.leader.name.toLowerCase().includes(needle)) return false;
-    if (view !== "market") return g.status === view;
+  const inView = (g: CandidateGroup, v: View) => {
+    if (v !== "market") return g.status === v;
     if (g.status) return false;
     if (hidePlumbing && PLUMBING.has(g.category)) return false;
     if (hideOurs && (g.ours.length > 0 || g.similar)) return false;
     return true;
-  });
+  };
+  const counts = {
+    shortlist: groups.filter((g) => inView(g, "shortlist")).length,
+    market: groups.filter((g) => inView(g, "market")).length,
+    skip: groups.filter((g) => inView(g, "skip")).length,
+  };
+  const needle = search.trim().toLowerCase();
+  const rows = groups.filter(
+    (g) => inView(g, view) && (!needle || g.key.includes(needle) || g.leader.name.toLowerCase().includes(needle)),
+  );
   const maxRecent = Math.max(1, ...rows.map((g) => g.recent));
 
   if (q.isPending) return <Skeleton className="h-64 w-full" />;
-  if (q.isError) return <p className="text-sm text-(--viz-critical)">Failed to load the marketplace.</p>;
+  if (q.isError) {
+    return (
+      <p role="alert" className="flex items-center gap-2 text-sm text-(--viz-critical)">
+        Couldn&apos;t load Railway&apos;s marketplace.
+        <Button size="xs" variant="ghost" disabled={q.isFetching} onClick={() => q.refetch()}>
+          {q.isFetching ? "Loading…" : "Try again"}
+        </Button>
+      </p>
+    );
+  }
   if (!q.data.fetchedAt) {
     return <p className="text-sm text-muted-foreground">Railway&apos;s marketplace hasn&apos;t been read yet. It&apos;s read daily at 06:20 UTC and on startup.</p>;
   }
 
   return (
-    <div className="space-y-5">
+    <>
       <Originals groups={groups} templates={templates} />
 
+      <Section
+        id="apps"
+        title="Apps on Railway"
+        text={`What people deploy, one row per app, from Railway's marketplace read ${fmtAgo(q.data.fetchedAt, new Date().toISOString())} ago. Same-name templates count as one app; Templates counts other creators only.`}
+      >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div role="group" aria-label="Candidates view" className="flex gap-1">
           {(
             [
               ["shortlist", "Shortlist", counts.shortlist],
-              ["market", "Market", null],
+              ["market", "Market", counts.market],
               ["skip", "Skipped", counts.skip],
             ] as const
           ).map(([v, label, n]) => (
@@ -72,7 +91,7 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
               }}
             >
               {label}
-              {n != null && <span className="tabular-nums text-muted-foreground">{fmtNum(n)}</span>}
+              <span className="tabular-nums text-muted-foreground">{fmtNum(n)}</span>
             </Button>
           ))}
         </div>
@@ -128,18 +147,13 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
           )}
         </TableBody>
       </Table>
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-        <span>
-          From Railway&apos;s marketplace, read {fmtAgo(q.data.fetchedAt, new Date().toISOString())} ago.
-          Same-name templates count as one app; Templates counts other creators only.
-        </span>
-        {rows.length > limit && (
-          <Button size="xs" variant="ghost" onClick={() => setLimit(rows.length)}>
-            Show all {fmtNum(rows.length)}
-          </Button>
-        )}
-      </div>
-    </div>
+      {rows.length > limit && (
+        <Button size="xs" variant="ghost" onClick={() => setLimit(rows.length)}>
+          Show all <span className="tabular-nums">{fmtNum(rows.length)}</span>
+        </Button>
+      )}
+      </Section>
+    </>
   );
 }
 
@@ -147,6 +161,7 @@ function CandidateRow({ g, view, maxRecent }: { g: CandidateGroup; view: View; m
   const mark = useMarkCandidate();
   const set = (status: CandidateGroup["status"], note = g.note) => mark.mutate({ key: g.key, status, note });
   const l = g.leader;
+  const app = l.name || g.key;
   const weak = l.health != null && l.health < 70;
   return (
     <TableRow>
@@ -183,7 +198,7 @@ function CandidateRow({ g, view, maxRecent }: { g: CandidateGroup; view: View; m
             <span className={weak ? "font-medium text-(--viz-caution)" : ""}>
               {l.health == null ? "—" : `${Math.round(l.health)}%`}
             </span>{" "}
-            · {fmtNum(l.active)} active · {monthFmt.format(new Date(l.createdAt))}
+            · <Fig>{fmtNum(l.active)}</Fig> active · {monthFmt.format(new Date(l.createdAt))}
             <div className="truncate">{l.creator || "unknown creator"}</div>
           </div>
         ) : (
@@ -204,22 +219,27 @@ function CandidateRow({ g, view, maxRecent }: { g: CandidateGroup; view: View; m
             className="w-full min-w-40 border-b border-dashed border-border bg-transparent px-1 py-0.5 text-foreground outline-none placeholder:text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
           />
         )}
+        {view !== "market" && (
+          <span role="status" className={cn("block", mark.isError && "text-(--viz-critical)")}>
+            {mark.isPending ? "Saving…" : mark.isError ? "Not saved, try again" : mark.isSuccess ? "Saved" : ""}
+          </span>
+        )}
       </TableCell>
       <TableCell className="text-right whitespace-nowrap">
         {view === "shortlist" ? (
-          <Button size="xs" variant="ghost" className="text-muted-foreground" disabled={mark.isPending} onClick={() => set("")}>
+          <Button size="xs" variant="ghost" className="text-muted-foreground" disabled={mark.isPending} aria-label={`Remove ${app} from the shortlist`} onClick={() => set("")}>
             Remove
           </Button>
         ) : view === "skip" ? (
-          <Button size="xs" variant="ghost" disabled={mark.isPending} onClick={() => set("")}>
+          <Button size="xs" variant="ghost" disabled={mark.isPending} aria-label={`Unskip ${app}`} onClick={() => set("")}>
             Unskip
           </Button>
         ) : (
           <>
-            <Button size="xs" variant="secondary" disabled={mark.isPending} onClick={() => set("shortlist")}>
+            <Button size="xs" variant="secondary" disabled={mark.isPending} aria-label={`Shortlist ${app}`} onClick={() => set("shortlist")}>
               Shortlist
             </Button>
-            <Button size="xs" variant="ghost" disabled={mark.isPending} onClick={() => set("skip")}>
+            <Button size="xs" variant="ghost" disabled={mark.isPending} aria-label={`Skip ${app}`} onClick={() => set("skip")}>
               Skip
             </Button>
           </>
@@ -255,24 +275,27 @@ function Originals({ groups, templates }: { groups: CandidateGroup[]; templates:
   if (alone.n === 0) return null;
 
   return (
-    <div className="grid gap-4 border-b pb-5 sm:grid-cols-[auto_auto_1fr] sm:items-end sm:gap-8">
-      <Figure label="Alone on Railway" value={fmtNum(alone.n)} sub={`of our ${fmtNum(alone.n + rest.n)} templates`} />
-      <Figure
-        label="Earning, 30 days"
-        value={`${fmtNum(alone.earning)} of ${fmtNum(alone.n)}`}
-        sub={`${fmtUsd(alone.earned)} total · with rivals: ${fmtNum(rest.earning)} of ${fmtNum(rest.n)}`}
-      />
-      <p className="text-xs text-muted-foreground sm:pb-0.5">
-        Our templates of apps no one else publishes on Railway. Market data only covers apps
-        already here; an original has no leader to beat.{" "}
-        {earners.length > 0 && (
-          <span className="text-foreground">
-            Earning: {earners.slice(0, 5).join(" · ")}
-            {earners.length > 5 ? ` · +${earners.length - 5} more` : ""}
-          </span>
-        )}
-      </p>
-    </div>
+    <Section
+      id="originals"
+      title="Originals"
+      text="Our templates of apps no one else publishes on Railway. Market data only covers apps already here; an original has no leader to beat."
+    >
+      <div className={cn(DOCKET, "grid-cols-2 sm:max-w-xl")}>
+        <DocketCell label="Alone on Railway" value={fmtNum(alone.n)} small>
+          of our <Fig>{fmtNum(alone.n + rest.n)}</Fig> templates
+        </DocketCell>
+        <DocketCell label="Earning, 30 days" value={`${fmtNum(alone.earning)} of ${fmtNum(alone.n)}`} small>
+          <Fig>{fmtUsd(alone.earned)}</Fig> total · with rivals: <Fig>{fmtNum(rest.earning)}</Fig> of{" "}
+          <Fig>{fmtNum(rest.n)}</Fig>
+        </DocketCell>
+      </div>
+      {earners.length > 0 && (
+        <p className="text-sm">
+          Earning: {earners.slice(0, 5).join(" · ")}
+          {earners.length > 5 ? ` · +${earners.length - 5} more` : ""}
+        </p>
+      )}
+    </Section>
   );
 }
 
@@ -303,16 +326,6 @@ export function Copies({ copies }: { copies: MarketCopy[] }) {
           </li>
         ))}
       </ul>
-    </div>
-  );
-}
-
-function Figure({ label, value, sub }: { label: string; value: string; sub: string }) {
-  return (
-    <div className="space-y-0.5">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-2xl font-semibold tabular-nums">{value}</div>
-      <div className="text-xs text-muted-foreground">{sub}</div>
     </div>
   );
 }

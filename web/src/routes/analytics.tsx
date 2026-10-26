@@ -4,7 +4,7 @@ import { Link, useLocation } from "react-router";
 import { Delta } from "~/components/delta";
 import { RangeToggle, useRangeDays } from "~/components/range-toggle";
 import { Earnings } from "~/components/earnings";
-import { PageHeader, Section, useHashFollow } from "~/components/page";
+import { DOCKET, DocketCell, Fig, PageHeader, Section, useHashFollow } from "~/components/page";
 import { behindTemplateCount } from "~/components/upgrade-queue";
 import { AutoWithdraw } from "~/components/auto-withdraw-dialog";
 import { PayoutHistory } from "~/components/payout-history";
@@ -131,10 +131,7 @@ function Docket({ data }: { data: TimelineResponse }) {
   const autoAccount = auto && accounts.data?.accounts.find((a) => a.id === auto.withdrawalAccountId);
 
   return (
-    <section
-      aria-label="Docket"
-      className="grid grid-cols-2 gap-px border bg-border lg:grid-cols-4 [&>*]:bg-background"
-    >
+    <section aria-label="Docket" className={cn(DOCKET, "grid-cols-2 lg:grid-cols-4")}>
       <DocketCell label="Today · UTC" value={fmtCents(today?.earnedCents ?? 0)}>
         {yesterday && (
           <p>
@@ -234,36 +231,6 @@ function Docket({ data }: { data: TimelineResponse }) {
   );
 }
 
-function DocketCell({
-  label,
-  value,
-  children,
-}: {
-  label: string;
-  /** null while loading. */
-  value: string | null;
-  children: ReactNode;
-}) {
-  return (
-    <div className="min-w-0 space-y-1.5 p-4 sm:px-5">
-      <div className="text-sm font-semibold">{label}</div>
-      {value == null ? (
-        <Skeleton className="h-9 w-28" />
-      ) : (
-        <div className="text-[1.625rem] leading-none font-semibold tabular-nums sm:text-[2.125rem]">
-          {value}
-        </div>
-      )}
-      <div className="space-y-0.5 text-sm text-muted-foreground">{children}</div>
-    </div>
-  );
-}
-
-/** An inline figure inside sans prose, set in mono like every figure. */
-function Fig({ children }: { children: ReactNode }) {
-  return <span className="tabular-nums">{children}</span>;
-}
-
 type HeldItem = { key: string; text: ReactNode };
 
 /** The held tray: what needs you, named, each name a jump to its
@@ -329,13 +296,13 @@ function Held({
   }
   const next: HeldItem[] = [];
   // Someone else's template building from our code needs no one today, so it
-  // is a next step in caution ochre, not held red.
+  // is a next step, not held red; every next step is a link in action blue.
   const copies = candidates.data?.copies ?? [];
   if (copies.length > 0) {
     next.push({
       key: "copies",
       text: (
-        <Link to={`/templates${search}#copies`} className="text-(--viz-caution) underline">
+        <Link to={`/templates${search}#copies`} className="text-primary underline">
           {copies.length === 1
             ? "1 template by someone else builds"
             : `${fmtNum(copies.length)} templates by others build`}{" "}
@@ -446,7 +413,7 @@ function EmptyState() {
 function DashboardSkeleton() {
   return (
     <>
-      <section className="grid grid-cols-2 gap-px border bg-border lg:grid-cols-4 [&>*]:bg-background">
+      <section className={cn(DOCKET, "grid-cols-2 lg:grid-cols-4")}>
         {Array.from({ length: 4 }, (_, i) => (
           <div key={i} className="space-y-2 p-4 sm:px-5">
             <Skeleton className="h-3.5 w-20" />

@@ -1,6 +1,7 @@
 import { type ReactNode, useMemo } from "react";
 import { CartesianGrid, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import { cursor, GROUPS, groupOf, Key, median, perDay, Tip, tick } from "~/components/chart-kit";
+import { Section } from "~/components/page";
 import { ChartContainer } from "~/components/ui/chart";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead } from "~/components/ui/table";
 import { dayKey, fmtDay, fmtNum, fmtUsd } from "~/lib/format";
@@ -66,92 +67,130 @@ function useWhatToPublish(data: TimelineResponse) {
   }, [data]);
 }
 
+/** The segment that pays most per template over 30 days, among those with
+ * at least three templates, so one lucky template doesn't set the verdict. */
+function best(rows: Segment[], skip?: string) {
+  const fair = rows.filter((r) => r.templates >= 3 && r.key !== skip);
+  return fair.length ? fair.reduce((a, b) => (b.earned / b.templates > a.earned / a.templates ? b : a)) : null;
+}
+
 /** Template size and age against what they earn and how soon: the numbers
- * for deciding what to build next. */
+ * for deciding what to build next, opened by the decision itself. */
 export function WhatToPublish({ data }: { data: TimelineResponse }) {
   const { trend, curve, byKind, bySize, byMonth } = useWhatToPublish(data);
+  const kindLabel = (k: string) => KINDS.find((x) => x.key === k)?.label ?? "Unsorted";
+  const per = (r: Segment) => perDay(r.earned / r.templates);
+  const topKind = best(byKind, "");
+  const topSize = best(bySize);
+  const lowKind = (() => {
+    const fair = byKind.filter((r) => r.templates >= 3 && r.key !== "" && r !== topKind);
+    return fair.length ? fair.reduce((a, b) => (b.earned / b.templates < a.earned / a.templates ? b : a)) : null;
+  })();
+  const key = <Key items={GROUPS.map((g) => ({ label: g.label, color: g.color, line: true }))} />;
 
   return (
-    <div className="space-y-6">
-      <Key items={GROUPS.map((g) => ({ label: g.label, color: g.color, line: true }))} />
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="min-w-0 space-y-2">
-          <h3 className="text-sm font-medium">Kickback per published template, 7-day average, last 90 days</h3>
-          <ChartContainer config={{}} className="aspect-auto h-44 w-full">
-            <LineChart data={trend} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid vertical={false} />
-              <XAxis dataKey="date" {...tick} tickMargin={8} minTickGap={40} tickFormatter={fmtDay} />
-              <YAxis width={44} {...tick} tickCount={3} tickFormatter={perDay} />
-              <Tooltip
-                isAnimationActive={false}
-                cursor={cursor}
-                content={(p) => <Tip {...p} title={(l) => fmtDay(String(l))} format={(v) => `${perDay(v)} a day`} />}
-              />
-              {GROUPS.map((g, i) => (
-                <Line key={g.label} name={g.label} dataKey={`p${i}`} stroke={g.color} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
-              ))}
-            </LineChart>
-          </ChartContainer>
-          <p className="text-xs text-muted-foreground">
-            Daily kickback per published template of that size. If it falls while the catalog
-            grows, new templates of that size earn less than older ones.
-          </p>
-        </section>
+    <>
+      {topKind && topSize && (
+        <p className="max-w-[75ch] text-lg leading-snug">
+          <span className="font-semibold">
+            Build {kindLabel(topKind.key)} templates with {GROUPS[Number(topSize.key)].label}.
+          </span>{" "}
+          <span className="text-muted-foreground">
+            Over the last 30 days a {kindLabel(topKind.key)} template paid <span className="tabular-nums text-foreground">{per(topKind)}</span>{" "}
+            and one with {GROUPS[Number(topSize.key)].label} <span className="tabular-nums text-foreground">{per(topSize)}</span>
+            {lowKind && (
+              <>
+                ; {kindLabel(lowKind.key)} paid <span className="tabular-nums text-foreground">{per(lowKind)}</span>
+              </>
+            )}
+            .
+          </span>
+        </p>
+      )}
 
-        <section className="min-w-0 space-y-2">
-          <h3 className="text-sm font-medium">Paid within days of publishing</h3>
-          <ChartContainer config={{}} className="aspect-auto h-44 w-full">
-            <LineChart data={curve} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid vertical={false} />
-              <XAxis dataKey="day" {...tick} tickMargin={8} tickFormatter={(d) => `${d}d`} minTickGap={24} />
-              <YAxis width={44} {...tick} tickCount={3} domain={[0, "auto"]} tickFormatter={pct} />
-              <Tooltip
-                isAnimationActive={false}
-                cursor={cursor}
-                content={(p) => <Tip {...p} title={(l) => `${l} days after publishing`} format={(v) => `${pct(v)} paid`} />}
-              />
-              {GROUPS.map((g, i) => (
-                <Line key={g.label} name={g.label} type="stepAfter" dataKey={`g${i}`} stroke={g.color} strokeWidth={2} dot={false} isAnimationActive={false} />
-              ))}
-            </LineChart>
-          </ChartContainer>
-          <p className="text-xs text-muted-foreground">
-            Share of templates at least that old that have earned any kickback. Where a line
-            flattens, waiting longer doesn&apos;t help.
-          </p>
-        </section>
-      </div>
+      <Section
+        id="trend"
+        title="Earning by size"
+        text="What one template of each size brings in, and how soon a new one starts paying."
+      >
+        <div className="grid gap-6 lg:grid-cols-2">
+          <section className="min-w-0 space-y-2">
+            <h3 className="text-sm font-medium">Kickback per published template, 7-day average, last 90 days</h3>
+            {key}
+            <ChartContainer config={{}} className="aspect-auto h-44 w-full">
+              <LineChart title="Kickback per published template by size, 7-day average" data={trend} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid vertical={false} />
+                <XAxis dataKey="date" {...tick} tickMargin={8} minTickGap={40} tickFormatter={fmtDay} />
+                <YAxis width={44} {...tick} tickCount={3} tickFormatter={perDay} />
+                <Tooltip
+                  isAnimationActive={false}
+                  cursor={cursor}
+                  content={(p) => <Tip {...p} title={(l) => fmtDay(String(l))} format={(v) => `${perDay(v)} a day`} />}
+                />
+                {GROUPS.map((g, i) => (
+                  <Line key={g.label} name={g.label} dataKey={`p${i}`} stroke={g.color} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
+                ))}
+              </LineChart>
+            </ChartContainer>
+            <p className="text-xs text-muted-foreground">
+              Daily kickback per published template of that size. If it falls while the catalog
+              grows, new templates of that size earn less than older ones.
+            </p>
+          </section>
 
-      <div className="grid gap-6 xl:grid-cols-2">
-        <div className="xl:col-span-2">
+          <section className="min-w-0 space-y-2">
+            <h3 className="text-sm font-medium">Paid within days of publishing</h3>
+            {key}
+            <ChartContainer config={{}} className="aspect-auto h-44 w-full">
+              <LineChart title="Share of templates paid within days of publishing, by size" data={curve} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid vertical={false} />
+                <XAxis dataKey="day" {...tick} tickMargin={8} tickFormatter={(d) => `${d}d`} minTickGap={24} />
+                <YAxis width={44} {...tick} tickCount={3} domain={[0, "auto"]} tickFormatter={pct} />
+                <Tooltip
+                  isAnimationActive={false}
+                  cursor={cursor}
+                  content={(p) => <Tip {...p} title={(l) => `${l} days after publishing`} format={(v) => `${pct(v)} paid`} />}
+                />
+                {GROUPS.map((g, i) => (
+                  <Line key={g.label} name={g.label} type="stepAfter" dataKey={`g${i}`} stroke={g.color} strokeWidth={2} dot={false} isAnimationActive={false} />
+                ))}
+              </LineChart>
+            </ChartContainer>
+            <p className="text-xs text-muted-foreground">
+              Share of templates at least that old that have earned any kickback. Where a line
+              flattens, waiting longer doesn&apos;t help.
+            </p>
+          </section>
+        </div>
+      </Section>
+
+      <Section
+        id="segments"
+        title="By kind, size and age"
+        text="Earning and 30d cover the last 30 days. Per template splits that across every template in the row, earning or not. First paid: median wait among those that paid. Set a template's kind under its name on Templates."
+      >
+        <div className="grid gap-6 xl:grid-cols-2">
+          <div className="xl:col-span-2">
+            <SegmentTable title="Kind" rows={byKind} format={kindLabel} />
+          </div>
           <SegmentTable
-            title="Kind"
-            rows={byKind}
-            format={(k) => KINDS.find((x) => x.key === k)?.label ?? "Unsorted"}
+            title="Services"
+            rows={bySize}
+            format={(k) => (
+              <span className="flex items-center gap-1.5">
+                <span className="size-2 rounded-[2px]" style={{ background: GROUPS[Number(k)].color }} />
+                {GROUPS[Number(k)].label}
+              </span>
+            )}
+          />
+          <SegmentTable
+            title="Published"
+            rows={byMonth}
+            format={(k) => (k === "unknown" ? k : monthFmt.format(new Date(`${k}-01T00:00:00Z`)))}
           />
         </div>
-        <SegmentTable
-          title="Services"
-          rows={bySize}
-          format={(k) => (
-            <span className="flex items-center gap-1.5">
-              <span className="size-2 rounded-[2px]" style={{ background: GROUPS[Number(k)].color }} />
-              {GROUPS[Number(k)].label}
-            </span>
-          )}
-        />
-        <SegmentTable
-          title="Published"
-          rows={byMonth}
-          format={(k) => (k === "unknown" ? k : monthFmt.format(new Date(`${k}-01T00:00:00Z`)))}
-        />
-      </div>
-      <p className="text-xs text-muted-foreground">
-        Earning and 30d always cover the last 30 days. Per template splits that across every
-        template in the row, earning or not. First paid: median wait among those that paid. Set a
-        template&apos;s kind under its name on Templates.
-      </p>
-    </div>
+      </Section>
+    </>
   );
 }
 
@@ -190,14 +229,14 @@ function SegmentTable({
 }) {
   const best = Math.max(0, ...rows.map((r) => r.earned / r.templates));
   return (
-    <Table box="wide" className="sm:min-w-[34rem]">
+    <Table className="sm:min-w-[34rem]">
       <TableHeader>
         <TableRow>
           <TableHead>{title}</TableHead>
           <TableHead numeric className="max-sm:hidden">Templates</TableHead>
           <TableHead numeric className="max-sm:hidden">Earning</TableHead>
           <TableHead numeric>30d</TableHead>
-          <TableHead>Per template</TableHead>
+          <TableHead className="pl-6">Per template</TableHead>
           <TableHead numeric className="max-sm:hidden">Per active project</TableHead>
           <TableHead numeric className="max-sm:hidden">First paid</TableHead>
         </TableRow>
@@ -211,7 +250,7 @@ function SegmentTable({
               <TableCell numeric className="max-sm:hidden">{fmtNum(r.templates)}</TableCell>
               <TableCell numeric className="text-muted-foreground max-sm:hidden">{fmtNum(r.earning)}</TableCell>
               <TableCell numeric>{fmtUsd(r.earned)}</TableCell>
-              <TableCell>
+              <TableCell className="pl-6">
                 <div className="flex items-center gap-2">
                   <span className="w-12 text-right tabular-nums">{fmtUsd(per)}</span>
                   <TableMeter value={best > 0 ? per / best : 0} className="w-auto min-w-10 flex-1" />

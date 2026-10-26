@@ -154,6 +154,7 @@ function MetricPanel({
       </div>
       <ChartContainer config={chartConfig} className="aspect-auto h-32 w-full">
         <AreaChart
+          title="Projects over time"
           accessibilityLayer
           data={points}
           syncId={syncId}

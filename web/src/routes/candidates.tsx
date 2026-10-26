@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Candidates } from "~/components/candidates";
 import { PageHeader } from "~/components/page";
-import { Card, CardContent } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 import { timelineQuery } from "~/queries/analytics";
 import type { Route } from "./+types/candidates";
@@ -27,13 +26,7 @@ export default function CandidatesPage() {
           Couldn&apos;t load analytics. Check that the API is running, then reload.
         </p>
       )}
-      {timeline.isSuccess && (
-        <Card>
-          <CardContent>
-            <Candidates templates={timeline.data?.templates ?? []} />
-          </CardContent>
-        </Card>
-      )}
+      {timeline.isSuccess && <Candidates templates={timeline.data?.templates ?? []} />}
     </main>
   );
 }

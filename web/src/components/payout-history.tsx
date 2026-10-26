@@ -4,8 +4,9 @@ import {
   CircleCheck,
   Clock,
 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
 import { Delta } from "~/components/delta";
+import { DOCKET, DocketCell, Fig } from "~/components/page";
 import { PayoutHistoryChart } from "~/components/payout-history-chart";
 import { Button } from "~/components/ui/button";
 import {
@@ -17,7 +18,7 @@ import {
   CardTitle,
 } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHead } from "~/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHead, TableSortHead } from "~/components/ui/table";
 import { dayDate, fmtCents, fmtNum } from "~/lib/format";
 import { cn } from "~/lib/utils";
 import {
@@ -79,7 +80,7 @@ function sortPayers(payers: PayerChain[], by: PayerSort): PayerChain[] {
       b.lastAt.localeCompare(a.lastAt),
   );
 }
-const PAYER_SORT_LABELS: Record<PayerSort, string> = { rank: "By total", status: "By status", due: "By next due" };
+const PAYER_SORT_DIR = { rank: "descending", status: "ascending", due: "ascending" } as const;
 
 type PayoutView = "payers" | "ledger";
 /** Money out of Railway, who is paying, and the raw ledger, for the range
@@ -95,6 +96,17 @@ export function PayoutHistory({ days }: { days: number }) {
     data?.payers.filter((c) => c.status === s).length ?? 0;
   const hasPayers = (data?.payers.length ?? 0) > 0;
   const current: PayoutView = hasPayers ? view : "ledger";
+  const payerHead = (by: PayerSort, label: string, hint: string, className?: string, numeric?: boolean) => (
+    <TableSortHead
+      numeric={numeric}
+      hint={hint}
+      className={className}
+      sort={payerSort === by ? PAYER_SORT_DIR[by] : undefined}
+      onSort={() => setPayerSort(by)}
+    >
+      {label}
+    </TableSortHead>
+  );
 
   return (
     <Card>
@@ -155,23 +167,15 @@ export function PayoutHistory({ days }: { days: number }) {
       {data && data.totalRows > 0 && (
         <>
           <CardContent className="space-y-4">
-            <div className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
+            <div className={cn(DOCKET, "grid-cols-2 lg:auto-cols-fr lg:grid-flow-col")}>
               <WindowFigure days={days} data={data} />
-              <Figure
-                label="Total paid out"
-                value={fmtCents(data.totals.lifetimeCents)}
-                note={
-                  data.totals.firstPayoutAt
-                    ? `since ${monthLong.format(new Date(data.totals.firstPayoutAt))}`
-                    : undefined
-                }
-              />
+              <DocketCell label="Total paid out" value={fmtCents(data.totals.lifetimeCents)} small>
+                {data.totals.firstPayoutAt && `since ${monthLong.format(new Date(data.totals.firstPayoutAt))}`}
+              </DocketCell>
               {data.totals.pendingCount > 0 && (
-                <Figure
-                  label="In flight"
-                  value={fmtCents(data.totals.pendingCents)}
-                  note={`${data.totals.pendingCount} pending`}
-                />
+                <DocketCell label="In flight" value={fmtCents(data.totals.pendingCents)} small>
+                  <Fig>{data.totals.pendingCount}</Fig> pending
+                </DocketCell>
               )}
               <DueFigure payers={data.payers} />
             </div>
@@ -181,39 +185,24 @@ export function PayoutHistory({ days }: { days: number }) {
           <CardContent className="space-y-3 border-t pt-4">
             {current === "payers" ? (
               <>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-xs text-muted-foreground">
-                    {fmtNum(statusCount("returning"))} returning · {fmtNum(statusCount("new"))} new ·{" "}
-                    {fmtNum(statusCount("lapsed"))} lapsed. One row per deployer, under a made-up name.
-                    Returning: paid again on their billing date. Lapsed: missed a due invoice.
-                  </p>
-                  <div role="group" aria-label="Sort payers" className="flex gap-1">
-                    {(["rank", "status", "due"] as const).map((s) => (
-                      <Button
-                        key={s}
-                        size="xs"
-                        aria-pressed={s === payerSort}
-                        variant={s === payerSort ? "secondary" : "ghost"}
-                        onClick={() => setPayerSort(s)}
-                      >
-                        {PAYER_SORT_LABELS[s]}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-                <Table>
+                <p className="text-xs text-muted-foreground">
+                  <Fig>{fmtNum(statusCount("returning"))}</Fig> returning · <Fig>{fmtNum(statusCount("new"))}</Fig> new ·{" "}
+                  <Fig>{fmtNum(statusCount("lapsed"))}</Fig> lapsed. One row per deployer, under a made-up name.
+                  Returning: paid again on their billing date. Lapsed: missed a due invoice.
+                </p>
+                <Table rows={data.payers.length}>
                   <TableHeader>
                     <TableRow>
                       <TableHead numeric className="max-sm:hidden">#</TableHead>
                       <TableHead className="max-sm:pl-0">Payer</TableHead>
                       <TableHead className="max-sm:hidden">Template</TableHead>
-                      <TableHead className="max-sm:hidden">Status</TableHead>
+                      {payerHead("status", "Status", "Returning, then new, then lapsed", "max-sm:hidden")}
                       <TableHead className="max-sm:hidden">First</TableHead>
                       <TableHead className="max-sm:hidden">Last</TableHead>
-                      <TableHead className="max-sm:hidden">Next due</TableHead>
+                      {payerHead("due", "Next due", "Soonest first; lapsed payers last", "max-sm:hidden")}
                       <TableHead numeric className="max-sm:hidden">Invoices</TableHead>
                       <TableHead numeric className="max-sm:hidden">Last amount</TableHead>
-                      <TableHead numeric>Total</TableHead>
+                      {payerHead("rank", "Total", "Paid in all, most first", undefined, true)}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -226,13 +215,13 @@ export function PayoutHistory({ days }: { days: number }) {
             ) : (
               <>
                 <p className="text-xs text-muted-foreground">
-                  {fmtNum(data.payouts.length)} payouts and balance accruals in the last {days}{" "}
+                  <Fig>{fmtNum(data.payouts.length)}</Fig> payouts and balance accruals in the last <Fig>{days}</Fig>{" "}
                   days, newest first
                   {data.totalRows > data.payouts.length &&
                     `; ${fmtNum(data.totalRows - data.payouts.length)} more before that`}
                   .
                 </p>
-                <Table>
+                <Table rows={data.payouts.length}>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Date</TableHead>
@@ -268,42 +257,21 @@ function WindowFigure({ days, data }: { days: number; data: PayoutHistoryData })
       ? data.window.changePct
       : null;
   return (
-    <div>
-      <div className="text-xs text-muted-foreground">Paid out · last {days}d</div>
-      <div className="text-xl font-semibold tabular-nums">{fmtCents(totalCents)}</div>
+    <DocketCell label={`Paid out · last ${days}d`} value={fmtCents(totalCents)} small>
       {count === 0 ? (
-        <div className="text-xs text-muted-foreground">
-          {data.totals.lastPayoutAt
-            ? `last payout ${fmtDate(new Date(data.totals.lastPayoutAt))}`
-            : "no payouts yet"}
-        </div>
+        data.totals.lastPayoutAt ? (
+          `last payout ${fmtDate(new Date(data.totals.lastPayoutAt))}`
+        ) : (
+          "no payouts yet"
+        )
       ) : changePct != null ? (
         <Delta pct={changePct} suffix={`vs previous ${days}d`} />
       ) : (
-        <div className="text-xs text-muted-foreground">
-          {count} {count === 1 ? "payout" : "payouts"}
-        </div>
+        <>
+          <Fig>{count}</Fig> {count === 1 ? "payout" : "payouts"}
+        </>
       )}
-    </div>
-  );
-}
-
-/** Inline stat figure, in mono like every figure. */
-function Figure({
-  label,
-  value,
-  note,
-}: {
-  label: string;
-  value: string;
-  note?: ReactNode;
-}) {
-  return (
-    <div>
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-xl font-semibold tabular-nums">{value}</div>
-      {note && <div className="text-xs text-muted-foreground">{note}</div>}
-    </div>
+    </DocketCell>
   );
 }
 
@@ -317,11 +285,10 @@ function DueFigure({ payers }: { payers: PayerChain[] }) {
   const upcoming = due.filter((p) => p.nextDueAt >= now);
   const next = upcoming.length ? upcoming.reduce((a, b) => (a.nextDueAt < b.nextDueAt ? a : b)) : null;
   return (
-    <Figure
-      label="Due in the next 30 days"
-      value={`~${fmtCents(due.reduce((s, p) => s + p.lastCents, 0))}`}
-      note={`${due.length} ${due.length === 1 ? "payer" : "payers"}${next ? `, next ${fmtDate(new Date(next.nextDueAt))}` : ""}`}
-    />
+    <DocketCell label="Due in the next 30 days" value={`~${fmtCents(due.reduce((s, p) => s + p.lastCents, 0))}`} small>
+      <Fig>{due.length}</Fig> {due.length === 1 ? "payer" : "payers"}
+      {next ? `, next ${fmtDate(new Date(next.nextDueAt))}` : ""}
+    </DocketCell>
   );
 }
 

@@ -56,7 +56,7 @@ export default function Templates() {
           <Section
             id="catalog"
             title="Catalog"
-            text={`Every template with its numbers. New and Earned cover the last ${days} days; Payers and $/active the last 30.`}
+            text={`Every template with its numbers${days === 30 ? ", over the last 30 days" : `. New and Earned cover the last ${days} days; $/active the last 30`}. Point at a column name for what it counts; open a row for its dates and projects over time.`}
           >
             <TemplatesTable templates={data.templates} byTemplate={byTemplate} dates={data.points.map((p) => p.date)} />
           </Section>

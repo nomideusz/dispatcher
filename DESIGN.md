@@ -261,7 +261,7 @@ Square, compact and quiet. Ink-colored ghost buttons are the norm, and the actio
 - **Style:** a sticky navy bar 56px tall that holds the stamp wordmark and five page links (Money, Templates, Upgrades, Patterns, Candidates) in 14px weight 500; below 1024px the links drop to a second 44px row of the bar. Its ink is re-scoped to paper so stock ghost buttons read on it. Inactive links are paper at 72% and active links are full paper with a 3px bottom rule. The links carry the range (`?days`) between pages.
 
 ### Docket Strip (signature)
-Four hairline-boxed cells: Today, Last N days with delta, Balance with auto-withdraw state, and Templates. Each cell has a 14px weight-600 label, a mono display figure and two or three ink-light meta lines.
+Four hairline-boxed cells: Today, Last N days with delta, Balance with auto-withdraw state, and Templates. Each cell has a 14px weight-600 label, a mono display figure and two or three ink-light meta lines. The grid (`DOCKET`) and its cell (`DocketCell`) live in `components/page.tsx`; `small` sets the compact cell (12px label, 20px figure) that Payers and Candidates use for their figure strips, so every page's figures sit in the same boxes. Figures inside meta lines stay mono (`Fig`).
 
 ### Held Tray (signature)
 A carbon band under the docket. A stamp gives the status, followed inline by each held template name underlined in held red with its reason. A "Next" line follows below a navy rule at 15%, with action-blue links. When nothing is held, the stamp turns running green and one sentence explains why.
@@ -270,15 +270,16 @@ A carbon band under the docket. A stamp gives the status, followed inline by eac
 Pressing a held name jumps to that template's consignment row (scroll margin 6rem). The row keeps a 9% held-red wash with red rules above and below until another row is chosen. The mark settles in once from a 28% wash over 900ms, easing on cubic-bezier(0.16, 1, 0.3, 1). The settle is skipped under reduced motion.
 
 ### Consignment Table
-Columns: a mono code column, a template name with an expander chevron, a sparkline strip, then mono figures right-aligned. The header is sticky on paper with a hairline underline. Health shows as a mono percentage, and a held row reads "held · NN%" in red at weight 600.
+Columns: a mono code column, a template name with an expander chevron, a sparkline strip, then mono figures right-aligned. The header sits on paper with a hairline underline and sticks under the bar on wide screens. Health shows as a mono percentage, and a held row reads "held · NN%" in red at weight 600.
 
 Every table in the app (templates, payers, payout ledger, upgrades, candidates, pattern segments) is built from `components/ui/table.tsx`, so these rules live in one place:
-- **Table:** `box="scroll"` (default) holds a long list in a 36rem box whose bottom edge fades; `box="wide"` only scrolls sideways, for short tables wider than a phone.
-- **TableHeader / TableHead:** 12px labels at weight 500 in ink-light, sticky on paper, with the hairline underline riding on the sticky cells. `numeric` right-aligns a label over figures.
+- **Table:** the page scrolls, never the table. From 80rem the header sticks under the app bar; below that a table wider than the screen scrolls sideways in its own strip. Pass `rows` (the body's row count) and a phone shows the first 20 with a "Show all N" link under them.
+- **TableHeader / TableHead:** 12px labels at weight 500 in ink-light, on paper, with the hairline underline riding on the sticky cells. `numeric` right-aligns a label over figures.
+- **TableSortHead:** the one sorting idiom: a column label that sorts on press, with an arrow on the sorted column and a faint two-way arrow on the rest. `hint` says what the column counts, on hover and to screen readers, and dots the label's underline; it replaces glossaries above tables and sort chips beside them.
 - **TableRow:** `rule="bottom"` (default) is a hairline at 60% under each row, none under the last; `rule="top"` opens a group (the grouped upgrade queue); `rule="none"` for rows inside a group or an expanded panel.
 - **TableCell / TableRowHead:** 8px vertical padding, 12px between columns, none before the first. `numeric` sets a figure: mono, right-aligned, unbroken. The cell that names its row (template, payer, segment) is a `TableRowHead`.
 - **TableBody:** at 80rem and wider, where a row runs too far for the eye to hold its line, even rows take a 75% carbon-well band; the one tint the docket allows, because hairlines alone lose the row at that width. Phones and tablets keep plain hairlines. Expanded panels don't count toward the parity, and an open row keeps its own tint. `banded={false}` for a grouped body whose rules already carry the grouping. On pointer devices the hovered row fills with carbon.
-- **TableMeter:** the hairline-thin, rounded share-of-column bar beside a figure (lifetime, deployed, per template), filled with a chart series and dimmed in the carbon copy.
+- **TableMeter:** the hairline-thin, rounded share-of-column bar inline before its figure (lifetime, deployed, per template), filled with a chart series on a hairline-colored track (so it survives the row band), dimmed in the carbon copy.
 
 ## Do's and Don'ts
 

@@ -75,12 +75,15 @@ export function TemplateScatter({
   // placed is left to the tooltip.
   const name = shortNames(templates.map((t) => t.name));
   const placed: [number, number][] = [];
+  // A name takes about a fifth of a desktop plot's width but nearly half a
+  // phone's. ponytail: read once per render, a resize keeps the old spacing.
+  const gap = window.innerWidth < 640 ? 0.45 : 0.2;
   for (const d of [
     ...[...dots].sort((a, b) => b.earned - a.earned).slice(0, 6),
     ...[...dots].sort((a, b) => b.activeProjects - a.activeProjects).slice(0, 4),
   ]) {
     const [x, y] = [d.x / X, (d.y - NONE_Y) / (Y - NONE_Y)];
-    if (d.label || d.labelLeft || placed.some(([px, py]) => Math.abs(px - x) < 0.2 && Math.abs(py - y) < 0.06)) continue;
+    if (d.label || d.labelLeft || placed.some(([px, py]) => Math.abs(px - x) < gap && Math.abs(py - y) < 0.06)) continue;
     placed.push([x, y]);
     if (x > 0.75) d.labelLeft = name(d.name);
     else d.label = name(d.name);
@@ -117,7 +120,7 @@ export function TemplateScatter({
         ]}
       />
       <ChartContainer config={{}} className="aspect-auto h-96 w-full">
-        <ScatterChart margin={{ top: 12, right: 16, bottom: 20, left: 0 }}>
+        <ScatterChart title="Live projects against 30-day kickback, per template" margin={{ top: 12, right: 16, bottom: 20, left: 0 }}>
           <CartesianGrid strokeOpacity={0.6} />
           <XAxis
             type="number"

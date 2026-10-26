@@ -41,6 +41,7 @@ export function PayoutHistoryChart({ points }: { points: PayoutPoint[] }) {
   return (
     <ChartContainer config={chartConfig} className="aspect-auto h-64 w-full">
       <ComposedChart
+        title="Paid out over the range, cumulative"
         accessibilityLayer
         data={points}
         margin={{ top: 8, right: 12 }}

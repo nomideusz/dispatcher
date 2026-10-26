@@ -213,8 +213,16 @@ tr:target {
    row under the pointer on carbon. Expanded panels sit outside the count and
    an open row keeps its own tint. */
 @media (width >= 80rem) {
-  [data-slot="table-body"][data-banded] > tr:nth-child(even of :not([data-panel])):not([data-open]) {
+  /* :where keeps the band at zero specificity so the hover fill wins. */
+  :where([data-slot="table-body"][data-banded] > tr:nth-child(even of :not([data-panel])):not([data-open])) {
     background: color-mix(in oklab, var(--muted) 75%, transparent);
+  }
+}
+/* A phone shows a long table's first 20 rows until "Show all"; a row a
+   link jumps to stays visible. */
+@media (width < 40rem) {
+  [data-capped] [data-slot="table-body"] > tr:nth-child(n + 21 of :not([data-panel])):not(:target) {
+    display: none;
   }
 }
 @media (hover: hover) {
@@ -237,24 +245,6 @@ html {
 /* A scroll box that clips mid-row reads as broken. Fade the bottom edge
    while there is more below, and drop the fade once scrolled to the end.
    Browsers without scroll timelines get the plain box. */
-@property --scroll-fade {
-  syntax: "<length>";
-  inherits: false;
-  initial-value: 0px;
-}
-@keyframes scroll-fade-out {
-  from { --scroll-fade: 2.5rem; }
-  90% { --scroll-fade: 2.5rem; }
-  to { --scroll-fade: 0px; }
-}
-@supports (animation-timeline: scroll()) {
-  .scroll-fade {
-    mask-image: linear-gradient(to bottom, #000 calc(100% - var(--scroll-fade)), transparent);
-    animation: scroll-fade-out linear both;
-    animation-timeline: scroll(self);
-  }
-}
-
 @layer base {
   * {
     @apply border-border outline-ring/50;

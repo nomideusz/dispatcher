@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "~/components/page";
-import { Card, CardContent } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 import { WhatToPublish } from "~/components/what-to-publish";
 import { fmtAgo } from "~/lib/format";
@@ -32,13 +31,7 @@ export default function Patterns() {
       {timeline.isSuccess && !data && (
         <p className="text-sm text-muted-foreground">No data yet. Refresh from the bar to collect it.</p>
       )}
-      {data && (
-        <Card>
-          <CardContent>
-            <WhatToPublish data={data} />
-          </CardContent>
-        </Card>
-      )}
+      {data && <WhatToPublish data={data} />}
     </main>
   );
 }

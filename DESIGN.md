@@ -199,7 +199,7 @@ Warm paper and navy ink, with two scarce signal colors and a chart series that s
 ### Hierarchy
 - **Display** (Mono 600, 34px on desktop and 26px on phones, line-height 1): the four headline figures in the docket strip, and nothing else.
 - **Headline** (600, 28px, tight): the page title (Money, Templates, Upgrades, Patterns, Candidates) with a one-line freshness sub under it.
-- **Title** (600, 20px): section titles that sit above a full-ink rule, with a description of at most 75ch under them.
+- **Title** (600, 20px): section titles that sit above a full-ink rule, with a description held to 56ch (about 80 characters of the condensed face) under them.
 - **Subtitle** (600, 16px): titles for sub-blocks inside a section, such as Reach vs money and Kickback per day.
 - **Body** (400, 14px): descriptions, held reasons and dialog copy.
 - **Figure** (Mono 400, 14px, -0.02em): every number in tables, legends, deltas and toggles. The tabular-nums utility switches to the mono face.
@@ -258,7 +258,7 @@ Square, compact and quiet. Ink-colored ghost buttons are the norm, and the actio
 - **Error:** a held-red border, with the message in red below.
 
 ### Navigation
-- **Style:** a sticky navy bar 56px tall that holds the stamp wordmark and five page links (Money, Templates, Upgrades, Patterns, Candidates) in 14px weight 500; below 1024px the links drop to a second 44px row of the bar. Its ink is re-scoped to paper so stock ghost buttons read on it. Inactive links are paper at 72% and active links are full paper with a 3px bottom rule. The links carry the range (`?days`) between pages.
+- **Style:** a navy bar 56px tall, sticky from 1024px (below it the bar is two rows, too tall to pin), that holds the stamp wordmark and five page links (Money, Templates, Upgrades, Patterns, Candidates) in 14px weight 500; below 1024px the links drop to a second 44px row of the bar. Its ink is re-scoped to paper so stock ghost buttons read on it. Inactive links are paper at 72% and active links are full paper with a 3px bottom rule. The links carry the range (`?days`) between pages.
 
 ### Docket Strip (signature)
 Four hairline-boxed cells: Today, Last N days with delta, Balance with auto-withdraw state, and Templates. Each cell has a 14px weight-600 label, a mono display figure and two or three ink-light meta lines. The grid (`DOCKET`) and its cell (`DocketCell`) live in `components/page.tsx`; `small` sets the compact cell (12px label, 20px figure) that Payers and Candidates use for their figure strips, so every page's figures sit in the same boxes. Figures inside meta lines stay mono (`Fig`).
@@ -267,15 +267,15 @@ Four hairline-boxed cells: Today, Last N days with delta, Balance with auto-with
 A carbon band under the docket. A stamp gives the status, followed inline by each held template name underlined in held red with its reason. A "Next" line follows below a navy rule at 15%, with action-blue links. When nothing is held, the stamp turns running green and one sentence explains why.
 
 ### Held Mark (signature interaction)
-Pressing a held name jumps to that template's consignment row (scroll margin 6rem). The row keeps a 9% held-red wash with red rules above and below until another row is chosen. The mark settles in once from a 28% wash over 900ms, easing on cubic-bezier(0.16, 1, 0.3, 1). The settle is skipped under reduced motion.
+Pressing a held name jumps to that template's consignment row, centered on screen. `useHashFollow` in `components/page.tsx` sets `data-marked` on the row and focuses it (router navigation never updates CSS `:target`); a capped or filtered table shows the marked row anyway. The row keeps a 9% held-red wash with red rules above and below until another row is chosen. The mark settles in once from a 28% wash over 900ms, easing on cubic-bezier(0.16, 1, 0.3, 1). The settle is skipped under reduced motion.
 
 ### Consignment Table
-Columns: a mono code column, a template name with an expander chevron, a sparkline strip, then mono figures right-aligned. The header sits on paper with a hairline underline and sticks under the bar on wide screens. Health shows as a mono percentage, and a held row reads "held · NN%" in red at weight 600.
+Columns: a mono code column, a template name with an expander chevron, a sparkline strip, then mono figures right-aligned. The header sits on paper with a hairline underline and sticks under the bar on wide screens. Health shows as a mono percentage, and a held row reads "held · NN%" in red at weight 600. Published, Last deploy and Paid are dates in UTC with the time set under them in lighter ink. Filter, search and sort live in the URL (`useUrlState`), so a reload or a shared link keeps the view; the default sort stays out of it.
 
 Every table in the app (templates, payers, payout ledger, upgrades, candidates, pattern segments) is built from `components/ui/table.tsx`, so these rules live in one place:
-- **Table:** the page scrolls, never the table. From 80rem the header sticks under the app bar; below that a table wider than the screen scrolls sideways in its own strip. Pass `rows` (the body's row count) and a phone shows the first 20 with a "Show all N" link under them.
+- **Table:** the page scrolls, never the table. From 80rem the header sticks under the app bar; below that a table wider than the screen scrolls sideways in its own strip. Pass `rows` (the body's row count) and it shows the first 25 at every width with a "Show all N" link under them; a grouped body (upgrades) passes 0 and shows its first 10 groups instead.
 - **TableHeader / TableHead:** 12px labels at weight 500 in ink-light, on paper, with the hairline underline riding on the sticky cells. `numeric` right-aligns a label over figures.
-- **TableSortHead:** the one sorting idiom: a column label that sorts on press, with an arrow on the sorted column and a faint two-way arrow on the rest. `hint` says what the column counts, on hover and to screen readers, and dots the label's underline; it replaces glossaries above tables and sort chips beside them.
+- **TableSortHead:** the one sorting idiom: a column label that sorts on press, with an arrow on the sorted column and a faint two-way arrow on the rest. `hint` says what the column counts in a top-sheet popover on hover, keyboard focus and tap (never the native `title`), described to screen readers, and dots the label's underline; `TableHead` takes the same `hint` for unsortable columns; it replaces glossaries above tables and sort chips beside them.
 - **TableRow:** `rule="bottom"` (default) is a hairline at 60% under each row, none under the last; `rule="top"` opens a group (the grouped upgrade queue); `rule="none"` for rows inside a group or an expanded panel.
 - **TableCell / TableRowHead:** 8px vertical padding, 12px between columns, none before the first. `numeric` sets a figure: mono, right-aligned, unbroken. The cell that names its row (template, payer, segment) is a `TableRowHead`.
 - **TableBody:** at 80rem and wider, where a row runs too far for the eye to hold its line, even rows take a 75% carbon-well band; the one tint the docket allows, because hairlines alone lose the row at that width. Phones and tablets keep plain hairlines. Expanded panels don't count toward the parity, and an open row keeps its own tint. `banded={false}` for a grouped body whose rules already carry the grouping. On pointer devices the hovered row fills with carbon.
@@ -290,6 +290,8 @@ Every table in the app (templates, payers, payout ledger, upgrades, candidates, 
 - **Do** keep held red for what needs a person now, and send chores to caution ochre.
 - **Do** keep every corner square (0px).
 - **Do** give dialogs the top-sheet tone with a navy scrim at 40%.
+- **Do** say "Withdrawn" for money taken out of Railway and "balance" for kickback still waiting there; "paid" is what a payer did.
+- **Do** follow a one-press move (shortlist, skip) with a status line and Undo, not a confirm dialog.
 
 ### Don't:
 - **Don't** build KPI cards or put a chart in the hero. Headline numbers go in the ruled docket strip.

@@ -187,18 +187,19 @@ html.dark {
 }
 
 /* A held name jumps to its consignment row; the row keeps a held rule until
-   another is chosen. */
-tr:target > :is(td, th) {
+   another is chosen. useHashFollow sets data-marked: :target never follows
+   in-app navigation, which only pushes history. */
+tr[data-marked] {
+  outline: none;
+}
+tr[data-marked] > :is(td, th) {
   background: color-mix(in oklab, var(--destructive) 9%, transparent);
   box-shadow:
     inset 0 1px 0 var(--destructive),
     inset 0 -1px 0 var(--destructive);
 }
-tr:target {
-  scroll-margin-top: 6rem;
-}
 @media (prefers-reduced-motion: no-preference) {
-  tr:target > :is(td, th) {
+  tr[data-marked] > :is(td, th) {
     animation: held-mark 900ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 }
@@ -218,12 +219,10 @@ tr:target {
     background: color-mix(in oklab, var(--muted) 75%, transparent);
   }
 }
-/* A phone shows a long table's first 20 rows until "Show all"; a row a
-   link jumps to stays visible. */
-@media (width < 40rem) {
-  [data-capped] [data-slot="table-body"] > tr:nth-child(n + 21 of :not([data-panel])):not(:target) {
-    display: none;
-  }
+/* A long table shows its first 25 rows until "Show all"; a row a link
+   jumps to stays visible. */
+[data-capped] [data-slot="table-body"] > tr:nth-child(n + 26 of :not([data-panel])):not([data-marked]) {
+  display: none;
 }
 @media (hover: hover) {
   [data-slot="table-body"] > tr:not([data-panel], [data-open]):hover {

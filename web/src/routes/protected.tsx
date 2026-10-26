@@ -1,5 +1,5 @@
 import { ChevronDown, LogOut, RefreshCw } from "lucide-react";
-import { Link, NavLink, Outlet, useLocation, useRevalidator } from "react-router";
+import { Link, NavLink, Outlet, type ShouldRevalidateFunctionArgs, useLocation, useRevalidator } from "react-router";
 import { AutoWithdraw } from "~/components/auto-withdraw-dialog";
 import { Wordmark } from "~/components/brand";
 import { NotificationsDialog } from "~/components/notifications-dialog";
@@ -28,6 +28,14 @@ import type { Route } from "./+types/protected";
 export async function clientLoader() {
   const [user, apiUp] = await Promise.all([getMe(), getApiHealth()]);
   return { user, apiUp };
+}
+
+// The session and API checks don't depend on the query string: a filter,
+// sort or range change shouldn't wait on two round trips. A revalidate()
+// (sign-out) keeps the same URL and still runs them.
+export function shouldRevalidate({ currentUrl, nextUrl, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {
+  if (currentUrl.pathname === nextUrl.pathname && currentUrl.search !== nextUrl.search) return false;
+  return defaultShouldRevalidate;
 }
 
 export default function Protected({ loaderData }: Route.ComponentProps) {
@@ -125,8 +133,10 @@ function Header({ user }: { user: User }) {
     revalidator.revalidate();
   };
 
+  // Sticky from lg, where it is one 56px row; a phone's two rows would take
+  // an eighth of the screen on every scroll.
   return (
-    <header className="bar sticky top-0 z-20">
+    <header className="bar relative z-20 lg:sticky lg:top-0">
       <div className="shell flex flex-wrap items-center gap-x-4 sm:gap-x-10">
         <Link
           to={{ pathname: "/", search: days ? `?days=${days}` : "" }}

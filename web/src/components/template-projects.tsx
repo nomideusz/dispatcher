@@ -63,7 +63,11 @@ export function TemplateProjects({ templateId }: { templateId: string }) {
               : `Last ${days} days`}
           </div>
         </div>
-        <RangeToggle value={days} onChange={setDays} />
+        {/* This chart's own range, apart from the page's. */}
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          This chart
+          <RangeToggle value={days} onChange={setDays} />
+        </div>
       </div>
 
       {projects.isPending && (

@@ -72,7 +72,7 @@ export default function Money() {
           <Section
             id="earnings"
             title="Earnings"
-            text="Kickback over time, how much of the catalog is in use, and what each day earned. Hover a day to see which templates earned."
+            text="Kickback over time, how much of the catalog is in use, and what each day earned. Point at or tap a day to see which templates earned."
           >
             <Card>
               <CardContent>
@@ -217,14 +217,22 @@ function Docket({ data }: { data: TimelineResponse }) {
             <>
               {" "}
               <span className={activeChange >= 0 ? "text-(--viz-up)" : "text-(--viz-down)"}>
-                (<Fig>{`${activeChange >= 0 ? "+" : ""}${fmtNum(activeChange)}`}</Fig> since {fmtDay(first.date)})
+                (<Fig>{`${activeChange >= 0 ? "+" : ""}${fmtNum(activeChange)}`}</Fig>
+                <span className="max-sm:hidden"> since {fmtDay(first.date)}</span>)
               </span>
             </>
           )}
         </p>
         <p>
-          <Fig>{fmtNum(runningNow)}</Fig> running · <Fig>{fmtNum(earning)}</Fig> earned in {w.days} days ·{" "}
-          <Fig>{fmtNum(added)}</Fig> added
+          {/* A phone's half-width cell keeps the line to what earned. */}
+          <span className="max-sm:hidden">
+            <Fig>{fmtNum(runningNow)}</Fig> running ·{" "}
+          </span>
+          <Fig>{fmtNum(earning)}</Fig> earned in {w.days} days
+          <span className="max-sm:hidden">
+            {" "}
+            · <Fig>{fmtNum(added)}</Fig> added
+          </span>
         </p>
       </DocketCell>
     </section>

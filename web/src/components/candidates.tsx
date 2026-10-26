@@ -12,7 +12,6 @@ import { type CandidateGroup, candidatesQuery, type MarketCopy, useMarkCandidate
 /** Databases, boilerplates and queues top the marketplace and are not apps
  * anyone pays kickback on for long. */
 const PLUMBING = new Set(["Storage", "Starters", "Queues"]);
-const PAGE = 40;
 const monthFmt = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
 
 type View = "shortlist" | "market" | "skip";
@@ -26,7 +25,10 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
   const [search, setSearch] = useState("");
   const [hidePlumbing, setHidePlumbing] = useState(true);
   const [hideOurs, setHideOurs] = useState(true);
-  const [limit, setLimit] = useState(PAGE);
+  // The last move between views, so a misplaced Remove or Skip is one press
+  // to take back: the row leaves the view, and its own status line with it.
+  const [undo, setUndo] = useState<{ before: CandidateGroup; done: string } | null>(null);
+  const mark = useMarkCandidate();
 
   const groups = q.data?.groups ?? [];
   const inView = (g: CandidateGroup, v: View) => {
@@ -85,10 +87,7 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
               size="xs"
               aria-pressed={view === v}
               variant={view === v ? "secondary" : "ghost"}
-              onClick={() => {
-                setView(v);
-                setLimit(PAGE);
-              }}
+              onClick={() => setView(v)}
             >
               {label}
               <span className="tabular-nums text-muted-foreground">{fmtNum(n)}</span>
@@ -119,7 +118,23 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
         </div>
       </div>
 
-      <Table className="min-w-[56rem]">
+      {undo && (
+        <p role="status" className="text-xs text-muted-foreground">
+          {undo.done}{" "}
+          <button
+            type="button"
+            className="cursor-pointer text-primary underline underline-offset-3 disabled:opacity-50"
+            disabled={mark.isPending}
+            onClick={() =>
+              mark.mutate({ key: undo.before.key, status: undo.before.status, note: undo.before.note }, { onSuccess: () => setUndo(null) })
+            }
+          >
+            Undo
+          </button>
+          {mark.isError && <span className="text-(--viz-critical)"> Not undone, try again.</span>}
+        </p>
+      )}
+      <Table rows={rows.length} className="min-w-[56rem]">
         <TableHeader>
           <TableRow>
             <TableHead>App</TableHead>
@@ -135,8 +150,8 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.slice(0, limit).map((g) => (
-            <CandidateRow key={g.key} g={g} view={view} maxRecent={maxRecent} />
+          {rows.map((g) => (
+            <CandidateRow key={g.key} g={g} view={view} maxRecent={maxRecent} onMove={(done) => setUndo({ before: g, done })} />
           ))}
           {rows.length === 0 && (
             <TableRow>
@@ -147,21 +162,29 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
           )}
         </TableBody>
       </Table>
-      {rows.length > limit && (
-        <Button size="xs" variant="ghost" onClick={() => setLimit(rows.length)}>
-          Show all <span className="tabular-nums">{fmtNum(rows.length)}</span>
-        </Button>
-      )}
       </Section>
     </>
   );
 }
 
-function CandidateRow({ g, view, maxRecent }: { g: CandidateGroup; view: View; maxRecent: number }) {
+function CandidateRow({
+  g,
+  view,
+  maxRecent,
+  onMove,
+}: {
+  g: CandidateGroup;
+  view: View;
+  maxRecent: number;
+  /** Called once a move to another view saved, with what was done. */
+  onMove: (done: string) => void;
+}) {
   const mark = useMarkCandidate();
   const set = (status: CandidateGroup["status"], note = g.note) => mark.mutate({ key: g.key, status, note });
   const l = g.leader;
   const app = l.name || g.key;
+  const move = (status: CandidateGroup["status"], done: string) =>
+    mark.mutate({ key: g.key, status, note: g.note }, { onSuccess: () => onMove(done) });
   const weak = l.health != null && l.health < 70;
   return (
     <TableRow>
@@ -210,13 +233,14 @@ function CandidateRow({ g, view, maxRecent }: { g: CandidateGroup; view: View; m
         {view === "market" ? (
           g.ours.length > 0 ? "Yes" : (g.similar ?? "—")
         ) : (
-          <input
+          // Grows to its text, so a long note reads in full.
+          <textarea
+            rows={1}
             defaultValue={g.note}
-            title={g.note || undefined}
             aria-label={`Note on ${g.key}`}
             placeholder="Add a note"
             onBlur={(e) => e.target.value.trim() !== g.note && set(g.status, e.target.value)}
-            className="w-full min-w-40 border-b border-dashed border-border bg-transparent px-1 py-0.5 text-foreground outline-none placeholder:text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+            className="field-sizing-content block w-full min-w-40 resize-none border-b border-dashed border-border bg-transparent px-1 py-0.5 text-foreground outline-none placeholder:text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
           />
         )}
         {view !== "market" && (
@@ -227,19 +251,19 @@ function CandidateRow({ g, view, maxRecent }: { g: CandidateGroup; view: View; m
       </TableCell>
       <TableCell className="text-right whitespace-nowrap">
         {view === "shortlist" ? (
-          <Button size="xs" variant="ghost" className="text-muted-foreground" disabled={mark.isPending} aria-label={`Remove ${app} from the shortlist`} onClick={() => set("")}>
+          <Button size="xs" variant="ghost" className="text-muted-foreground" disabled={mark.isPending} aria-label={`Remove ${app} from the shortlist`} onClick={() => move("", `Removed ${app} from the shortlist.`)}>
             Remove
           </Button>
         ) : view === "skip" ? (
-          <Button size="xs" variant="ghost" disabled={mark.isPending} aria-label={`Unskip ${app}`} onClick={() => set("")}>
+          <Button size="xs" variant="ghost" disabled={mark.isPending} aria-label={`Unskip ${app}`} onClick={() => move("", `Moved ${app} back to Market.`)}>
             Unskip
           </Button>
         ) : (
           <>
-            <Button size="xs" variant="secondary" disabled={mark.isPending} aria-label={`Shortlist ${app}`} onClick={() => set("shortlist")}>
+            <Button size="xs" variant="secondary" disabled={mark.isPending} aria-label={`Shortlist ${app}`} onClick={() => move("shortlist", `Shortlisted ${app}.`)}>
               Shortlist
             </Button>
-            <Button size="xs" variant="ghost" disabled={mark.isPending} aria-label={`Skip ${app}`} onClick={() => set("skip")}>
+            <Button size="xs" variant="ghost" disabled={mark.isPending} aria-label={`Skip ${app}`} onClick={() => move("skip", `Skipped ${app}.`)}>
               Skip
             </Button>
           </>

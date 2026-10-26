@@ -70,6 +70,16 @@ export function fmtDay(v: string): string {
   return shortDay.format(v.length === 10 ? dayDate(v) : new Date(v));
 }
 
+const hourMinute = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" });
+
+/** "Sep 7 14:05" in UTC for an ISO instant, with the year when it isn't
+ * this one: "Dec 3 2025 09:30". */
+export function fmtDayTime(iso: string): string {
+  const d = new Date(iso);
+  const year = d.getUTCFullYear() === new Date().getUTCFullYear() ? "" : ` ${d.getUTCFullYear()}`;
+  return `${shortDay.format(d)}${year} ${hourMinute.format(d)}`;
+}
+
 /** "Sun, Sep 7, 2026" for a UTC day key. */
 export function fmtLongDay(date: string): string {
   return longDay.format(dayDate(date));

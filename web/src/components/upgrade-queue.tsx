@@ -23,6 +23,9 @@ const MATCHES: Record<UpgradeFilter, (u: ServiceUpgrade) => boolean> = {
   all: () => true,
 };
 
+/** Template groups shown before "Show all". */
+const GROUPS = 10;
+
 const templateCount = (rows: ServiceUpgrade[]) => new Set(rows.map((u) => u.templateId)).size;
 
 /** Rows by template, templates in the order they first appear (the server's
@@ -40,15 +43,18 @@ export function UpgradeQueue() {
   // One heading per template, so its earnings show once instead of on
   // every service row.
   const [grouped, setGrouped] = useState(true);
+  // The queue's head is what gets done; the rest of the groups wait behind
+  // one press so the page doesn't run on for thousands of pixels.
+  const [allGroups, setAllGroups] = useState(false);
   const rows = upgrades.data ?? [];
   const names = shortNames(rows.map((u) => u.name ?? u.templateId));
   const shown = rows.filter(MATCHES[filter]);
   const pins = shown.filter((u) => u.behind !== "unchecked").length;
   const checkedAt = rows.find((u) => u.behind !== "unchecked")?.checkedAt;
   const groups = byTemplate(shown);
-  const rowCount = grouped
-    ? groups.reduce((n, g) => n + 1 + g.filter((u) => u.behind !== "unchecked").length, 0)
-    : shown.length;
+  const shownGroups = allGroups ? groups : groups.slice(0, GROUPS);
+  // Most lines have no later major; the column shows only when one does.
+  const majors = shown.some((u) => u.major !== "");
   // The server orders behind-first, most-earning-first, so the first
   // template behind is the one to upgrade next.
   const first = byTemplate(rows.filter(MATCHES.behind))[0];
@@ -103,21 +109,21 @@ export function UpgradeQueue() {
         </p>
       )}
       {shown.length > 0 && (
-          <Table rows={rowCount}>
+          <Table rows={grouped ? 0 : shown.length}>
             <TableHeader>
               <TableRow>
                 <TableHead>Template</TableHead>
                 <TableHead>Service</TableHead>
                 <TableHead className="max-md:hidden">Image</TableHead>
                 <TableHead>Pinned → newest on line</TableHead>
-                <TableHead className="max-sm:hidden">Later major</TableHead>
+                {majors && <TableHead className="max-sm:hidden">Later major</TableHead>}
                 <TableHead numeric className="max-sm:hidden">Earned 30d</TableHead>
                 <TableHead numeric className="max-sm:hidden">Active</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody banded={!grouped}>
               {grouped
-                ? groups.map((group) => {
+                ? shownGroups.map((group) => {
                     const u = group[0];
                     const checked = group.filter((g) => g.behind !== "unchecked");
                     const behind = group.filter(MATCHES.behind).length;
@@ -127,7 +133,7 @@ export function UpgradeQueue() {
                           <TableRowHead scope="rowgroup" className="pt-3 pb-1 font-medium">
                             <TemplateLink u={u} name={names(u.name ?? u.templateId)} />
                           </TableRowHead>
-                          <TableCell colSpan={4} className="pt-3 pb-1 text-xs text-muted-foreground">
+                          <TableCell colSpan={majors ? 4 : 3} className="pt-3 pb-1 text-xs text-muted-foreground">
                             {checked.length === 0
                               ? "nothing pinned"
                               : `${fmtNum(checked.length)} pinned${behind ? `, ${fmtNum(behind)} behind` : ""}`}
@@ -139,7 +145,7 @@ export function UpgradeQueue() {
                           <EarningCells u={u} className="pt-3 pb-1" />
                         </TableRow>
                         {checked.map((s) => (
-                          <ServiceRow key={`${s.service}-${s.image}`} u={s} template="" />
+                          <ServiceRow key={`${s.service}-${s.image}`} u={s} template="" majors={majors} />
                         ))}
                       </Fragment>
                     );
@@ -150,10 +156,20 @@ export function UpgradeQueue() {
                       u={u}
                       template={<TemplateLink u={u} name={names(u.name ?? u.templateId)} />}
                       earnings
+                      majors={majors}
                     />
                   ))}
             </TableBody>
           </Table>
+      )}
+      {grouped && groups.length > shownGroups.length && (
+        <button
+          type="button"
+          onClick={() => setAllGroups(true)}
+          className="cursor-pointer text-xs text-primary underline underline-offset-3"
+        >
+          Show all <span className="tabular-nums">{fmtNum(groups.length)}</span> templates
+        </button>
       )}
       {shown.length > 0 && (
         <p className="text-xs text-muted-foreground">
@@ -206,10 +222,13 @@ function ServiceRow({
   u,
   template,
   earnings,
+  majors,
 }: {
   u: ServiceUpgrade;
   template: ReactNode;
   earnings?: boolean;
+  /** Whether the table has the Later major column. */
+  majors: boolean;
 }) {
   const moved = u.behind === "minor" || u.behind === "patch";
   return (
@@ -235,17 +254,19 @@ function ServiceRow({
         {moved && <span className="font-sans text-muted-foreground">→ </span>}
         <LineCell u={u} />
       </TableCell>
-      <TableCell className="font-mono text-xs text-muted-foreground max-sm:hidden">
-        {u.major}
-        {u.major && u.ha && (u.haBlock === "" || u.haBlock === "major") && (
-          <span
-            className={`font-sans ${u.haBlock === "major" ? "text-(--viz-caution)" : ""}`}
-            title={u.haBlock === "major" ? `${u.ha} does not support this major yet` : `${u.ha} supports this major`}
-          >
-            {u.haBlock === "major" ? " (drops HA)" : " (HA ok)"}
-          </span>
-        )}
-      </TableCell>
+      {majors && (
+        <TableCell className="font-mono text-xs text-muted-foreground max-sm:hidden">
+          {u.major}
+          {u.major && u.ha && (u.haBlock === "" || u.haBlock === "major") && (
+            <span
+              className={`font-sans ${u.haBlock === "major" ? "text-(--viz-caution)" : ""}`}
+              title={u.haBlock === "major" ? `${u.ha} does not support this major yet` : `${u.ha} supports this major`}
+            >
+              {u.haBlock === "major" ? " (drops HA)" : " (HA ok)"}
+            </span>
+          )}
+        </TableCell>
+      )}
       {earnings ? <EarningCells u={u} /> : <TableCell colSpan={2} className="max-sm:hidden" />}
     </TableRow>
   );

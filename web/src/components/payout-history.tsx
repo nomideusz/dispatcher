@@ -53,6 +53,14 @@ function DateCell({ iso, className }: { iso: string; className?: string }) {
     </TableCell>
   );
 }
+/** "today", "tomorrow", or the date. */
+function relDay(iso: string): string {
+  const day = (d: Date) => d.toDateString();
+  const d = new Date(iso);
+  if (day(d) === day(new Date())) return "today";
+  if (day(d) === day(new Date(Date.now() + 86_400_000))) return "tomorrow";
+  return fmtDate(d);
+}
 const monthLong = new Intl.DateTimeFormat("en-US", {
   month: "long",
   year: "numeric",
@@ -113,7 +121,8 @@ export function PayoutHistory({ days }: { days: number }) {
       <CardHeader>
         <CardTitle>Cash and credits</CardTitle>
         <CardDescription>
-          Paid out in this range. The balance still in Railway is on the docket above.
+          Withdrawn from Railway in this range, as cash or credits, and who pays the kickback. Kickback not yet
+          withdrawn is the balance on the docket above.
         </CardDescription>
         {data && data.totalRows > 0 && (
           <CardAction>
@@ -167,9 +176,10 @@ export function PayoutHistory({ days }: { days: number }) {
       {data && data.totalRows > 0 && (
         <>
           <CardContent className="space-y-4">
-            <div className={cn(DOCKET, "grid-cols-2 lg:auto-cols-fr lg:grid-flow-col")}>
+            {/* An odd last cell spans the phone's two columns instead of leaving a hole. */}
+            <div className={cn(DOCKET, "grid-cols-2 max-lg:[&>:last-child:nth-child(odd)]:col-span-2 lg:auto-cols-fr lg:grid-flow-col")}>
               <WindowFigure days={days} data={data} />
-              <DocketCell label="Total paid out" value={fmtCents(data.totals.lifetimeCents)} small>
+              <DocketCell label="Withdrawn in all" value={fmtCents(data.totals.lifetimeCents)} small>
                 {data.totals.firstPayoutAt && `since ${monthLong.format(new Date(data.totals.firstPayoutAt))}`}
               </DocketCell>
               {data.totals.pendingCount > 0 && (
@@ -257,12 +267,12 @@ function WindowFigure({ days, data }: { days: number; data: PayoutHistoryData })
       ? data.window.changePct
       : null;
   return (
-    <DocketCell label={`Paid out · last ${days}d`} value={fmtCents(totalCents)} small>
+    <DocketCell label={`Withdrawn · last ${days}d`} value={fmtCents(totalCents)} small>
       {count === 0 ? (
         data.totals.lastPayoutAt ? (
-          `last payout ${fmtDate(new Date(data.totals.lastPayoutAt))}`
+          `last ${fmtDate(new Date(data.totals.lastPayoutAt))}; kickback waits in the balance`
         ) : (
-          "no payouts yet"
+          "nothing withdrawn yet"
         )
       ) : changePct != null ? (
         <Delta pct={changePct} suffix={`vs previous ${days}d`} />
@@ -285,9 +295,9 @@ function DueFigure({ payers }: { payers: PayerChain[] }) {
   const upcoming = due.filter((p) => p.nextDueAt >= now);
   const next = upcoming.length ? upcoming.reduce((a, b) => (a.nextDueAt < b.nextDueAt ? a : b)) : null;
   return (
-    <DocketCell label="Due in the next 30 days" value={`~${fmtCents(due.reduce((s, p) => s + p.lastCents, 0))}`} small>
+    <DocketCell label="Expected from payers, 30 days" value={`~${fmtCents(due.reduce((s, p) => s + p.lastCents, 0))}`} small>
       <Fig>{due.length}</Fig> {due.length === 1 ? "payer" : "payers"}
-      {next ? `, next ${fmtDate(new Date(next.nextDueAt))}` : ""}
+      {next ? `, next ${relDay(next.nextDueAt)}` : ""}
     </DocketCell>
   );
 }

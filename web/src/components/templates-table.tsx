@@ -1,9 +1,11 @@
 import { ChevronRight, CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router";
+import { useUrlState } from "~/components/page";
 import { TemplateProjects } from "~/components/template-projects";
 import { Button } from "~/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead, TableSortHead } from "~/components/ui/table";
-import { fmtCents, fmtDay, fmtLongDay, fmtNum, fmtUsd } from "~/lib/format";
+import { fmtCents, fmtDay, fmtDayTime, fmtLongDay, fmtNum, fmtUsd } from "~/lib/format";
 import { cn } from "~/lib/utils";
 import {
   type Kind,
@@ -42,7 +44,25 @@ type SortKey =
   | "perActive"
   | "payers"
   | "lifetimeCents"
-  | "health";
+  | "health"
+  | "publishedAt"
+  | "lastDeployAt"
+  | "lastPaidAt";
+const SORT_KEYS: SortKey[] = [
+  "name",
+  "newProjects",
+  "projects",
+  "activeProjects",
+  "running",
+  "earnedCents",
+  "perActive",
+  "payers",
+  "lifetimeCents",
+  "health",
+  "publishedAt",
+  "lastDeployAt",
+  "lastPaidAt",
+];
 
 const sortValue = (r: Row, key: SortKey): string | number | null =>
   key === "payers" ? (r.payers?.payers ?? null) : r[key];
@@ -55,7 +75,9 @@ function compare(a: Row, b: Row, key: SortKey): number {
 }
 
 /** Every template in one table: reach, money and dates side by side, and a
- * strip of the range's days — deploys up, kickback down. */
+ * strip of the range's days — deploys up, kickback down. Filter, search and
+ * sort live in the URL (?filter, ?q, ?sort=-lifetimeCents), so a reload or a
+ * shared link keeps them. */
 export function TemplatesTable({
   templates,
   byTemplate,
@@ -66,23 +88,31 @@ export function TemplatesTable({
   /** The range's days, oldest first; the activity strip's x axis. */
   dates: string[];
 }) {
-  const [filter, setFilter] = useState<Filter>("all");
-  const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({
-    key: "lifetimeCents",
-    desc: true,
-  });
+  const [params, setParams] = useUrlState();
+  const f = params.get("filter");
+  const filter: Filter = f && f in FILTERS ? (f as Filter) : "all";
+  // The box keeps its own text and copies it to ?q: bound to the URL, fast
+  // typing would outrun the navigation and drop letters.
+  const [search, setSearch] = useState(() => params.get("q") ?? "");
+  useEffect(() => setParams({ q: search || null }), [search]);
+  const s = params.get("sort") ?? "-lifetimeCents";
+  const sortKey = s.replace(/^-/, "") as SortKey;
+  const sort = SORT_KEYS.includes(sortKey)
+    ? { key: sortKey, desc: s.startsWith("-") }
+    : { key: "lifetimeCents" as SortKey, desc: true };
+  const setFilter = (v: Filter) => setParams({ filter: v === "all" ? null : v });
+  const showAll = () => {
+    setSearch("");
+    setParams({ filter: null });
+  };
   // A held name jumps to #t-<id>; a filter that hides the row would make
   // the jump land nowhere.
+  const hash = useLocation().hash;
+  const narrowed = filter !== "all" || search !== "";
   useEffect(() => {
-    const show = () => {
-      if (!window.location.hash.startsWith("#t-")) return;
-      setFilter("all");
-      setSearch("");
-    };
-    window.addEventListener("hashchange", show);
-    return () => window.removeEventListener("hashchange", show);
-  }, []);
+    if (hash.startsWith("#t-") && narrowed) showAll();
+    // Only on a new jump, not when the filter changes after it.
+  }, [hash]);
 
   const payers = new Map(byTemplate?.map((p) => [p.templateId, p]));
   const all: Row[] = templates.map((t) => ({
@@ -113,7 +143,10 @@ export function TemplatesTable({
         numeric={right}
         hint={hint}
         sort={on ? (sort.desc ? "descending" : "ascending") : undefined}
-        onSort={() => setSort({ key, desc: on ? !sort.desc : key !== "name" })}
+        onSort={() => {
+          const desc = on ? !sort.desc : key !== "name";
+          setParams({ sort: key === "lifetimeCents" && desc ? null : `${desc ? "-" : ""}${key}` });
+        }}
       >
         {label}
       </TableSortHead>
@@ -157,13 +190,10 @@ export function TemplatesTable({
               {header(
                 "health",
                 "Health",
-                `Deploy health; a red "support" marks support health under ${SUPPORT_BONUS_THRESHOLD}%, so no +10% bonus`,
+                `Share of recent deploys that came up. A red "support" beside it: support health is under ${SUPPORT_BONUS_THRESHOLD}%, so no +10% kickback bonus`,
               )}
-              <TableHead className="max-sm:hidden">
-                <span title="New projects above the line, kickback below, day by day" className="underline decoration-current/40 decoration-dotted underline-offset-3">
-                  Last {dates.length}d
-                </span>
-                <span className="sr-only">: new projects above the line, kickback below, day by day</span>
+              <TableHead className="max-sm:hidden" hint="New projects above the line, kickback below, day by day">
+                Last {dates.length}d
               </TableHead>
               {header("newProjects", "New", `Projects made from it in the last ${dates.length} days`)}
               {header("projects", "Projects", "Projects ever made from it")}
@@ -173,6 +203,9 @@ export function TemplatesTable({
               {header("perActive", "$/active", "30-day kickback per active project")}
               {header("payers", "Payers", "Deployers whose invoices paid us kickback")}
               {header("lifetimeCents", "Lifetime", "Kickback since it was published")}
+              {header("publishedAt", "Published", "When it went live on the marketplace, UTC")}
+              {header("lastDeployAt", "Last deploy", "Newest project made from it, UTC, to the hourly sample that first saw it")}
+              {header("lastPaidAt", "Paid", "Last kickback attributed to it, UTC, to the hourly sample; open the row for the first")}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -189,14 +222,7 @@ export function TemplatesTable({
             <TableRow>
               <TableCell colSpan={COLUMNS} className="py-6 text-center text-muted-foreground">
                 No templates match.{" "}
-                <button
-                  type="button"
-                  className="cursor-pointer text-primary underline"
-                  onClick={() => {
-                    setFilter("all");
-                    setSearch("");
-                  }}
-                >
+                <button type="button" className="cursor-pointer text-primary underline" onClick={showAll}>
                   Show all
                 </button>
               </TableCell>
@@ -209,7 +235,7 @@ export function TemplatesTable({
 }
 
 type Scale = { dates: string[]; maxNew: number; maxEarned: number };
-const COLUMNS = 11;
+const COLUMNS = 14;
 
 function TemplateRow({
   r,
@@ -230,7 +256,7 @@ function TemplateRow({
   return (
     <>
       <TableRow id={`t-${r.templateId}`} data-open={open || undefined} rule={open ? "none" : "bottom"} className={cn(open && "bg-muted/40")}>
-        <TableRowHead className="max-w-64">
+        <TableRowHead className="max-w-56 2xl:max-w-64">
           <div className="flex items-start gap-1">
             {/* The name links to Railway, so expanding gets its own control. */}
             <button
@@ -261,7 +287,7 @@ function TemplateRow({
               )}
               <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
                 {r.code && (
-                  <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="flex min-w-0 items-center gap-1.5 max-sm:hidden">
                     <span className="max-w-32 truncate font-mono" title={r.code}>
                       {r.code}
                     </span>
@@ -290,7 +316,7 @@ function TemplateRow({
         <TableCell numeric className={cn(!r.newProjects && muted)}>{fmtNum(r.newProjects)}</TableCell>
         <TableCell numeric>{fmtNum(r.projects)}</TableCell>
         <TableCell numeric>{fmtNum(r.activeProjects)}</TableCell>
-        <TableCell numeric className={muted}>{r.running == null ? "—" : fmtNum(r.running)}</TableCell>
+        <TableCell numeric className={cn(!r.running && muted)}>{r.running == null ? "—" : fmtNum(r.running)}</TableCell>
         <TableCell numeric className={r.earnedCents ? "font-medium" : muted}>
           {fmtCents(r.earnedCents)}
         </TableCell>
@@ -312,24 +338,23 @@ function TemplateRow({
             <span className="text-muted-foreground">{fmtCents(0)}</span>
           )}
         </TableCell>
+        <TableCell numeric className={cn("text-xs", muted)}>{r.publishedAt ? <DayTime iso={r.publishedAt} /> : "—"}</TableCell>
+        <TableCell numeric className={cn("text-xs", muted)}>
+          <LastDeploy at={r.lastDeployAt} after={r.lastDeployAfter} />
+        </TableCell>
+        <TableCell numeric className={cn("text-xs", muted)}>{r.lastPaidAt ? <DayTime iso={r.lastPaidAt} /> : "never"}</TableCell>
       </TableRow>
       {open && (
         <TableRow id={panelId} data-panel className="bg-muted/40">
           {/* Sticky to the scroller's left edge so the charts stay in view
               while the wide table is scrolled sideways. */}
           <TableCell colSpan={COLUMNS} className="p-0">
-            <div className="sticky left-0 w-[min(56rem,calc(100vw-4rem))] space-y-3 px-5 pt-2 pb-6">
-              <p className="text-xs text-muted-foreground">
-                Published <span className="tabular-nums">{r.publishedAt ? fmtDay(r.publishedAt) : "—"}</span> · last
-                deploy <LastDeploy at={r.lastDeployAt} after={r.lastDeployAfter} /> · paid{" "}
-                <span className="tabular-nums">
-                  {r.firstPaidAt && r.lastPaidAt
-                    ? fmtDay(r.firstPaidAt) === fmtDay(r.lastPaidAt)
-                      ? fmtDay(r.lastPaidAt)
-                      : `${fmtDay(r.firstPaidAt)} – ${fmtDay(r.lastPaidAt)}`
-                    : "never"}
-                </span>
-              </p>
+            <div className="sticky left-0 w-[calc(100vw-4rem)] max-w-[86rem] space-y-3 px-5 pt-2 pb-6">
+              {r.firstPaidAt && (
+                <p className="text-xs text-muted-foreground">
+                  First paid <span className="tabular-nums">{fmtDayTime(r.firstPaidAt)}</span> UTC
+                </p>
+              )}
               <TemplateProjects templateId={r.templateId} />
             </div>
           </TableCell>
@@ -363,21 +388,33 @@ function KindSelect({ r }: { r: Row }) {
 }
 
 /** A new project shows up between two snapshots; across a collection gap
- * that is a span of days, and saying one date would be made up. */
+ * that is a span of days, and saying one time would be made up. */
 function LastDeploy({ at, after }: { at: string | null; after: string | null }) {
   if (!at) return <>—</>;
   const spansDays = after != null && fmtDay(after) !== fmtDay(at);
   return (
-    <span
-      className="tabular-nums"
-      title={
-        spansDays
-          ? `Appeared between ${fmtDay(after!)} and ${fmtDay(at)}, while collection was down`
-          : undefined
-      }
-    >
-      {spansDays ? `${fmtDay(after!)} – ${fmtDay(at)}` : fmtDay(at)}
+    <span title={spansDays ? `Appeared between ${fmtDayTime(after!)} and ${fmtDayTime(at)} UTC, while collection was down` : undefined}>
+      {spansDays ? (
+        <>
+          <span className="block">{fmtDay(after!)} –</span>
+          <span className="block">{fmtDay(at)}</span>
+        </>
+      ) : (
+        <DayTime iso={at} />
+      )}
     </span>
+  );
+}
+
+/** The day over its UTC time, so three date columns fit beside the figures. */
+function DayTime({ iso }: { iso: string }) {
+  const s = fmtDayTime(iso);
+  const cut = s.lastIndexOf(" ");
+  return (
+    <>
+      <span className="block">{s.slice(0, cut)}</span>
+      <span className="block text-muted-foreground/80">{s.slice(cut + 1)}</span>
+    </>
   );
 }
 

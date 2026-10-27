@@ -282,8 +282,10 @@ var upgradeMarkerRe = regexp.MustCompile(`^#\s*upgrade:\s*(?:(skip)\b|(github|np
 //
 // (or "# upgrade: npm @anthropic-ai/claude-code", "# upgrade: pypi laya"),
 // returned with Image "github:pingdotgg/t3code", "npm:@anthropic-ai/claude-code"
-// or "pypi:laya". A FROM
-// under "# upgrade: skip" is left out: a base held back on purpose.
+// or "pypi:laya". A FROM under such a marker takes its versions from there
+// instead of the image's registry tags (n8nio/n8n tags betas; npm's latest
+// does not), and a FROM under "# upgrade: skip" is left out: a base held
+// back on purpose.
 func dockerfilePins(service, dockerfile string) []serviceImageRef {
 	refs := []serviceImageRef{}
 	args := map[string]string{}
@@ -330,7 +332,11 @@ func dockerfilePins(service, dockerfile string) []serviceImageRef {
 				stages[strings.ToLower(from[2])] = true
 			}
 			if marker != "skip" && !stages[strings.ToLower(image)] {
-				add(splitImageTag(image))
+				image, tag := splitImageTag(image)
+				if marker != "" {
+					image = marker
+				}
+				add(image, tag)
 			}
 		}
 		marker = ""

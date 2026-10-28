@@ -4,7 +4,7 @@ import { Fragment, useState } from "react";
 import { DOCKET, DocketCell, Fig, Section } from "~/components/page";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead } from "~/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead, TableSortHead } from "~/components/ui/table";
 import { fmtAgo, fmtNum } from "~/lib/format";
 import { cn } from "~/lib/utils";
 import { type PositionShare, type SearchKeyword, searchQuery, useAddKeyword, useRemoveKeyword } from "~/queries/search";
@@ -14,6 +14,19 @@ import { type PositionShare, type SearchKeyword, searchQuery, useAddKeyword, use
 const PLUMBING = new Set(["Storage", "Starters", "Queues"]);
 
 type View = "ours" | "gaps" | "all";
+type SortKey = "query" | "best" | "demand" | "results" | "first";
+
+const sortValue = (k: SearchKeyword, key: SortKey): string | number | null =>
+  key === "first" ? (k.top[0]?.recent ?? null) : k[key];
+
+/** Blanks (not ranked, no results) stay last whichever way it's sorted. */
+function compare(a: SearchKeyword, b: SearchKeyword, key: SortKey, desc: boolean): number {
+  const x = sortValue(a, key);
+  const y = sortValue(b, key);
+  if (x == null || y == null) return x == null ? (y == null ? 0 : 1) : -1;
+  const c = typeof x === "string" ? x.localeCompare(y as string) : x - (y as number);
+  return desc ? -c : c;
+}
 
 const inView = (k: SearchKeyword, v: View, hidePlumbing: boolean) => {
   if (v === "ours") return k.source !== "market";
@@ -31,6 +44,7 @@ export function MarketSearch() {
   const [needle, setNeedle] = useState("");
   const [hidePlumbing, setHidePlumbing] = useState(true);
   const [open, setOpen] = useState<string | null>(null);
+  const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: "demand", desc: true });
 
   if (q.isPending) return <Skeleton className="h-96 w-full" />;
   if (q.isError) {
@@ -50,9 +64,25 @@ export function MarketSearch() {
   const all = q.data.keywords;
   const own = all.filter((k) => k.source === "ours");
   const n = needle.trim().toLowerCase();
-  const rows = all.filter((k) => inView(k, view, hidePlumbing) && (!n || k.query.includes(n)));
+  const rows = all
+    .filter((k) => inView(k, view, hidePlumbing) && (!n || k.query.includes(n)))
+    .sort((a, b) => compare(a, b, sort.key, sort.desc) || b.demand - a.demand);
   const maxDemand = Math.max(1, ...rows.map((k) => k.demand));
   const count = (v: View) => all.filter((k) => inView(k, v, hidePlumbing)).length;
+  // A rank or a name reads best from the top; counts from the biggest.
+  const header = (key: SortKey, label: string, hint?: string, numeric = true) => {
+    const on = sort.key === key;
+    return (
+      <TableSortHead
+        numeric={numeric}
+        hint={hint}
+        sort={on ? (sort.desc ? "descending" : "ascending") : undefined}
+        onSort={() => setSort({ key, desc: on ? !sort.desc : key !== "query" && key !== "best" })}
+      >
+        {label}
+      </TableSortHead>
+    );
+  };
 
   return (
     <>
@@ -114,11 +144,11 @@ export function MarketSearch() {
         <Table rows={rows.length} className="min-w-[48rem]">
           <TableHeader>
             <TableRow>
-              <TableHead>Keyword</TableHead>
-              <TableHead numeric hint="Our best position now, and the change from a week ago">We rank</TableHead>
-              <TableHead>Demand, 90 days</TableHead>
-              <TableHead numeric>Results</TableHead>
-              <TableHead>First result</TableHead>
+              {header("query", "Keyword", undefined, false)}
+              {header("best", "We rank", "Our best position now, and the change from a week ago")}
+              {header("demand", "Demand, 90 days", undefined, false)}
+              {header("results", "Results")}
+              {header("first", "First result", "Sorted by the first result's projects in 90 days", false)}
             </TableRow>
           </TableHeader>
           <TableBody>

@@ -71,6 +71,9 @@ func startCrons(db *gorm.DB) *cron.Cron {
 	if _, err := c.AddFunc(marketFetchSpec, func() { runMarketFetch(db) }); err != nil {
 		log.Fatalf("schedule market fetch: %v", err)
 	}
+	if _, err := c.AddFunc(searchFetchSpec, func() { runSearchFetch(db) }); err != nil {
+		log.Fatalf("schedule search fetch: %v", err)
+	}
 	autoWithdrawEntry.c = c
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -94,8 +97,18 @@ func startCrons(db *gorm.DB) *cron.Cron {
 	// Our own templates always build from our repos, so none with a repo
 	// means the market was never read, or was read before repos were kept.
 	var marketRows int64
+	var searchRows int64
+	db.Model(&SearchRank{}).Count(&searchRows)
 	if db.Model(&MarketTemplate{}).Where("our_repo <> ''").Count(&marketRows); marketRows == 0 {
-		go runMarketFetch(db)
+		// Search keywords come partly from the market, so search after it.
+		go func() {
+			runMarketFetch(db)
+			if searchRows == 0 {
+				runSearchFetch(db)
+			}
+		}()
+	} else if searchRows == 0 {
+		go runSearchFetch(db)
 	}
 	return c
 }

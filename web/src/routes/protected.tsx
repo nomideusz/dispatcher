@@ -120,6 +120,7 @@ const PAGES = [
   ["/upgrades", "Upgrades"],
   ["/patterns", "Patterns"],
   ["/candidates", "Candidates"],
+  ["/search", "Search"],
 ] as const;
 
 function Header({ user }: { user: User }) {

@@ -23,9 +23,6 @@ const MATCHES: Record<UpgradeFilter, (u: ServiceUpgrade) => boolean> = {
   all: () => true,
 };
 
-/** Template groups shown before "Show all". */
-const GROUPS = 10;
-
 const templateCount = (rows: ServiceUpgrade[]) => new Set(rows.map((u) => u.templateId)).size;
 
 /** Rows by template, templates in the order they first appear (the server's
@@ -43,16 +40,12 @@ export function UpgradeQueue() {
   // One heading per template, so its earnings show once instead of on
   // every service row.
   const [grouped, setGrouped] = useState(true);
-  // The queue's head is what gets done; the rest of the groups wait behind
-  // one press so the page doesn't run on for thousands of pixels.
-  const [allGroups, setAllGroups] = useState(false);
   const rows = upgrades.data ?? [];
   const names = shortNames(rows.map((u) => u.name ?? u.templateId));
   const shown = rows.filter(MATCHES[filter]);
   const pins = shown.filter((u) => u.behind !== "unchecked").length;
   const checkedAt = rows.find((u) => u.behind !== "unchecked")?.checkedAt;
   const groups = byTemplate(shown);
-  const shownGroups = allGroups ? groups : groups.slice(0, GROUPS);
   // Most lines have no later major; the column shows only when one does.
   const majors = shown.some((u) => u.major !== "");
   // The server orders behind-first, most-earning-first, so the first
@@ -123,7 +116,7 @@ export function UpgradeQueue() {
             </TableHeader>
             <TableBody banded={!grouped}>
               {grouped
-                ? shownGroups.map((group) => {
+                ? groups.map((group) => {
                     const u = group[0];
                     const checked = group.filter((g) => g.behind !== "unchecked");
                     const behind = group.filter(MATCHES.behind).length;
@@ -161,15 +154,6 @@ export function UpgradeQueue() {
                   ))}
             </TableBody>
           </Table>
-      )}
-      {grouped && groups.length > shownGroups.length && (
-        <button
-          type="button"
-          onClick={() => setAllGroups(true)}
-          className="cursor-pointer text-xs text-primary underline underline-offset-3"
-        >
-          Show all <span className="tabular-nums">{fmtNum(groups.length)}</span> templates
-        </button>
       )}
       {shown.length > 0 && (
         <p className="text-xs text-muted-foreground">

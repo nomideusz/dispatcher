@@ -18,7 +18,7 @@ import {
   CardTitle,
 } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHead, TableSortHead } from "~/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHead, useSort } from "~/components/ui/table";
 import { dayDate, fmtCents, fmtNum } from "~/lib/format";
 import { cn } from "~/lib/utils";
 import {
@@ -66,29 +66,33 @@ const monthLong = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
 });
 
-/** Three readings of the same payer list: who matters (rank by lifetime
- * total, the server's order), who is alive (returning, then new, then
- * lapsed; more invoices first; most recent first), and who is due next
- * (soonest next-due first; lapsed last, since nothing is expected). */
-type PayerSort = "rank" | "status" | "due";
+/** Payer columns sort on these; ties keep the server's order, biggest
+ * total first. Lapsed payers have no next due date, so they sort last. */
+type PayerKey = "rank" | "name" | "template" | "status" | "first" | "last" | "due" | "invoices" | "lastAmount" | "total";
 const STATUS_ORDER: Record<PayerChain["status"], number> = { returning: 0, new: 1, lapsed: 2 };
-function sortPayers(payers: PayerChain[], by: PayerSort): PayerChain[] {
-  if (by === "rank") return payers;
-  if (by === "due") {
-    return [...payers].sort(
-      (a, b) =>
-        Number(a.status === "lapsed") - Number(b.status === "lapsed") ||
-        a.nextDueAt.localeCompare(b.nextDueAt),
-    );
-  }
-  return [...payers].sort(
-    (a, b) =>
-      STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
-      b.invoices - a.invoices ||
-      b.lastAt.localeCompare(a.lastAt),
-  );
-}
-const PAYER_SORT_DIR = { rank: "descending", status: "ascending", due: "ascending" } as const;
+const payerValue = (c: PayerChain, key: PayerKey) =>
+  ({
+    rank: c.rank,
+    name: c.name,
+    template: c.templateName,
+    status: STATUS_ORDER[c.status],
+    first: c.firstAt,
+    last: c.lastAt,
+    due: c.status === "lapsed" ? null : c.nextDueAt,
+    invoices: c.invoices,
+    lastAmount: c.lastCents,
+    total: c.totalCents,
+  })[key];
+
+type LedgerKey = "date" | "template" | "destination" | "status" | "amount";
+const ledgerValue = (p: Payout, key: LedgerKey) =>
+  ({
+    date: p.createdAt,
+    template: p.templateName || null,
+    destination: p.destination || null,
+    status: p.status,
+    amount: p.amountCents,
+  })[key];
 
 type PayoutView = "payers" | "ledger";
 /** Money out of Railway, who is paying, and the raw ledger, for the range
@@ -96,7 +100,6 @@ type PayoutView = "payers" | "ledger";
  * line on top, then payers or the ledger. Per-template totals live in the
  * templates table. */
 export function PayoutHistory({ days }: { days: number }) {
-  const [payerSort, setPayerSort] = useState<PayerSort>("rank");
   const [view, setView] = useState<PayoutView>("payers");
   const history = useQuery(payoutHistoryQuery(days));
   const data = history.data;
@@ -104,17 +107,8 @@ export function PayoutHistory({ days }: { days: number }) {
     data?.payers.filter((c) => c.status === s).length ?? 0;
   const hasPayers = (data?.payers.length ?? 0) > 0;
   const current: PayoutView = hasPayers ? view : "ledger";
-  const payerHead = (by: PayerSort, label: string, hint: string, className?: string, numeric?: boolean) => (
-    <TableSortHead
-      numeric={numeric}
-      hint={hint}
-      className={className}
-      sort={payerSort === by ? PAYER_SORT_DIR[by] : undefined}
-      onSort={() => setPayerSort(by)}
-    >
-      {label}
-    </TableSortHead>
-  );
+  const payers = useSort(data?.payers ?? [], payerValue, "total", ["rank", "name", "template", "status", "due"]);
+  const ledger = useSort(data?.payouts ?? [], ledgerValue, "date", ["template", "destination", "status"]);
 
   return (
     <Card>
@@ -203,20 +197,20 @@ export function PayoutHistory({ days }: { days: number }) {
                 <Table rows={data.payers.length}>
                   <TableHeader>
                     <TableRow>
-                      <TableHead numeric className="max-sm:hidden">#</TableHead>
-                      <TableHead className="max-sm:pl-0">Payer</TableHead>
-                      <TableHead className="max-sm:hidden">Template</TableHead>
-                      {payerHead("status", "Status", "Returning, then new, then lapsed", "max-sm:hidden")}
-                      <TableHead className="max-sm:hidden">First</TableHead>
-                      <TableHead className="max-sm:hidden">Last</TableHead>
-                      {payerHead("due", "Next due", "Soonest first; lapsed payers last", "max-sm:hidden")}
-                      <TableHead numeric className="max-sm:hidden">Invoices</TableHead>
-                      <TableHead numeric className="max-sm:hidden">Last amount</TableHead>
-                      {payerHead("rank", "Total", "Paid in all, most first", undefined, true)}
+                      {payers.head("rank", "#", { numeric: true, className: "max-sm:hidden" })}
+                      {payers.head("name", "Payer", { className: "max-sm:pl-0" })}
+                      {payers.head("template", "Template", { className: "max-sm:hidden" })}
+                      {payers.head("status", "Status", { hint: "Returning, then new, then lapsed", className: "max-sm:hidden" })}
+                      {payers.head("first", "First", { className: "max-sm:hidden" })}
+                      {payers.head("last", "Last", { className: "max-sm:hidden" })}
+                      {payers.head("due", "Next due", { hint: "Soonest first; lapsed payers last", className: "max-sm:hidden" })}
+                      {payers.head("invoices", "Invoices", { numeric: true, className: "max-sm:hidden" })}
+                      {payers.head("lastAmount", "Last amount", { numeric: true, className: "max-sm:hidden" })}
+                      {payers.head("total", "Total", { hint: "Paid in all", numeric: true })}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sortPayers(data.payers, payerSort).map((c) => (
+                    {payers.rows.map((c) => (
                       <PayerRow key={`${c.templateId}-${c.firstAt}`} chain={c} />
                     ))}
                   </TableBody>
@@ -234,15 +228,15 @@ export function PayoutHistory({ days }: { days: number }) {
                 <Table rows={data.payouts.length}>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Template</TableHead>
-                      <TableHead className="max-sm:hidden">Destination</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead numeric>Amount</TableHead>
+                      {ledger.head("date", "Date")}
+                      {ledger.head("template", "Template")}
+                      {ledger.head("destination", "Destination", { className: "max-sm:hidden" })}
+                      {ledger.head("status", "Status")}
+                      {ledger.head("amount", "Amount", { numeric: true })}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.payouts.map((p) => (
+                    {ledger.rows.map((p) => (
                       <PayoutRow key={p.id} payout={p} />
                     ))}
                   </TableBody>

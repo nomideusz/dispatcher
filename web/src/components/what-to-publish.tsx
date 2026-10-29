@@ -3,7 +3,7 @@ import { CartesianGrid, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts"
 import { cursor, GROUPS, groupOf, Key, median, perDay, Tip, tick } from "~/components/chart-kit";
 import { Section } from "~/components/page";
 import { ChartContainer } from "~/components/ui/chart";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead } from "~/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead, useSort } from "~/components/ui/table";
 import { dayKey, fmtDay, fmtNum, fmtUsd } from "~/lib/format";
 import { KINDS, type TimelineResponse, type TimelineTemplate } from "~/queries/analytics";
 
@@ -218,6 +218,8 @@ function segment(templates: TimelineTemplate[], keyOf: (t: TimelineTemplate) => 
     .sort((a, b) => a.key.localeCompare(b.key));
 }
 
+type SegmentKey = "key" | "templates" | "earning" | "earned" | "per" | "perActive" | "firstPaid";
+
 function SegmentTable({
   title,
   rows,
@@ -228,21 +230,39 @@ function SegmentTable({
   format: (key: string) => ReactNode;
 }) {
   const best = Math.max(0, ...rows.map((r) => r.earned / r.templates));
+  // The label column keeps the segments' own order: kinds as listed, sizes
+  // small to large, months oldest first.
+  const order = new Map(rows.map((r, i) => [r.key, i]));
+  const { rows: sorted, head } = useSort(
+    rows,
+    (r, key: SegmentKey) =>
+      ({
+        key: order.get(r.key),
+        templates: r.templates,
+        earning: r.earning,
+        earned: r.earned,
+        per: r.earned / r.templates,
+        perActive: r.active > 0 ? r.earned / r.active : null,
+        firstPaid: r.firstPaid,
+      })[key],
+    "key",
+    ["key", "firstPaid"],
+  );
   return (
     <Table className="sm:min-w-[34rem]">
       <TableHeader>
         <TableRow>
-          <TableHead>{title}</TableHead>
-          <TableHead numeric className="max-sm:hidden">Templates</TableHead>
-          <TableHead numeric className="max-sm:hidden">Earning</TableHead>
-          <TableHead numeric>30d</TableHead>
-          <TableHead className="pl-6">Per template</TableHead>
-          <TableHead numeric className="max-sm:hidden">Per active project</TableHead>
-          <TableHead numeric className="max-sm:hidden">First paid</TableHead>
+          {head("key", title)}
+          {head("templates", "Templates", { numeric: true, className: "max-sm:hidden" })}
+          {head("earning", "Earning", { numeric: true, className: "max-sm:hidden" })}
+          {head("earned", "30d", { numeric: true })}
+          {head("per", "Per template", { className: "pl-6" })}
+          {head("perActive", "Per active project", { numeric: true, className: "max-sm:hidden" })}
+          {head("firstPaid", "First paid", { numeric: true, hint: "Shortest wait first", className: "max-sm:hidden" })}
         </TableRow>
       </TableHeader>
       <TableBody>
-        {rows.map((r) => {
+        {sorted.map((r) => {
           const per = r.earned / r.templates;
           return (
             <TableRow key={r.key}>

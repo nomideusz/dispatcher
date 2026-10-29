@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { DOCKET, DocketCell, Fig, Section } from "~/components/page";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead } from "~/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead, useSort } from "~/components/ui/table";
 import { fmtAgo, fmtDay, fmtNum, fmtUsd, shortNames } from "~/lib/format";
 import { cn } from "~/lib/utils";
 import type { TimelineTemplate } from "~/queries/analytics";
@@ -15,6 +15,17 @@ const PLUMBING = new Set(["Storage", "Starters", "Queues"]);
 const monthFmt = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
 
 type View = "shortlist" | "market" | "skip";
+
+type SortKey = "app" | "recent" | "active" | "rivals" | "leader" | "newest";
+const sortValue = (g: CandidateGroup, key: SortKey) =>
+  ({
+    app: (g.leader.name || g.key).toLowerCase(),
+    recent: g.recent,
+    active: g.active,
+    rivals: g.rivals,
+    leader: g.leader.name ? g.leader.health : null,
+    newest: g.newest,
+  })[key];
 
 /** What people deploy on Railway, one row per app, against what we publish:
  * a shortlist to build from, the market to find more, and our own
@@ -44,8 +55,11 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
     skip: groups.filter((g) => inView(g, "skip")).length,
   };
   const needle = search.trim().toLowerCase();
-  const rows = groups.filter(
-    (g) => inView(g, view) && (!needle || g.key.includes(needle) || g.leader.name.toLowerCase().includes(needle)),
+  const { rows, head } = useSort(
+    groups.filter((g) => inView(g, view) && (!needle || g.key.includes(needle) || g.leader.name.toLowerCase().includes(needle))),
+    sortValue,
+    "recent",
+    ["app"],
   );
   const maxRecent = Math.max(1, ...rows.map((g) => g.recent));
 
@@ -137,12 +151,12 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
       <Table rows={rows.length} className="min-w-[56rem]">
         <TableHeader>
           <TableRow>
-            <TableHead>App</TableHead>
-            <TableHead>Deployed, 90 days</TableHead>
-            <TableHead numeric>Active</TableHead>
-            <TableHead numeric>Templates</TableHead>
-            <TableHead>Leading template</TableHead>
-            <TableHead numeric>Newest</TableHead>
+            {head("app", "App")}
+            {head("recent", "Deployed, 90 days")}
+            {head("active", "Active", { numeric: true })}
+            {head("rivals", "Templates", { numeric: true })}
+            {head("leader", "Leading template", { hint: "Sorted by its deploy health" })}
+            {head("newest", "Newest", { numeric: true })}
             <TableHead>{view === "market" ? "We have" : "Note"}</TableHead>
             <TableHead>
               <span className="sr-only">Actions</span>

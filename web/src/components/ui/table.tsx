@@ -4,14 +4,14 @@ import * as React from "react"
 import { cn } from "~/lib/utils"
 
 /** Rows a table shows before "Show all"; app.css hides the rest. */
-const ROWS = 25
+const ROWS = 500
 
 /** The consignment table: labels in a header on paper, hairline row rules,
  * 8px rows, figures in mono and right-aligned. The page scrolls, never the
  * table: from xl the header sticks under the bar; below it the table
  * scrolls sideways when it is wider than the screen. Pass `rows` (the body's
- * row count) and it shows the first 25 with a "Show all" under them, so a
- * long list never buries the sections after it. */
+ * row count) and past 500 it shows the first 500 with a "Show all" under
+ * them, so a very long list never buries the sections after it. */
 function Table({ className, rows = 0, ...props }: React.ComponentProps<"table"> & { rows?: number }) {
   const [all, setAll] = React.useState(false)
   const capped = rows > ROWS && !all
@@ -174,6 +174,41 @@ function TableSortHead({
   )
 }
 
+type SortValue = string | number | null | undefined
+
+/** Sorting for a table whose columns all sort. A first press sorts figures
+ * and dates biggest and newest first, and the `asc` keys (names, ranks,
+ * orders) from the top; a second press flips it. Blanks stay last either
+ * way, and ties keep the rows' own order. `head` renders a column's label. */
+function useSort<R, K extends string>(
+  rows: R[],
+  value: (r: R, key: K) => SortValue,
+  initial: NoInfer<K>,
+  asc: NoInfer<K>[] = []
+) {
+  const [sort, setSort] = React.useState({ key: initial, desc: !asc.includes(initial) })
+  const sorted = [...rows].sort((a, b) => {
+    const x = value(a, sort.key)
+    const y = value(b, sort.key)
+    if (x == null || y == null) return x == null ? (y == null ? 0 : 1) : -1
+    const c = typeof x === "string" ? x.localeCompare(y as string) : x - (y as number)
+    return sort.desc ? -c : c
+  })
+  const head = (key: K, label: React.ReactNode, props: Numeric & { hint?: string; className?: string } = {}) => {
+    const on = sort.key === key
+    return (
+      <TableSortHead
+        {...props}
+        sort={on ? (sort.desc ? "descending" : "ascending") : undefined}
+        onSort={() => setSort({ key, desc: on ? !sort.desc : !asc.includes(key) })}
+      >
+        {label}
+      </TableSortHead>
+    )
+  }
+  return { rows: sorted, head }
+}
+
 const cell = (numeric?: boolean) =>
   cn("py-2 pl-3 first:pl-0", numeric && "text-right whitespace-nowrap tabular-nums")
 
@@ -209,4 +244,4 @@ function TableMeter({
   )
 }
 
-export { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead, TableSortHead }
+export { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead, TableSortHead, useSort }

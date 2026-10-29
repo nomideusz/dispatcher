@@ -21,7 +21,7 @@ const AVG = "var(--muted-foreground)";
 const COUNTS = [
   { key: "published", label: "Published", color: "var(--chart-other)", dashed: true },
   { key: "deployed", label: "Deployed", color: "var(--chart-5)" },
-  { key: "active", label: "Active", color: "var(--chart-3)" },
+  { key: "active", label: "Activated", color: "var(--chart-3)" },
   { key: "earning", label: "Earning (30d)", color: "var(--chart-4)" },
 ] as const;
 
@@ -206,8 +206,9 @@ export function Earnings({ data }: { data: TimelineResponse }) {
           </ComposedChart>
         </ChartContainer>
         <p className="text-xs text-muted-foreground">
-          Left axis: kickback. Right axis: templates. Deployed: someone made a project from it.
-          Active: one of those projects is live today. Earning: it paid in the last 30 days.
+          Left axis: kickback. Right axis: templates, not projects. Deployed: someone other than you
+          made a project from it. Activated: one of those projects is live today. Earning: it paid in the
+          last 30 days.
         </p>
       </section>
 

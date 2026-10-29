@@ -219,9 +219,9 @@ tr[data-marked] > :is(td, th) {
     background: color-mix(in oklab, var(--muted) 75%, transparent);
   }
 }
-/* A long table shows its first 25 rows until "Show all"; a row a link
+/* A long table shows its first 500 rows until "Show all"; a row a link
    jumps to stays visible. */
-[data-capped] [data-slot="table-body"] > tr:nth-child(n + 26 of :not([data-panel])):not([data-marked]) {
+[data-capped] [data-slot="table-body"] > tr:nth-child(n + 501 of :not([data-panel])):not([data-marked]) {
   display: none;
 }
 @media (hover: hover) {

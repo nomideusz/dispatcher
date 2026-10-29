@@ -10,10 +10,13 @@ import { cn } from "~/lib/utils";
 import {
   type Kind,
   KINDS,
+  type Origin,
+  ORIGINS,
   qualifiesForBonus,
   SUPPORT_BONUS_THRESHOLD,
   type TimelineTemplate,
   useSetKind,
+  useSetOrigin,
 } from "~/queries/analytics";
 import type { PayoutTemplateTotal } from "~/queries/payouts";
 
@@ -31,6 +34,7 @@ const FILTERS = {
   },
   unused: { label: "No projects", test: (r: Row) => r.projects === 0 },
   unsorted: { label: "Unsorted", test: (r: Row) => !r.kind },
+  unmarked: { label: "No origin", test: (r: Row) => !r.origin },
 } satisfies Record<string, { label: string; test: (r: Row) => boolean }>;
 type Filter = keyof typeof FILTERS;
 
@@ -297,7 +301,8 @@ function TemplateRow({
                 <span className="whitespace-nowrap">
                   <span className="tabular-nums">{r.services}</span> {r.services === 1 ? "service" : "services"} ·
                 </span>
-                <KindSelect r={r} />
+                <KindSelect r={r} /> ·
+                <OriginSelect r={r} />
               </div>
               {/* On a phone the money columns are off-screen, so the row
                   carries what it earned under the name. */}
@@ -364,6 +369,31 @@ function TemplateRow({
   );
 }
 
+const INLINE_SELECT =
+  "-mx-0.5 min-h-6 cursor-pointer appearance-none border-b border-dashed border-current/40 bg-transparent px-0.5 outline-none field-sizing-content hover:border-current hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
+
+/** Original or competitive, marked by hand like the kind. */
+function OriginSelect({ r }: { r: Row }) {
+  const setOrigin = useSetOrigin();
+  const origin = setOrigin.isPending ? setOrigin.variables.origin : r.origin;
+  return (
+    <select
+      aria-label={`Origin of ${r.name}`}
+      value={origin}
+      disabled={setOrigin.isPending}
+      onChange={(e) => setOrigin.mutate({ templateId: r.templateId, origin: e.target.value as Origin | "" })}
+      className={cn(INLINE_SELECT, !origin && "text-(--viz-caution)")}
+    >
+      <option value="">No origin</option>
+      {ORIGINS.map((o) => (
+        <option key={o.key} value={o.key}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 /** What the template is for, editable in place: a plain select that reads
  * as text until it is opened. */
 function KindSelect({ r }: { r: Row }) {
@@ -375,7 +405,7 @@ function KindSelect({ r }: { r: Row }) {
       value={kind}
       disabled={setKind.isPending}
       onChange={(e) => setKind.mutate({ templateId: r.templateId, kind: e.target.value as Kind | "" })}
-      className={`-mx-0.5 min-h-6 cursor-pointer appearance-none border-b border-dashed border-current/40 bg-transparent px-0.5 outline-none field-sizing-content hover:border-current hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${kind ? "" : "text-(--viz-caution)"}`}
+      className={cn(INLINE_SELECT, !kind && "text-(--viz-caution)")}
     >
       <option value="">Unsorted</option>
       {KINDS.map((k) => (

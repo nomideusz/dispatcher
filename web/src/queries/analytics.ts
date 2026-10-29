@@ -42,6 +42,9 @@ export interface TimelineTemplate {
   code: string;
   /** What it is for, set by hand; "" until sorted. */
   kind: Kind | "";
+  /** Original (nothing like it on Railway when published) or a competitive
+   * pick, set by hand; "" until marked. */
+  origin: Origin | "";
   /** Railway's Template.createdAt; the API has no separate publish date. */
   publishedAt: string | null;
   firstSeenAt: string;
@@ -176,6 +179,22 @@ export const KINDS = [
   { key: "desktop", label: "Desktops & browsers" },
 ] as const;
 export type Kind = (typeof KINDS)[number]["key"];
+
+/** Where a template came from: the day-14 verdict splits its backtest by it. */
+export const ORIGINS = [
+  { key: "original", label: "Original" },
+  { key: "competitive", label: "Competitive" },
+] as const;
+export type Origin = (typeof ORIGINS)[number]["key"];
+
+export function useSetOrigin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ templateId, origin }: { templateId: string; origin: Origin | "" }) =>
+      api.put(`templates/${encodeURIComponent(templateId)}/origin`, { json: { origin } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["analytics", "timeline"] }),
+  });
+}
 
 export function useSetKind() {
   const qc = useQueryClient();

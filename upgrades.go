@@ -98,7 +98,11 @@ func (t workspaceTemplate) templateImages() []serviceImageRef {
 		if json.Unmarshal(raw, &svc) != nil {
 			continue
 		}
-		if svc.Source.Image != "" {
+		if repo := ourImageRepo(svc.Source.Image); repo != "" {
+			// Our own build of a repo: its tags only ever say it is current,
+			// so the upstream pins are read from that repo's Dockerfile.
+			refs = append(refs, serviceImageRef{Service: svc.Name, Repo: repo, Root: "/"})
+		} else if svc.Source.Image != "" {
 			image, tag := splitImageTag(svc.Source.Image)
 			refs = append(refs, serviceImageRef{Service: svc.Name, Image: image, Tag: tag, HA: svc.HATemplateCode})
 		} else if svc.Source.Repo != "" {
@@ -107,6 +111,21 @@ func (t workspaceTemplate) templateImages() []serviceImageRef {
 	}
 	sort.Slice(refs, func(i, j int) bool { return refs[i].Service < refs[j].Service })
 	return refs
+}
+
+// ourImageRe matches the images our GitHub Actions build from a repo of ours
+// and push to the same path on ghcr.io (ghcr.io/two-workspaces/laya is built
+// from github.com/two-workspaces/laya).
+var ourImageRe = regexp.MustCompile(`(?i)^ghcr\.io/(two-workspaces|nomideusz)/([\w.-]+)`)
+
+// ourImageRepo returns the GitHub repo an image of ours is built from, or ""
+// for anyone else's image.
+func ourImageRepo(image string) string {
+	m := ourImageRe.FindStringSubmatch(image)
+	if m == nil {
+		return ""
+	}
+	return "https://github.com/" + m[1] + "/" + m[2]
 }
 
 // splitImageTag separates "ghcr.io/o/r:1.2" into repository and tag. A

@@ -142,7 +142,8 @@ func ourRepo(config json.RawMessage) string {
 	var c struct {
 		Services map[string]struct {
 			Source struct {
-				Repo string `json:"repo"`
+				Repo  string `json:"repo"`
+				Image string `json:"image"`
 			} `json:"source"`
 		} `json:"services"`
 	}
@@ -150,7 +151,7 @@ func ourRepo(config json.RawMessage) string {
 		return ""
 	}
 	for _, s := range c.Services {
-		if m := ourRepoRe.FindString(s.Source.Repo); m != "" {
+		if m := ourRepoRe.FindString(s.Source.Repo + " " + ourImageRepo(s.Source.Image)); m != "" {
 			return m
 		}
 	}

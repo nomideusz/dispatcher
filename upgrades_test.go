@@ -172,10 +172,12 @@ func TestTemplateImagesDockerfilePath(t *testing.T) {
 	tpl.SerializedConfig.Services = map[string]json.RawMessage{
 		"a": json.RawMessage(`{"name":"ui","source":{"repo":"https://github.com/o/datalens","rootDirectory":"/"},"build":{"dockerfilePath":"Dockerfile.ui"}}`),
 		"b": json.RawMessage(`{"name":"db","source":{"image":"postgres:17"}}`),
+		"c": json.RawMessage(`{"name":"laya","source":{"image":"ghcr.io/two-workspaces/laya:671e888"}}`),
 	}
 	got := fmt.Sprint(tpl.templateImages())
 	want := fmt.Sprint([]serviceImageRef{
 		{Service: "db", Image: "postgres", Tag: "17"},
+		{Service: "laya", Repo: "https://github.com/two-workspaces/laya", Root: "/"},
 		{Service: "ui", Repo: "https://github.com/o/datalens", Root: "/", Dockerfile: "Dockerfile.ui"},
 	})
 	if got != want {

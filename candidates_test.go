@@ -59,6 +59,7 @@ func TestOurRepo(t *testing.T) {
 		`{"services":{"a":{"source":{"repo":"https://github.com/two-workspaces/edge"}}}}`:                                       "github.com/two-workspaces/edge",
 		`{"services":{"a":{"source":{"image":"postgres:17"}},"b":{"source":{"repo":"https://github.com/NomiDeusz/dino.git"}}}}`: "github.com/NomiDeusz/dino.git",
 		`{"services":{"a":{"source":{"repo":"https://github.com/someone/edge"}}}}`:                                              "",
+		`{"services":{"a":{"source":{"image":"ghcr.io/two-workspaces/laya:671e888"}}}}`:                                         "github.com/two-workspaces/laya",
 		`"not an object"`: "",
 		`null`:            "",
 	} {

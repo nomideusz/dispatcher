@@ -182,8 +182,11 @@ func parseCommand(args []string, stderr io.Writer) (command, error) {
 			path:         "/api/analytics/payout?days=" + strconv.Itoa(*days),
 			requiresAuth: true,
 		}, nil
-	case "kind", "origin":
+	case "kind", "origin", "fixed":
 		if len(args) != 3 {
+			if args[0] == "fixed" {
+				return command{}, fmt.Errorf("fixed requires a template id and the date a fix was pushed (YYYY-MM-DD, or \"\" to clear)")
+			}
 			if args[0] == "origin" {
 				return command{}, fmt.Errorf("origin requires a template id and an origin (original, competitive, or \"\" to unmark)")
 			}
@@ -279,6 +282,8 @@ Other commands:
   origin TEMPLATE_ID ORIGIN
                            Set a template's origin: original or competitive
                            ("" leaves it unmarked)
+  fixed TEMPLATE_ID DATE   Record the day a health fix was pushed (YYYY-MM-DD,
+                           "" clears it)
   version                  Print the CLI version
   help                     Show this help
 `)

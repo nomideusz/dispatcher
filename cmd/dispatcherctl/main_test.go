@@ -297,4 +297,8 @@ func TestParseCommandKind(t *testing.T) {
 	if err != nil || cmd.path != "/api/templates/1c1b713d-16dc/origin" || cmd.body != `{"origin":"original"}` {
 		t.Fatalf("origin command = %+v, %v", cmd, err)
 	}
+	cmd, err = parseCommand([]string{"fixed", "1c1b713d-16dc", "2026-10-30"}, &bytes.Buffer{})
+	if err != nil || cmd.path != "/api/templates/1c1b713d-16dc/fixed" || cmd.body != `{"fixed":"2026-10-30"}` {
+		t.Fatalf("fixed command = %+v, %v", cmd, err)
+	}
 }

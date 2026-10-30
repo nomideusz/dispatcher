@@ -40,6 +40,7 @@ func main() {
 	mux.Handle("POST /api/upgrades/refresh", auth(handleRefreshUpgrades(db)))
 	mux.Handle("PUT /api/templates/{id}/kind", auth(handleSetTemplateKind(db)))
 	mux.Handle("PUT /api/templates/{id}/origin", auth(handleSetTemplateOrigin(db)))
+	mux.Handle("PUT /api/templates/{id}/fixed", auth(handleSetTemplateFix(db)))
 	mux.Handle("GET /api/candidates", auth(handleCandidates(db)))
 	mux.Handle("PUT /api/candidates/{key}", auth(handleMarkCandidate(db)))
 	mux.Handle("GET /api/search", auth(handleSearch(db)))

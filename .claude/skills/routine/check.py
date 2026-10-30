@@ -47,6 +47,7 @@ def figures(timeline, upgrades, search, candidates, verdicts):
                 "name": t["name"],
                 "health": round(t["health"]),
                 "earnedCents": t.get("earnedCents") or 0,
+                "fixedOn": t.get("fixedOn") or "",
                 "upgrades": sorted({u.get("behind") or "" for u in by_template.get(t["templateId"], [])} - {""})
                 + (["major"] if any(u.get("major") for u in by_template.get(t["templateId"], [])) else []),
             }
@@ -97,7 +98,8 @@ def report(f, last):
         print(f"  over {FIX_FIRST} earning: fix before you publish")
     for t in f["low"][:10]:
         up = f"  upgrades pending: {', '.join(t['upgrades'])}" if t["upgrades"] else ""
-        print(f"  {t['health']:>3}%  ${t['earnedCents'] / 100:>7.2f}/30d  {t['name']}{up}")
+        fixed = f"  fix pushed {t['fixedOn']}" if t.get("fixedOn") else ""
+        print(f"  {t['health']:>3}%  ${t['earnedCents'] / 100:>7.2f}/30d  {t['name']}{fixed}{up}")
     if last:
         was = {t["name"] for t in last["low"]}
         fixed = sorted(was - {t["name"] for t in f["low"]})

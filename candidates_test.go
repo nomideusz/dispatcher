@@ -46,11 +46,36 @@ func TestGroupMarket(t *testing.T) {
 	if g := by["postiz"]; len(g.Ours) != 1 || g.Rivals != 1 || g.Leader.Name != "" {
 		t.Errorf("postiz = %+v, want ours with the Postiz App rival", g)
 	}
-	if g := by["postiz app"]; g.Similar != "postiz" {
-		t.Errorf("postiz app similar = %q", g.Similar)
+	if g := by["postiz app"]; g.Similar != "postiz" || g.Rivals != 1 {
+		t.Errorf("postiz app = %+v, want similar to ours and only its own rival", g)
 	}
 	if g := by["laya"]; g.Rivals != 0 {
 		t.Errorf("laya rivals = %d, want an original", g.Rivals)
+	}
+}
+
+// A candidate counts the templates of a similar group as rivals too, even
+// when neither group holds one of ours.
+func TestGroupMarketCandidateRivals(t *testing.T) {
+	groups := groupMarket([]MarketTemplate{
+		{ID: "a", Name: "Instatic CMS - SQLite", Creator: "Instatic", ActiveProjects: 1122},
+		{ID: "b", Name: "Instatic CMS - Postgres", Creator: "Instatic", ActiveProjects: 124},
+		{ID: "c", Name: "Instatic", Creator: "x", ActiveProjects: 21},
+		{ID: "d", Name: "instatic", Creator: "y", ActiveProjects: 2},
+		{ID: "e", Name: "Ghost", Creator: "z"},
+	}, map[string]bool{})
+	by := map[string]*candidateGroup{}
+	for _, g := range groups {
+		by[g.Key] = g
+	}
+	if g := by["instatic cms"]; g.Templates != 2 || g.Rivals != 4 || g.Similar != "" {
+		t.Errorf("instatic cms = %+v, want 2 templates, 4 rivals, no similar of ours", g)
+	}
+	if g := by["instatic"]; g.Rivals != 4 {
+		t.Errorf("instatic rivals = %d, want 4", g.Rivals)
+	}
+	if g := by["ghost"]; g.Rivals != 1 {
+		t.Errorf("ghost rivals = %d, want 1", g.Rivals)
 	}
 }
 

@@ -274,18 +274,15 @@ func groupMarket(rows []MarketTemplate, ours map[string]bool) []*candidateGroup 
 		g.Rivals = g.Templates - len(g.Ours)
 		squashed[g] = squash(g.Key)
 	}
-	// Similar apps across groups: ours count the other side as rivals, the
-	// others learn we already have one.
+	// Similar apps across groups count the other side as rivals ("instatic cms"
+	// and "instatic"); groups we have none in learn we already have one.
 	for _, o := range groups {
-		if len(o.Ours) == 0 {
-			continue
-		}
 		for _, g := range groups {
 			if g == o || !alike(squashed[o], squashed[g]) {
 				continue
 			}
 			o.Rivals += g.Templates - len(g.Ours)
-			if len(g.Ours) == 0 && g.Similar == "" {
+			if len(o.Ours) > 0 && len(g.Ours) == 0 && g.Similar == "" {
 				g.Similar = o.Key
 			}
 		}

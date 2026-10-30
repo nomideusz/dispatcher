@@ -182,14 +182,17 @@ func parseCommand(args []string, stderr io.Writer) (command, error) {
 			path:         "/api/analytics/payout?days=" + strconv.Itoa(*days),
 			requiresAuth: true,
 		}, nil
-	case "kind":
+	case "kind", "origin":
 		if len(args) != 3 {
+			if args[0] == "origin" {
+				return command{}, fmt.Errorf("origin requires a template id and an origin (original, competitive, or \"\" to unmark)")
+			}
 			return command{}, fmt.Errorf("kind requires a template id and a kind (business, ai, media, desktop, agent, devtools, or \"\" to unsort)")
 		}
-		body, _ := json.Marshal(map[string]string{"kind": args[2]})
+		body, _ := json.Marshal(map[string]string{args[0]: args[2]})
 		return command{
 			method:       http.MethodPut,
-			path:         "/api/templates/" + url.PathEscape(args[1]) + "/kind",
+			path:         "/api/templates/" + url.PathEscape(args[1]) + "/" + args[0],
 			requiresAuth: true,
 			body:         string(body),
 		}, nil
@@ -273,6 +276,9 @@ Other commands:
   refresh-upgrades         Re-check every template image against its registry
   kind TEMPLATE_ID KIND    Set a template's kind: business, ai, media, desktop,
                            agent or devtools ("" leaves it unsorted)
+  origin TEMPLATE_ID ORIGIN
+                           Set a template's origin: original or competitive
+                           ("" leaves it unmarked)
   version                  Print the CLI version
   help                     Show this help
 `)

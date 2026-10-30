@@ -293,4 +293,8 @@ func TestParseCommandKind(t *testing.T) {
 	if _, err := parseCommand([]string{"kind", "only-id"}, &bytes.Buffer{}); err == nil {
 		t.Fatal("kind with one argument should fail")
 	}
+	cmd, err = parseCommand([]string{"origin", "1c1b713d-16dc", "original"}, &bytes.Buffer{})
+	if err != nil || cmd.path != "/api/templates/1c1b713d-16dc/origin" || cmd.body != `{"origin":"original"}` {
+		t.Fatalf("origin command = %+v, %v", cmd, err)
+	}
 }

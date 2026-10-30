@@ -45,6 +45,7 @@ export function MarketSearch() {
   const [hidePlumbing, setHidePlumbing] = useState(true);
   const [open, setOpen] = useState<string | null>(null);
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: "demand", desc: true });
+  const add = useAddKeyword();
 
   if (q.isPending) return <Skeleton className="h-96 w-full" />;
   if (q.isError) {
@@ -168,6 +169,16 @@ export function MarketSearch() {
               <TableRow>
                 <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
                   No keywords match.
+                  {/* Not tracked under any view: offer it as typed, so it needn't be retyped. */}
+                  {n.length >= 2 && !all.some((k) => k.query === n) && (
+                    <>
+                      {" "}
+                      <Button size="xs" variant="secondary" disabled={add.isPending} onClick={() => add.mutate(n, { onSuccess: () => setView("ours") })}>
+                        {add.isPending ? "Searching…" : `Track \u201c${n}\u201d`}
+                      </Button>
+                      {add.isError && <span role="alert" className="ml-2 text-(--viz-critical)">Not added</span>}
+                    </>
+                  )}
                 </TableCell>
               </TableRow>
             )}

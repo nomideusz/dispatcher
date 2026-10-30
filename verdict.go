@@ -30,9 +30,9 @@ const (
 )
 
 // verdictHorizons are the outcome days, earliest first. Each gets judged
-// once, when that many days have passed for verdictMinN templates and
-// verdictMinPositives of them rose. Short of that, a judgment could only say
-// "not enough data", so the horizon waits for a bigger cohort instead.
+// once, the first time its backtest is decisive: some predictor passes or
+// fails. Until then every predictor says "not enough data", and storing that
+// would lock the horizon, so it waits for a bigger cohort instead.
 var verdictHorizons = []int{45, 90}
 
 // VerdictCheckpoint is a backtest judged once and kept. Judging live on
@@ -128,7 +128,7 @@ type verdictsResponse struct {
 	TrackedSince   time.Time `json:"trackedSince"`
 	MinOutcomeRise float64   `json:"minOutcomeRise"`
 	// Checkpoint is the latest judged backtest, the one states follow; nil
-	// until the day-45 cohort first reaches verdictMinN and verdictMinPositives.
+	// until the day-45 backtest is first decisive.
 	Checkpoint *judgedCheckpoint `json:"checkpoint"`
 	// Provisional is every horizon recomputed now. It moves hour to hour
 	// and decides nothing.
@@ -225,6 +225,11 @@ func backtestAt(subjects []verdictSubject, trackedSince, now time.Time, horizon 
 	return b
 }
 
+// decisive is true once some predictor has passed or failed.
+func (b verdictBacktest) decisive() bool {
+	return b.P1.Result != "not enough data" || b.P2.Result != "not enough data"
+}
+
 // judgePredictor applies the pass rule fixed before the first run: the
 // true group's rise rate is at least 50% and at least twice the false
 // group's, each group holding verdictMinGroup templates or more.
@@ -280,8 +285,7 @@ func verdictStates(subjects []verdictSubject, trackedSince, now time.Time, check
 }
 
 // handleVerdicts serves the backtest and each template's verdict, judging
-// and storing a horizon's checkpoint the first time verdictMinN templates
-// have reached it with verdictMinPositives rises among them. Responds null until the first snapshot.
+// and storing a horizon's checkpoint the first time its backtest is decisive. Responds null until the first snapshot.
 func handleVerdicts(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		fail := func(err error) {
@@ -323,7 +327,7 @@ func handleVerdicts(db *gorm.DB) http.HandlerFunc {
 		for _, h := range verdictHorizons {
 			b := backtestAt(subjects, *trackedSince, now, h)
 			resp.Provisional = append(resp.Provisional, b)
-			if _, ok := judged[h]; ok || b.N < verdictMinN || b.Positives < verdictMinPositives {
+			if _, ok := judged[h]; ok || !b.decisive() {
 				continue
 			}
 			result, _ := json.Marshal(b)

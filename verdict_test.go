@@ -235,15 +235,16 @@ func TestHandleVerdictsReadsRealRowsAndKeepsCheckpoints(t *testing.T) {
 	}
 }
 
-func TestHandleVerdictsWaitsForEnoughPositives(t *testing.T) {
+func TestHandleVerdictsWaitsForADecisiveBacktest(t *testing.T) {
 	db := verdictDB(t)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	d0 := now.Add(-days(50))
 	one := pointerTo[int64](1)
 	// Tracking began before the cohort, so none of it is pre-tracking.
 	snaps := []TemplateSnapshot{{SampledAt: d0.Add(-days(30)), TemplateID: "old", Status: "PUBLISHED", TotalDeployments: one}}
-	// n = 20 but only 3 rises: under verdictMinPositives.
-	for _, s := range cohort(5, 1, 15, 2) {
+	// n = 20 and 4 rises, but P1 is true for only 3 and P2 for none: every
+	// predictor is short of verdictMinGroup.
+	for _, s := range cohort(3, 3, 17, 1) {
 		snaps = append(snaps, TemplateSnapshot{SampledAt: d0, TemplateID: s.TemplateID, Status: "PUBLISHED"})
 		for _, r := range s.rows {
 			snaps = append(snaps, TemplateSnapshot{
@@ -255,15 +256,15 @@ func TestHandleVerdictsWaitsForEnoughPositives(t *testing.T) {
 	if err := db.Create(&snaps).Error; err != nil {
 		t.Fatal(err)
 	}
-	if resp := getVerdicts(t, db); resp.Checkpoint != nil || resp.Provisional[0].N != 20 {
-		t.Fatalf("checkpoint = %+v, provisional n = %d; want none stored on n = 20 with 3 rises", resp.Checkpoint, resp.Provisional[0].N)
+	if resp := getVerdicts(t, db); resp.Checkpoint != nil || resp.Provisional[0].N != 20 || resp.Provisional[0].Positives != 4 {
+		t.Fatalf("checkpoint = %+v, provisional = %+v; want none stored while no predictor is judged", resp.Checkpoint, resp.Provisional[0])
 	}
-	// A fourth rise makes the backtest decisive, and day 45 gets judged.
-	if err := db.Exec("UPDATE template_snapshots SET total_earnings = 3 WHERE template_id = 'tb' AND total_earnings = 2.5").Error; err != nil {
+	// Two more earn by day 14 and rise: P1 has 5 true and gets judged.
+	if err := db.Exec("UPDATE template_snapshots SET total_earnings = CASE total_earnings WHEN 0 THEN 2 ELSE 3 END WHERE template_id IN ('fb', 'fc') AND total_earnings IS NOT NULL").Error; err != nil {
 		t.Fatal(err)
 	}
-	if resp := getVerdicts(t, db); resp.Checkpoint == nil || resp.Checkpoint.Positives != 4 {
-		t.Fatalf("checkpoint = %+v, want day 45 judged with 4 rises", resp.Checkpoint)
+	if resp := getVerdicts(t, db); resp.Checkpoint == nil || resp.Checkpoint.P1.Result != "pass" || resp.Checkpoint.P2.Result != "not enough data" {
+		t.Fatalf("checkpoint = %+v, want day 45 judged with P1 passing", resp.Checkpoint)
 	}
 }
 

@@ -1,0 +1,273 @@
+<title>Dispatch Routine</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: a docket book page. One column of numbered sheets (daily, weekly, dates), hairline rules, figures in mono, no rounding. Dispatcher's own tokens. */
+:root {
+  --paper: #f6f4ee;
+  --sheet: #fbfaf6;
+  --ink: #1d2433;
+  --ink-light: #4b5366;
+  --carbon: #e8e1cf;
+  --rule: #cdc7b6;
+  --field: #a9a493;
+  --action: #1f56a3;
+  --held: #b23a2e;
+  --running: #2d6a4f;
+  --caution: #7d560c;
+  --sans: "IBM Plex Sans Condensed", ui-sans-serif, system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #141a26; --sheet: #1c2433; --ink: #f1ede3; --ink-light: #bcc0c9; --carbon: #222b3d;
+    --rule: #354057; --field: #4a5570; --action: #8db8f2; --held: #ec8a7e; --running: #6fbf97; --caution: #e0b45c;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #141a26; --sheet: #1c2433; --ink: #f1ede3; --ink-light: #bcc0c9; --carbon: #222b3d;
+  --rule: #354057; --field: #4a5570; --action: #8db8f2; --held: #ec8a7e; --running: #6fbf97; --caution: #e0b45c;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 15px/1.5 var(--sans);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 56px;
+}
+main { max-width: 46rem; margin: 0 auto; display: grid; gap: 36px; }
+a { color: var(--action); text-underline-offset: 3px; }
+a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+.mono { font-family: var(--mono); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+
+header { display: grid; gap: 8px; border-bottom: 2px solid var(--ink); padding-bottom: 14px; }
+.eyebrow { font: 600 12px/1.3 var(--sans); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-light); }
+h1 { margin: 0; font: 600 2.125rem/1 var(--mono); letter-spacing: -0.02em; text-wrap: balance; }
+.lede { margin: 0; color: var(--ink-light); max-width: 60ch; }
+
+.figures { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.figures div { padding: 12px 12px 12px 0; display: grid; gap: 2px; min-width: 0; }
+.figures div + div { padding-left: 12px; border-left: 1px solid var(--rule); }
+.figures b { font: 600 1.5rem/1.1 var(--mono); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.figures span { font-size: 12px; font-weight: 500; color: var(--ink-light); }
+.held b { color: var(--held); }
+@media (max-width: 560px) {
+  .figures { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .figures div:nth-child(3) { padding-left: 0; border-left: 0; }
+  .figures div:nth-child(n + 3) { border-top: 1px solid var(--rule); }
+}
+
+section { display: grid; gap: 10px; }
+.sheet-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; border-bottom: 1px solid var(--ink); padding-bottom: 6px; }
+h2 { margin: 0; font: 600 1.25rem/1.4 var(--sans); }
+.progress { font: 500 12px/1.3 var(--sans); color: var(--ink-light); display: flex; gap: 10px; align-items: center; }
+.progress button { font: inherit; color: var(--action); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+
+ol.steps { list-style: none; margin: 0; padding: 0; display: grid; }
+ol.steps > li { display: grid; grid-template-columns: 1.5rem 1.25rem minmax(0, 1fr); gap: 0 10px; padding: 12px 0; border-bottom: 1px solid color-mix(in oklab, var(--rule) 60%, transparent); }
+ol.steps > li:last-child { border-bottom: 0; }
+.no { font: 400 13px/1.6 var(--mono); color: var(--ink-light); text-align: right; padding-top: 1px; }
+.steps input[type="checkbox"] { width: 18px; height: 18px; margin: 3px 0 0; accent-color: var(--running); cursor: pointer; }
+.step { min-width: 0; display: grid; gap: 4px; }
+.step label { font-weight: 600; cursor: pointer; }
+.step p { margin: 0; color: var(--ink-light); max-width: 62ch; }
+li.done label { text-decoration: line-through; text-decoration-color: var(--field); color: var(--ink-light); }
+.sub { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 6px; }
+.sub li { display: grid; grid-template-columns: 1.1rem minmax(0, 1fr); gap: 8px; color: var(--ink); }
+.sub li::before { content: attr(data-n); font: 400 12px/1.7 var(--mono); color: var(--ink-light); }
+.sub em { font-style: normal; font-weight: 600; }
+.go { font-size: 13px; }
+
+.stamp { display: inline-block; font: 700 11px/1 var(--sans); letter-spacing: 0.06em; text-transform: uppercase; border: 1.5px solid currentColor; padding: 3px 5px 2px; margin-right: 6px; vertical-align: 1px; }
+.stamp.held { color: var(--held); }
+.stamp.caution { color: var(--caution); }
+
+.rule { border: 1px solid var(--rule); background: var(--sheet); padding: 12px 14px; display: grid; gap: 4px; }
+.rule b { font-weight: 600; }
+.rule p { margin: 0; color: var(--ink-light); }
+
+table { width: 100%; border-collapse: collapse; }
+.wrap { overflow-x: auto; }
+th { text-align: left; font: 500 12px/1.3 var(--sans); color: var(--ink-light); padding: 0 12px 6px 0; border-bottom: 1px solid var(--rule); }
+td { padding: 9px 12px 9px 0; border-bottom: 1px solid color-mix(in oklab, var(--rule) 60%, transparent); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+td.when { white-space: nowrap; font-family: var(--mono); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+td.left { white-space: nowrap; text-align: right; font-family: var(--mono); color: var(--ink-light); font-variant-numeric: tabular-nums; }
+td p { margin: 2px 0 0; color: var(--ink-light); }
+
+footer { color: var(--ink-light); font-size: 13px; border-top: 1px solid var(--rule); padding-top: 12px; display: grid; gap: 4px; }
+footer code { font-family: var(--mono); font-size: 12.5px; background: var(--carbon); padding: 1px 4px; }
+</style>
+
+<main>
+  <header>
+    <span class="eyebrow">Dispatcher · two workspaces · 151 templates live</span>
+    <h1>Dispatch Routine</h1>
+    <p class="lede">Health first, because health holds search position and position drives deploys. Then publish. Upgrades, search and the verdict are weekly. Figures as of <span class="mono">30 Oct 2026</span>; open Dispatcher for today&rsquo;s.</p>
+  </header>
+
+  <div class="figures" aria-label="Snapshot, 30 Oct 2026">
+    <div class="held"><b>13</b><span>under 70% health, with live deploys</span></div>
+    <div><b>214</b><span>image lines a patch or minor behind</span></div>
+    <div><b>141<small class="mono" style="font-size:.9rem;font-weight:400"> / 233</small></b><span>own keywords at #1</span></div>
+    <div><b>~3</b><span>publishes a day (47 in 15 days)</span></div>
+  </div>
+
+  <section aria-labelledby="daily-h">
+    <div class="sheet-head">
+      <h2 id="daily-h">Daily <span class="mono" style="font-weight:400;font-size:1rem;color:var(--ink-light)">~20 min</span></h2>
+      <span class="progress" data-progress="daily"></span>
+    </div>
+    <ol class="steps" data-period="daily">
+      <li>
+        <span class="no">1</span><input type="checkbox" id="d-health">
+        <div class="step">
+          <label for="d-health">Fix the worst health on an earning template</label>
+          <p>On <a href="https://dispatcher.zaur.app/templates" target="_blank" rel="noreferrer">Templates</a>, sort by health and take the lowest one that earns. Today: <span class="mono">Pixelfed 0%, Ubuntu desktop 33%, AzuraCast 38%, Firefox 44%</span>.</p>
+          <ol class="sub">
+            <li data-n="a"><span><em>Check its upgrades first.</em> Open <a href="https://dispatcher.zaur.app/upgrades" target="_blank" rel="noreferrer">Upgrades</a> and find the template. If it&rsquo;s behind, read the changelog for your symptom: an upstream fix may already exist.</span></li>
+            <li data-n="b"><span><em>Find the root cause.</em> Logs and memory on a fresh deploy. Railway can show SUCCESS while the app is dead inside the container (AzuraCast&rsquo;s OOM loop).</span></li>
+            <li data-n="c"><span><em>Ship one push.</em> A patch or minor bump rides along with the fix. A major doesn&rsquo;t: fix on the current version first, then do the major on its own, so a later drop points at one change.</span></li>
+            <li data-n="d"><span><em>Canary, then main.</em> Every push to main notifies all deployers. It&rsquo;s the only way to reach the instances that are already broken.</span></li>
+          </ol>
+        </div>
+      </li>
+      <li>
+        <span class="no">2</span><input type="checkbox" id="d-pick">
+        <div class="step">
+          <label for="d-pick">Pick what to publish next</label>
+          <p>From the <a href="https://dispatcher.zaur.app/candidates" target="_blank" rel="noreferrer">Candidates</a> shortlist (5 now) or <a href="https://dispatcher.zaur.app/search" target="_blank" rel="noreferrer">Search</a> gaps (175, many of them noise). Judge an original on its own terms, not on kickback math.</p>
+        </div>
+      </li>
+      <li>
+        <span class="no">3</span><input type="checkbox" id="d-mark">
+        <div class="step">
+          <label for="d-mark">Set kind and origin on anything you published</label>
+          <p>Origin feeds the verdict&rsquo;s originals-vs-competitive split. From a terminal: <span class="mono">dispatcherctl origin ID original</span>. 9 templates have no kind yet.</p>
+        </div>
+      </li>
+    </ol>
+    <div class="rule">
+      <b>Fix before you publish</b>
+      <p>When more than about 10 earning templates sit under 70%, skip step 2 that day. Every new template adds to the health and upgrade load for good.</p>
+    </div>
+  </section>
+
+  <section aria-labelledby="weekly-h">
+    <div class="sheet-head">
+      <h2 id="weekly-h">Weekly <span class="mono" style="font-weight:400;font-size:1rem;color:var(--ink-light)">~1 h</span></h2>
+      <span class="progress" data-progress="weekly"></span>
+    </div>
+    <ol class="steps" data-period="weekly">
+      <li>
+        <span class="no">4</span><input type="checkbox" id="w-upgrades">
+        <div class="step">
+          <label for="w-upgrades">Work the top of the upgrade queue</label>
+          <p>It&rsquo;s already sorted behind-first, then by earnings. Put every line of one template into one push, so its deployers get one notice. Templates that don&rsquo;t earn get upgrades for security fixes or a broken version only. <span class="mono">103 patch · 111 minor · 11 floating</span></p>
+        </div>
+      </li>
+      <li>
+        <span class="no">5</span><input type="checkbox" id="w-search">
+        <div class="step">
+          <label for="w-search">Read Search for drops</label>
+          <p>A keyword of ours that fell usually means health fell: go back to step 1 for that template. Track any keyword you&rsquo;re thinking of building for, before you build it. <span class="mono">0 dropped this week · 1 missing</span></p>
+        </div>
+      </li>
+      <li>
+        <span class="no">6</span><input type="checkbox" id="w-verdict">
+        <div class="step">
+          <label for="w-verdict">Check the verdict</label>
+          <p><span class="mono">dispatcherctl get /api/analytics/verdicts</span>. Look at <span class="mono">checkpoint</span>: it stays empty until a predictor passes or fails. Don&rsquo;t drop a template for slow early earnings in the meantime: pay rates keep climbing to day 180.</p>
+        </div>
+      </li>
+      <li>
+        <span class="no">7</span><input type="checkbox" id="w-payouts">
+        <div class="step">
+          <label for="w-payouts">Glance at payouts</label>
+          <p>Auto-withdraw runs on its own. Check <a href="https://dispatcher.zaur.app/payouts" target="_blank" rel="noreferrer">Payouts</a> for a failed or missing transfer.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <section aria-labelledby="dates-h">
+    <div class="sheet-head"><h2 id="dates-h">Dates ahead</h2></div>
+    <div class="wrap">
+      <table>
+        <thead><tr><th>When</th><th>What happens</th><th style="text-align:right">In</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="when">9–12 Nov</td>
+            <td><span class="stamp caution">Watch</span>Day-45 group reaches 4 templates that earned more
+              <p>P1 is still true for only 2–3, so nothing is stored yet. That&rsquo;s expected.</p></td>
+            <td class="left" data-date="2026-11-09"></td>
+          </tr>
+          <tr>
+            <td class="when">~30 Nov</td>
+            <td><span class="stamp held">Gate</span>P1 can be judged at day 45
+              <p>If it passes, the Verdict column (T4) gets built. If it fails, record it in the design doc and build nothing.</p></td>
+            <td class="left" data-date="2026-11-30"></td>
+          </tr>
+          <tr>
+            <td class="when">December</td>
+            <td>Day-90 group forms
+              <p>The second checkpoint. P2 gets another chance if day 45 didn&rsquo;t judge it.</p></td>
+            <td class="left" data-date="2026-12-07"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    <span>Ticks are kept in this browser only. Daily ticks clear each day and weekly ticks each Monday.</span>
+    <span>Live numbers: <code>dispatcherctl summary</code>, <code>dispatcherctl upgrades</code>, <code>dispatcherctl get /api/search</code>.</span>
+  </footer>
+</main>
+
+<script>
+(function () {
+  var now = new Date();
+  var pad = function (n) { return String(n).padStart(2, "0"); };
+  var day = now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate());
+  var monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
+  var week = monday.getFullYear() + "-" + pad(monday.getMonth() + 1) + "-" + pad(monday.getDate());
+  var keyFor = { daily: "routine:d:" + day, weekly: "routine:w:" + week };
+
+  function load(k) { try { return JSON.parse(localStorage.getItem(k) || "{}"); } catch (e) { return {}; } }
+  function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+
+  document.querySelectorAll("ol.steps[data-period]").forEach(function (list) {
+    var period = list.dataset.period;
+    var key = keyFor[period];
+    var state = load(key);
+    var boxes = list.querySelectorAll('input[type="checkbox"]');
+    var out = document.querySelector('[data-progress="' + period + '"]');
+    function render() {
+      var done = 0;
+      boxes.forEach(function (b) { b.closest("li").classList.toggle("done", b.checked); if (b.checked) done++; });
+      out.innerHTML = '<span class="mono">' + done + " / " + boxes.length + "</span> " + (period === "daily" ? "today" : "this week") +
+        (done ? ' <button type="button">Clear</button>' : "");
+      var btn = out.querySelector("button");
+      if (btn) btn.onclick = function () { state = {}; boxes.forEach(function (b) { b.checked = false; }); save(key, state); render(); };
+    }
+    boxes.forEach(function (b) {
+      b.checked = !!state[b.id];
+      b.addEventListener("change", function () { state[b.id] = b.checked; save(key, state); render(); });
+    });
+    render();
+  });
+
+  var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  document.querySelectorAll("[data-date]").forEach(function (td) {
+    var p = td.dataset.date.split("-");
+    var d = Math.round((new Date(+p[0], p[1] - 1, +p[2]) - today) / 864e5);
+    td.textContent = d > 0 ? d + " d" : d === 0 ? "today" : "passed";
+  });
+})();
+</script>

@@ -10,3 +10,6 @@ web/build/
 web/.react-router/
 .firecrawl/
 .claude/skills/routine/last.json
+.impeccable/critique/
+.impeccable/mocks/
+.impeccable/review/

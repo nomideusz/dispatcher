@@ -132,7 +132,7 @@ func openDB(dsn string) *gorm.DB {
 	if err != nil {
 		log.Fatalf("open database %s: %v", dsn, err)
 	}
-	if err := db.AutoMigrate(&RailwayCredentials{}, &TemplateSnapshot{}, &AutoWithdrawSettings{}, &NotificationTarget{}, &Payout{}, &ServiceImage{}, &TemplateKind{}, &TemplateOrigin{}, &TemplateFix{}, &VerdictCheckpoint{}, &MarketTemplate{}, &CandidateMark{}, &SearchRank{}, &SearchKeyword{}); err != nil {
+	if err := db.AutoMigrate(&RailwayCredentials{}, &TemplateSnapshot{}, &AutoWithdrawSettings{}, &NotificationTarget{}, &Payout{}, &ServiceImage{}, &TemplateKind{}, &TemplateOrigin{}, &TemplateFix{}, &VerdictCheckpoint{}, &MarketTemplate{}, &CandidateMark{}, &Proposal{}, &SearchRank{}, &SearchKeyword{}); err != nil {
 		log.Fatalf("migrate database: %v", err)
 	}
 	// Snapshots taken before templateMetrics was collected recorded the same

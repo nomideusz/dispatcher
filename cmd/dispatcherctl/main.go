@@ -155,6 +155,7 @@ func parseCommand(args []string, stderr io.Writer) (command, error) {
 		"refresh":           {method: http.MethodPost, path: "/api/analytics/refresh", requiresAuth: true},
 		"upgrades":          {method: http.MethodGet, path: "/api/upgrades", requiresAuth: true},
 		"refresh-upgrades":  {method: http.MethodPost, path: "/api/upgrades/refresh", requiresAuth: true},
+		"proposals":         {method: http.MethodGet, path: "/api/proposals", requiresAuth: true},
 	}
 	if cmd, ok := simple[args[0]]; ok {
 		if len(args) != 1 {
@@ -199,6 +200,16 @@ func parseCommand(args []string, stderr io.Writer) (command, error) {
 			requiresAuth: true,
 			body:         string(body),
 		}, nil
+	case "proposal":
+		if len(args) != 3 && len(args) != 4 {
+			return command{}, fmt.Errorf("proposal requires a URL, a status (building, published, skipped, or \"\" for new) and an optional reply")
+		}
+		reply := ""
+		if len(args) == 4 {
+			reply = args[3]
+		}
+		body, _ := json.Marshal(map[string]string{"url": args[1], "status": args[2], "reply": reply})
+		return command{method: http.MethodPut, path: "/api/proposals", requiresAuth: true, body: string(body)}, nil
 	case "get":
 		if len(args) != 2 {
 			return command{}, fmt.Errorf("get requires exactly one API path")
@@ -270,6 +281,7 @@ Query commands:
   notifications            List notification targets
   withdraw-settings        Show auto-withdraw settings
   withdraw-accounts        List payout destinations and balance
+  proposals                List apps the owner proposed, new ones first
   get PATH                 GET any authenticated API path
 
 Other commands:
@@ -284,6 +296,9 @@ Other commands:
                            ("" leaves it unmarked)
   fixed TEMPLATE_ID DATE   Record the day a health fix was pushed (YYYY-MM-DD,
                            "" clears it)
+  proposal URL STATUS [REPLY]
+                           Answer a proposal: building, published or skipped
+                           ("" puts it back to new), with a reply the owner reads
   version                  Print the CLI version
   help                     Show this help
 `)

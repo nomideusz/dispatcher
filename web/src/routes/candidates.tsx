@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Candidates } from "~/components/candidates";
 import { PageHeader } from "~/components/page";
+import { Proposals } from "~/components/proposals";
 import { Skeleton } from "~/components/ui/skeleton";
 import { timelineQuery } from "~/queries/analytics";
 import type { Route } from "./+types/candidates";
@@ -20,6 +21,7 @@ export default function CandidatesPage() {
         title="Candidates"
         sub="Apps people deploy on Railway, against what we already publish. Shortlist the next build; skip the rest."
       />
+      <Proposals />
       {timeline.isPending && <Skeleton className="h-96 w-full" />}
       {timeline.isError && (
         <p role="alert" className="text-sm text-(--viz-critical)">

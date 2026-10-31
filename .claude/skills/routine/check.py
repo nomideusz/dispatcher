@@ -151,6 +151,14 @@ def main():
         get("get", "/api/analytics/verdicts"),
     )
     report(f, last)
+    # The owner's proposals inbox; live only, nothing to compare with last time.
+    out = subprocess.run([CTL, "--compact", "proposals"], capture_output=True, text=True, timeout=120)
+    if out.returncode == 0:
+        new = [p for p in json.loads(out.stdout)["proposals"] if not p["status"]]
+        print()
+        print(f"PROPOSALS: {len(new)} waiting for an answer")
+        for p in new:
+            print(f"  {p['url']}" + (f"  ({p['note']})" if p["note"] else ""))
     if "--dry-run" not in sys.argv:
         with open(LAST, "w") as fh:
             json.dump(f, fh)

@@ -214,7 +214,9 @@ func handleTimeline(db *gorm.DB) http.HandlerFunc {
 			       CAST(SUM(active_projects) AS BIGINT) AS active_projects,
 			       CAST(SUM(active_deployments) AS BIGINT) AS running,
 			       COUNT(*) FILTER (WHERE projects > 0) AS deployed_templates,
-			       COUNT(*) FILTER (WHERE active_projects > 0) AS active_templates,
+			       -- Running instances where the sample has them: a project can stay
+			       -- "active" with every service down, and a live service earns.
+			       COUNT(*) FILTER (WHERE COALESCE(active_deployments, active_projects) > 0) AS active_templates,
 			       CASE WHEN COUNT(earnings_last30_days) > 0
 			            THEN COUNT(*) FILTER (WHERE earnings_last30_days > 0) END AS earning_templates,
 			       CAST(ROUND(SUM(total_payout) * 100) AS BIGINT) AS lifetime_cents

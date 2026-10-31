@@ -21,7 +21,7 @@ import {
 import type { PayoutTemplateTotal } from "~/queries/payouts";
 
 type Row = TimelineTemplate & {
-  perActive: number | null;
+  perRunning: number | null;
   payers: PayoutTemplateTotal | undefined;
 };
 
@@ -30,7 +30,7 @@ const FILTERS = {
   earning: { label: "Earning", test: (r: Row) => (r.earned30d ?? 0) > 0 },
   idle: {
     label: "Deployed, not earning",
-    test: (r: Row) => r.activeProjects > 0 && !r.earned30d,
+    test: (r: Row) => (r.running ?? r.activeProjects) > 0 && !r.earned30d,
   },
   unused: { label: "No projects", test: (r: Row) => r.projects === 0 },
   unsorted: { label: "Unsorted", test: (r: Row) => !r.kind },
@@ -45,7 +45,7 @@ type SortKey =
   | "activeProjects"
   | "running"
   | "earnedCents"
-  | "perActive"
+  | "perRunning"
   | "payers"
   | "lifetimeCents"
   | "health"
@@ -59,7 +59,7 @@ const SORT_KEYS: SortKey[] = [
   "activeProjects",
   "running",
   "earnedCents",
-  "perActive",
+  "perRunning",
   "payers",
   "lifetimeCents",
   "health",
@@ -121,7 +121,7 @@ export function TemplatesTable({
   const payers = new Map(byTemplate?.map((p) => [p.templateId, p]));
   const all: Row[] = templates.map((t) => ({
     ...t,
-    perActive: t.activeProjects > 0 && t.earned30d != null ? t.earned30d / t.activeProjects : null,
+    perRunning: t.running && t.earned30d != null ? t.earned30d / t.running : null,
     payers: payers.get(t.templateId),
   }));
   const needle = search.trim().toLowerCase();
@@ -130,7 +130,7 @@ export function TemplatesTable({
     .sort((a, b) => {
       const c = compare(a, b, sort.key);
       const blank = sortValue(a, sort.key) == null || sortValue(b, sort.key) == null;
-      return (sort.desc && !blank ? -c : c) || b.activeProjects - a.activeProjects;
+      return (sort.desc && !blank ? -c : c) || (b.running ?? 0) - (a.running ?? 0);
     });
 
   const lifetimeTotal = all.reduce((s, r) => s + r.lifetimeCents, 0);
@@ -204,7 +204,7 @@ export function TemplatesTable({
               {header("activeProjects", "Active", "Projects live today")}
               {header("running", "Running", "Service instances up now")}
               {header("earnedCents", `Earned ${dates.length}d`, `Kickback in the last ${dates.length} days`)}
-              {header("perActive", "$/active", "30-day kickback per active project")}
+              {header("perRunning", "$/running", "30-day kickback per running instance")}
               {header("payers", "Payers", "Deployers whose invoices paid us kickback")}
               {header("lifetimeCents", "Lifetime", "Kickback since it was published")}
               {header("publishedAt", "Published", "When it went live on the marketplace, UTC")}
@@ -325,7 +325,7 @@ function TemplateRow({
         <TableCell numeric className={r.earnedCents ? "font-medium" : muted}>
           {fmtCents(r.earnedCents)}
         </TableCell>
-        <TableCell numeric className={cn(!r.perActive && muted)}>{r.perActive == null ? "—" : fmtUsd(r.perActive)}</TableCell>
+        <TableCell numeric className={cn(!r.perRunning && muted)}>{r.perRunning == null ? "—" : fmtUsd(r.perRunning)}</TableCell>
         <TableCell
           numeric
           className={cn(!p?.payers && muted)}
@@ -465,7 +465,7 @@ function Health({ r }: { r: Row }) {
         </span>
       )}
       {/* The same rule that puts a template in the Held tray. */}
-      {r.activeProjects > 0 && r.health != null && r.health < 50 ? (
+      {(r.running ?? r.activeProjects) > 0 && r.health != null && r.health < 50 ? (
         <span className="font-semibold text-(--viz-critical)">
           held · <span className="tabular-nums">{r.health.toFixed(0)}%</span>
         </span>

@@ -198,7 +198,7 @@ type Segment = {
   key: string;
   templates: number;
   earning: number;
-  active: number;
+  running: number;
   earned: number;
   firstPaid: number | null;
 };
@@ -211,14 +211,14 @@ function segment(templates: TimelineTemplate[], keyOf: (t: TimelineTemplate) => 
       key,
       templates: ts.length,
       earning: ts.filter((t) => (t.earned30d ?? 0) > 0).length,
-      active: ts.reduce((s, t) => s + t.activeProjects, 0),
+      running: ts.reduce((s, t) => s + (t.running ?? 0), 0),
       earned: ts.reduce((s, t) => s + (t.earned30d ?? 0), 0),
       firstPaid: median(ts.flatMap((t) => daysToPay(t) ?? [])),
     }))
     .sort((a, b) => a.key.localeCompare(b.key));
 }
 
-type SegmentKey = "key" | "templates" | "earning" | "earned" | "per" | "perActive" | "firstPaid";
+type SegmentKey = "key" | "templates" | "earning" | "earned" | "per" | "perRunning" | "firstPaid";
 
 function SegmentTable({
   title,
@@ -242,7 +242,7 @@ function SegmentTable({
         earning: r.earning,
         earned: r.earned,
         per: r.earned / r.templates,
-        perActive: r.active > 0 ? r.earned / r.active : null,
+        perRunning: r.running > 0 ? r.earned / r.running : null,
         firstPaid: r.firstPaid,
       })[key],
     "key",
@@ -257,7 +257,7 @@ function SegmentTable({
           {head("earning", "Earning", { numeric: true, className: "max-sm:hidden" })}
           {head("earned", "30d", { numeric: true })}
           {head("per", "Per template", { className: "pl-6" })}
-          {head("perActive", "Per active project", { numeric: true, className: "max-sm:hidden" })}
+          {head("perRunning", "Per running instance", { numeric: true, className: "max-sm:hidden" })}
           {head("firstPaid", "First paid", { numeric: true, hint: "Shortest wait first", className: "max-sm:hidden" })}
         </TableRow>
       </TableHeader>
@@ -277,7 +277,7 @@ function SegmentTable({
                 </div>
               </TableCell>
               <TableCell numeric className="text-muted-foreground max-sm:hidden">
-                {r.active > 0 ? fmtUsd(r.earned / r.active) : "—"}
+                {r.running > 0 ? fmtUsd(r.earned / r.running) : "—"}
               </TableCell>
               <TableCell numeric className="text-muted-foreground max-sm:hidden">
                 {r.firstPaid == null ? "—" : `${r.firstPaid}d`}

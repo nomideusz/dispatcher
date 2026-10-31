@@ -33,6 +33,7 @@ const fullFmt = new Intl.DateTimeFormat("en-US", {
 });
 
 const METRICS = [
+  { key: "running", label: "Running instances", note: "services up, what earns" },
   { key: "activeProjects", label: "Active projects" },
   { key: "recentProjects", label: "Recent projects", note: "made in the 90 days before each day" },
   { key: "projects", label: "Total projects" },
@@ -40,9 +41,9 @@ const METRICS = [
 
 type MetricKey = (typeof METRICS)[number]["key"];
 
-/** A template's project counts over time, as small multiples: total projects
- * is cumulative and dwarfs the other two, so one shared y-scale would flatten
- * active and recent into the floor. Each metric gets its own panel and scale;
+/** A template's use over time, as small multiples: total projects is
+ * cumulative and dwarfs the others, so one shared y-scale would flatten
+ * them into the floor. Running instances lead: they are what earns. Each metric gets its own panel and scale;
  * the crosshair is synced so the panels still read as one moment in time.
  * Ported from upstream ThallesP/dispatcher#12, reading our template-list
  * project counts rather than the inflated templateMetrics deployments. */
@@ -71,7 +72,7 @@ export function TemplateProjects({ templateId }: { templateId: string }) {
       </div>
 
       {projects.isPending && (
-        <div className="grid gap-6 sm:grid-cols-3">
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {METRICS.map((m) => (
             <div key={m.key} className="space-y-2">
               <Skeleton className="h-3 w-24" />
@@ -96,19 +97,16 @@ export function TemplateProjects({ templateId }: { templateId: string }) {
 
       {data?.change && data.points.length > 0 && (
         <div
-          className={`grid gap-6 transition-opacity sm:grid-cols-3 ${
+          className={`grid gap-6 transition-opacity sm:grid-cols-2 lg:grid-cols-4 ${
             projects.isPlaceholderData ? "opacity-60" : ""
           }`}
         >
-          {METRICS.map((m) => (
-            <MetricPanel
-              key={m.key}
-              syncId={templateId}
-              metric={m}
-              points={data.points}
-              change={data.change![m.key]}
-            />
-          ))}
+          {METRICS.map((m) => {
+            const change = data.change![m.key];
+            return change ? (
+              <MetricPanel key={m.key} syncId={templateId} metric={m} points={data.points} change={change} />
+            ) : null;
+          })}
         </div>
       )}
     </div>
@@ -134,7 +132,7 @@ function MetricPanel({
   // Each panel zooms to its own range so the trend is visible; the y-ticks
   // and the absolute delta keep the zoom honest. Size the gutter to the
   // widest tick label.
-  const max = Math.max(...points.map((p) => p[key]));
+  const max = Math.max(...points.map((p) => p[key] ?? 0));
   const yAxisWidth = Math.max(32, fmtNum(max * 1.2).length * 7 + 14);
   const spansDays =
     points.length > 1 &&

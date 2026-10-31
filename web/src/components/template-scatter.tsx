@@ -26,10 +26,12 @@ const fromTick = (t: number) => NICE.find((n) => Math.abs(f(n) - t) < 1e-9) ?? M
  * spread a little so dozens of them don't print as one dot. */
 const NONE_Y = -0.3;
 const NONE_BAND = 0.09;
-/** Constant kickback per active project: straight diagonals on log axes. */
+/** Constant kickback per running instance: straight diagonals on log axes. */
 const RATES = [0.1, 1, 10];
 
 type Dot = TimelineTemplate & {
+  /** Running instances, 0 before metrics were collected. */
+  live: number;
   x: number;
   y: number;
   earned: number;
@@ -39,9 +41,9 @@ type Dot = TimelineTemplate & {
   labelLeft?: string;
 };
 
-/** One dot per template: live projects across, last 30 days of kickback up,
- * template size as colour. Parallel diagonals mark what one active project
- * pays a month, so a dot's distance above or below them is how well its
+/** One dot per template: running instances across, last 30 days of kickback
+ * up, template size as colour. Parallel diagonals mark what one running
+ * instance pays a month, so a dot's distance above or below them is how well its
  * users convert to money. */
 export function TemplateScatter({
   templates,
@@ -50,23 +52,25 @@ export function TemplateScatter({
   templates: TimelineTemplate[];
   payers: Map<string, number>;
 }) {
-  const shown = templates.filter((t) => t.activeProjects > 0 || (t.earned30d ?? 0) > 0);
+  const shown = templates.filter((t) => (t.running ?? 0) > 0 || (t.earned30d ?? 0) > 0);
   const hidden = templates.length - shown.length;
   let none = 0;
   const dots: Dot[] = shown.map((t) => {
     const earned = t.earned30d ?? 0;
     // A stable fan of offsets across the row.
     const spread = earned > 0 ? 0 : ((none++ % 5) - 2) / 2;
+    const live = t.running ?? 0;
     return {
       ...t,
+      live,
       earned,
       payers: payers.get(t.templateId),
-      x: f(t.activeProjects),
+      x: f(live),
       y: earned > 0 ? f(earned) : NONE_Y + spread * NONE_BAND * 0.6,
     };
   });
 
-  const xTop = niceTop(Math.max(10, ...dots.map((d) => d.activeProjects)));
+  const xTop = niceTop(Math.max(10, ...dots.map((d) => d.live)));
   const yTop = niceTop(Math.max(10, ...dots.map((d) => d.earned)));
   const [X, Y] = [f(xTop), f(yTop)];
 
@@ -80,7 +84,7 @@ export function TemplateScatter({
   const gap = window.innerWidth < 640 ? 0.45 : 0.2;
   for (const d of [
     ...[...dots].sort((a, b) => b.earned - a.earned).slice(0, 6),
-    ...[...dots].sort((a, b) => b.activeProjects - a.activeProjects).slice(0, 4),
+    ...[...dots].sort((a, b) => b.live - a.live).slice(0, 4),
   ]) {
     const [x, y] = [d.x / X, (d.y - NONE_Y) / (Y - NONE_Y)];
     if (d.label || d.labelLeft || placed.some(([px, py]) => Math.abs(px - x) < gap && Math.abs(py - y) < 0.06)) continue;
@@ -103,7 +107,7 @@ export function TemplateScatter({
 
   const earning = dots.filter((d) => d.earned > 0);
   const idle = dots.filter((d) => d.earned === 0);
-  const above = earning.filter((d) => d.activeProjects > 0 && d.earned / d.activeProjects >= 1).length;
+  const above = earning.filter((d) => d.live > 0 && d.earned / d.live >= 1).length;
   const labels = (side: "right" | "top") => (
     <>
       <LabelList dataKey="label" position={side} offset={8} fill="var(--foreground)" fontSize={11} />
@@ -116,11 +120,11 @@ export function TemplateScatter({
       <Key
         items={[
           ...GROUPS.map((g) => ({ label: g.label, color: g.color })),
-          { label: "Kickback per active project, a month", color: "var(--muted-foreground)", line: true, dashed: true },
+          { label: "Kickback per running instance, a month", color: "var(--muted-foreground)", line: true, dashed: true },
         ]}
       />
       <ChartContainer config={{}} className="aspect-auto h-96 w-full">
-        <ScatterChart title="Live projects against 30-day kickback, per template" margin={{ top: 12, right: 16, bottom: 20, left: 0 }}>
+        <ScatterChart title="Running instances against 30-day kickback, per template" margin={{ top: 12, right: 16, bottom: 20, left: 0 }}>
           <CartesianGrid strokeOpacity={0.6} />
           <XAxis
             type="number"
@@ -133,7 +137,7 @@ export function TemplateScatter({
             axisLine={false}
             tickMargin={6}
             label={{
-              value: "Active projects",
+              value: "Running instances",
               position: "insideBottom",
               offset: -14,
               fill: "var(--muted-foreground)",
@@ -201,7 +205,7 @@ export function TemplateScatter({
       </ChartContainer>
       <p className="text-xs text-muted-foreground">
         {fmtNum(earning.length)} templates earned in the last 30 days, {fmtNum(above)} of them $1+ per
-        active project. {fmtNum(idle.length)} have live projects but earned nothing (bottom row)
+        running instance. {fmtNum(idle.length)} have services running but earned nothing (bottom row)
         {hidden > 0 ? `; ${fmtNum(hidden)} with neither are hidden` : ""}. Both axes are logarithmic.
       </p>
     </div>
@@ -213,10 +217,10 @@ function DotTip({ active, payload }: { active?: boolean; payload?: { payload: Do
   if (!active || !d?.templateId) return null;
   const rows: [string, string][] = [
     ["Kickback, 30 days", fmtUsd(d.earned)],
-    ["Per active project", d.activeProjects > 0 ? fmtUsd(d.earned / d.activeProjects) : "—"],
+    ["Per running instance", d.live > 0 ? fmtUsd(d.earned / d.live) : "—"],
     ["Paying, 30 days", d.payers != null ? fmtNum(d.payers) : "—"],
-    ["Active projects", fmtNum(d.activeProjects)],
     ["Running instances", d.running != null ? fmtNum(d.running) : "—"],
+    ["Active projects", fmtNum(d.activeProjects)],
     ["Projects, all time", fmtNum(d.projects)],
     ["Services", fmtNum(d.services)],
   ];

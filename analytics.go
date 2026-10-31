@@ -297,6 +297,9 @@ type projectPoint struct {
 	Projects       int64     `json:"projects"`
 	RecentProjects int64     `json:"recentProjects"`
 	ActiveProjects int64     `json:"activeProjects"`
+	// Running is templateMetrics.activeDeployments, nil on samples taken
+	// before metrics were collected.
+	Running *int64 `json:"running"`
 }
 
 // projectChanges compares the newest sample in the window with the oldest,
@@ -305,6 +308,9 @@ type projectChanges struct {
 	Projects       metricChange `json:"projects"`
 	RecentProjects metricChange `json:"recentProjects"`
 	ActiveProjects metricChange `json:"activeProjects"`
+	// Running compares the newest and oldest samples that have it; nil when
+	// none do.
+	Running *metricChange `json:"running"`
 }
 
 type templateProjectsResponse struct {
@@ -338,7 +344,7 @@ func handleTemplateProjects(db *gorm.DB) http.HandlerFunc {
 func templateProjectPoints(ctx context.Context, db *gorm.DB, templateID string, since time.Time) ([]projectPoint, error) {
 	points := []projectPoint{}
 	err := db.WithContext(ctx).Raw(`
-		SELECT sampled_at, projects, recent_projects, active_projects
+		SELECT sampled_at, projects, recent_projects, active_projects, active_deployments AS running
 		FROM template_snapshots
 		WHERE template_id = ? AND sampled_at >= ? AND status = 'PUBLISHED'
 		ORDER BY sampled_at`, templateID, since).Scan(&points).Error
@@ -362,11 +368,26 @@ func buildProjectChanges(points []projectPoint) *projectChanges {
 		t := totals(points[0])
 		first = &t
 	}
-	return &projectChanges{
+	c := &projectChanges{
 		Projects:       changeOf(current.Projects, first, func(t snapshotTotals) float64 { return t.Projects }),
 		RecentProjects: changeOf(current.RecentProjects, first, func(t snapshotTotals) float64 { return t.RecentProjects }),
 		ActiveProjects: changeOf(current.ActiveProjects, first, func(t snapshotTotals) float64 { return t.ActiveProjects }),
 	}
+	var running []float64
+	for _, p := range points {
+		if p.Running != nil {
+			running = append(running, float64(*p.Running))
+		}
+	}
+	if len(running) > 0 {
+		var prev *snapshotTotals
+		if len(running) > 1 {
+			prev = &snapshotTotals{RunningInstances: running[0]}
+		}
+		r := changeOf(running[len(running)-1], prev, func(t snapshotTotals) float64 { return t.RunningInstances })
+		c.Running = &r
+	}
+	return c
 }
 
 // comparisonTimestamps picks the latest sample and the sample to compare it

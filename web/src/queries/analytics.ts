@@ -124,6 +124,8 @@ export interface ProjectPoint {
   /** Projects deployed in the 90 days before the sample. */
   recentProjects: number;
   activeProjects: number;
+  /** Running instances; null on samples taken before metrics were collected. */
+  running: number | null;
 }
 
 export interface TemplateProjects {
@@ -134,6 +136,8 @@ export interface TemplateProjects {
     projects: MetricChange;
     recentProjects: MetricChange;
     activeProjects: MetricChange;
+    /** Null when no sample in the window has running instances. */
+    running: MetricChange | null;
   } | null;
   points: ProjectPoint[];
 }

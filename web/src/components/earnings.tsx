@@ -21,7 +21,7 @@ const AVG = "var(--muted-foreground)";
 const COUNTS = [
   { key: "published", label: "Published", color: "var(--chart-other)", dashed: true },
   { key: "deployed", label: "Deployed", color: "var(--chart-5)" },
-  { key: "active", label: "Activated", color: "var(--chart-3)" },
+  { key: "active", label: "Running", color: "var(--chart-3)" },
   { key: "earning", label: "Earning (30d)", color: "var(--chart-4)" },
 ] as const;
 
@@ -32,7 +32,7 @@ type Row = {
   deployed: number | null;
   active: number | null;
   earning: number | null;
-  activeProjects: number | null;
+  running: number | null;
   earned: number;
   avg7: number | null;
   e0: number; e1: number; e2: number;
@@ -49,7 +49,7 @@ function useEarnings(data: TimelineResponse) {
       deployed: p.deployedTemplates,
       active: p.activeTemplates,
       earning: p.earningTemplates,
-      activeProjects: p.activeProjects,
+      running: p.running,
       earned: p.earnedCents / 100,
       avg7: null,
       e0: 0, e1: 0, e2: 0,
@@ -174,7 +174,7 @@ export function Earnings({ data }: { data: TimelineResponse }) {
                   format={(v, k) => (k === "life" ? fmtUsd(v) : fmtNum(v))}
                   footer={(l) => {
                     const r = rows[dayIndex.get(String(l)) ?? -1];
-                    return r?.activeProjects != null ? `${fmtNum(r.activeProjects)} active projects` : null;
+                    return r?.running != null ? `${fmtNum(r.running)} running instances` : null;
                   }}
                 />
               )}
@@ -207,7 +207,7 @@ export function Earnings({ data }: { data: TimelineResponse }) {
         </ChartContainer>
         <p className="text-xs text-muted-foreground">
           Left axis: kickback. Right axis: templates, not projects. Deployed: someone other than you
-          made a project from it. Activated: one of those projects is live today. Earning: it paid in the
+          made a project from it. Running: it has a service up that day (before metrics, an active project). Earning: it paid in the
           last 30 days.
         </p>
       </section>

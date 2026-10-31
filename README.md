@@ -93,6 +93,11 @@ funnel card explains them in place. Checked against live data:
   "Active"): running service instances, not projects, so a four-service
   project counts up to four.
 
+Running is the headline wherever Dispatcher judges live use (the docket, the
+scatter, $/running, the held tray): a running service is what earns, it agrees
+with the invoice counts far better than active projects, and a project can stay
+"active" with every service down.
+
 `/api/analytics/timeline?days=N` buckets all of it by UTC day: kickback and
 new projects from snapshot deltas (plus credit payouts from before tracking
 began), the latest counts per day (null where the collector has no sample),

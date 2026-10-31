@@ -83,14 +83,15 @@ export function TemplateFunnel({
       <p className="border-t pt-3 text-xs text-muted-foreground">
         <span className="font-medium text-foreground">{fmtUsd(earned)}</span> kickback in
         Railway&apos;s 30-day count (the docket adds up our hourly samples, so it can differ a
-        little): <span className="text-foreground">{active > 0 ? fmtUsd(earned / active) : "—"}</span>{" "}
-        per active project
+        little): <span className="text-foreground">{running > 0 ? fmtUsd(earned / running) : "—"}</span>{" "}
+        per running instance
         {payers ? (
           <>
             , <span className="text-foreground">{fmtUsd(earned / payers)}</span> per payer
           </>
         ) : null}
-        . <span className="text-foreground">{fmtNum(running)}</span> service instances running.
+        . <span className="text-foreground">{fmtNum(running)}</span> service instances running,
+        the best read of live use: they agree with the invoices far better than active projects.
       </p>
 
       {/* The definitions matter once, then they are noise on a page read daily. */}

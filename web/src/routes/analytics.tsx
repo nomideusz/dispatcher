@@ -103,11 +103,11 @@ function Docket({ data }: { data: TimelineResponse }) {
 
   const perDay = w.earnedCents / w.days;
   const lifetime = templates.reduce((s, t) => s + t.lifetimeCents, 0);
-  const first = points.find((p) => p.activeProjects != null);
+  const first = points.find((p) => p.running != null);
   const last = points[points.length - 1];
   const activeNow = templates.reduce((s, t) => s + t.activeProjects, 0);
   const runningNow = templates.reduce((s, t) => s + (t.running ?? 0), 0);
-  const activeChange = first?.activeProjects != null ? activeNow - first.activeProjects : null;
+  const runningChange = first?.running != null ? runningNow - first.running : null;
   const since = points[0]?.date ?? "";
   const added = templates.filter((t) => t.publishedAt && dayKey(t.publishedAt) >= since).length;
   const earning = templates.filter((t) => t.earnedCents > 0).length;
@@ -212,12 +212,14 @@ function Docket({ data }: { data: TimelineResponse }) {
           </p>
         )}
         <p>
-          <Fig>{fmtNum(activeNow)}</Fig> active projects
-          {activeChange != null && first && (
+          {/* Running instances, not active projects: a live service is what
+              earns, and a project can stay "active" with its services down. */}
+          <Fig>{fmtNum(runningNow)}</Fig> running
+          {runningChange != null && first && (
             <>
               {" "}
-              <span className={activeChange >= 0 ? "text-(--viz-up)" : "text-(--viz-down)"}>
-                (<Fig>{`${activeChange >= 0 ? "+" : ""}${fmtNum(activeChange)}`}</Fig>
+              <span className={runningChange >= 0 ? "text-(--viz-up)" : "text-(--viz-down)"}>
+                (<Fig>{`${runningChange >= 0 ? "+" : ""}${fmtNum(runningChange)}`}</Fig>
                 <span className="max-sm:hidden"> since {fmtDay(first.date)}</span>)
               </span>
             </>
@@ -226,7 +228,7 @@ function Docket({ data }: { data: TimelineResponse }) {
         <p>
           {/* A phone's half-width cell keeps the line to what earned. */}
           <span className="max-sm:hidden">
-            <Fig>{fmtNum(runningNow)}</Fig> running ·{" "}
+            <Fig>{fmtNum(activeNow)}</Fig> active projects ·{" "}
           </span>
           <Fig>{fmtNum(earning)}</Fig> earned in {w.days} days
           <span className="max-sm:hidden">
@@ -274,14 +276,14 @@ function Held({
     });
   }
   const failing = data.templates
-    .filter((t) => t.activeProjects > 0 && t.health != null && t.health < 50)
+    .filter((t) => (t.running ?? t.activeProjects) > 0 && t.health != null && t.health < 50)
     .sort((a, b) => (a.health ?? 0) - (b.health ?? 0));
   for (const t of failing) {
     held.push({
       key: `health-${t.templateId}`,
       text: (
         <>
-          {jump(t)} deploy health {t.health?.toFixed(0)}%, {fmtNum(t.activeProjects)} active
+          {jump(t)} deploy health {t.health?.toFixed(0)}%, {fmtNum(t.running ?? t.activeProjects)} running
         </>
       ),
     });

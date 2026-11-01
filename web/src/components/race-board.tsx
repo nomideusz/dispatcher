@@ -174,12 +174,19 @@ function build(data: TimelineResponse, measure: Measure, field: Field) {
   const leader = ranks.map((m) => [...m].find(([, i]) => i === 0)?.[0] ?? null);
   const tookLead = leader.map((id, d) => (d > 0 && id != null && leader[d - 1] != null && id !== leader[d - 1] ? d : -1));
 
-  // The clock warps: a day weighs mostly how many places changed on the
-  // board, a little how much the totals grew. Days of overtaking get time to
-  // follow; a stretch where nothing moves (kickback's lone payouts before
-  // August, a burst feeding a runaway leader) passes quickly. A floor keeps
-  // an idle day from passing unseen.
-  const totals = days.map((_, d) => scoring.reduce((s, r) => s + r.cum[d], 0));
+  // Eventful: a day weighs what the eye sees change on it, how far the bars
+  // on the board move against the leader's and how many places swap. Early
+  // on, with the leader at a few dollars, one payment rescales every bar and
+  // that day gets time; later the same payment barely shows and its day
+  // passes quickly. A floor keeps an idle day from passing unseen.
+  const onBoard = (d: number, id: string) => (ranks[d].get(id) ?? Infinity) < SHOWN + TAIL;
+  const tops = days.map((_, d) => scoring.reduce((m, r) => Math.max(m, r.cum[d]), TIE));
+  const motion = days.map((_, d) => {
+    if (d + 1 >= days.length) return 0;
+    let m = 0;
+    for (const r of scoring) if (onBoard(d + 1, r.id)) m += Math.abs(r.cum[d + 1] / tops[d + 1] - r.cum[d] / tops[d]);
+    return m;
+  });
   const swaps = days.map((_, d) => {
     if (d + 1 >= days.length) return 0;
     let n = 0;
@@ -187,10 +194,9 @@ function build(data: TimelineResponse, measure: Measure, field: Field) {
     return n;
   });
   const per = (xs: number[]) => Math.max(1e-9, xs.reduce((s, x) => s + x, 0) / Math.max(1, xs.length - 1));
-  const growth = days.map((_, d) => Math.max(0, (totals[d + 1] ?? totals[d]) - totals[d]));
+  const meanMotion = per(motion);
   const meanSwaps = per(swaps);
-  const meanGrowth = per(growth);
-  const weight = smooth(days.map((_, d) => 0.12 + Math.min(2, swaps[d] / meanSwaps) + 0.5 * Math.min(2, growth[d] / meanGrowth)));
+  const weight = smooth(days.map((_, d) => 0.15 + Math.min(8, motion[d] / meanMotion) + 0.5 * Math.min(3, swaps[d] / meanSwaps)));
   const clock = weight.slice(0, -1).reduce((s, w) => s + w, 0) || 1;
   // Real time: every day the same, except while one racer at most is in
   // play (kickback's first template alone until July, or from launch the

@@ -5,7 +5,7 @@ import { useUrlState } from "~/components/page";
 import { TemplateProjects } from "~/components/template-projects";
 import { Button } from "~/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead, TableSortHead } from "~/components/ui/table";
-import { fmtCents, fmtDay, fmtDayTime, fmtLongDay, fmtNum, fmtUsd } from "~/lib/format";
+import { fmtCents, fmtDay, fmtDayTime, fmtLongDay, fmtNum, fmtUsd, shortNames } from "~/lib/format";
 import { cn } from "~/lib/utils";
 import {
   type Kind,
@@ -131,6 +131,7 @@ export function TemplatesTable({
     perRunning: t.running != null && t.running >= 3 && t.earned30d != null ? t.earned30d / t.running : null,
     payers: payers.get(t.templateId),
   }));
+  const short = shortNames(all.map((r) => r.name));
   const needle = search.trim().toLowerCase();
   const rows = all
     .filter((r) => FILTERS[filter].test(r) && (!needle || `${r.name} ${r.code}`.toLowerCase().includes(needle)))
@@ -194,7 +195,7 @@ export function TemplatesTable({
         />
       </div>
 
-      <Table rows={rows.length}>
+      <Table rows={rows.length} limit={50}>
         <TableHeader>
           <TableRow>
               {header("name", "Template", undefined, false)}
@@ -224,6 +225,7 @@ export function TemplatesTable({
               <TemplateRow
                 key={r.templateId}
                 r={r}
+                name={short(r.name)}
                 scale={scale}
                 lifetimeTotal={lifetimeTotal}
                 byTemplateLoaded={byTemplate != null}
@@ -250,11 +252,14 @@ const COLUMNS = 14;
 
 function TemplateRow({
   r,
+  name,
   scale,
   lifetimeTotal,
   byTemplateLoaded,
 }: {
   r: Row;
+  /** The short name, told apart from its siblings; the full one is its title. */
+  name: string;
   scale: Scale;
   lifetimeTotal: number;
   /** Payers come from the payout query; until it loads, "—" means unknown. */
@@ -267,7 +272,7 @@ function TemplateRow({
   return (
     <>
       <TableRow id={`t-${r.templateId}`} data-open={open || undefined} rule={open ? "none" : "bottom"} className={cn(open && "bg-muted/40")}>
-        <TableRowHead className="max-w-56 2xl:max-w-64">
+        <TableRowHead className="max-w-72 2xl:max-w-80">
           <div className="flex items-start gap-1">
             {/* The name links to Railway, so expanding gets its own control. */}
             <button
@@ -287,24 +292,16 @@ function TemplateRow({
                   target="_blank"
                   rel="noreferrer"
                   className="block truncate font-medium underline-offset-3 hover:underline"
-                  title={r.name}
+                  title={`${r.name} · ${r.code}`}
                 >
-                  {r.name}
+                  {name}
                 </a>
               ) : (
                 <div className="truncate font-medium" title={r.name}>
-                  {r.name}
+                  {name}
                 </div>
               )}
-              <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
-                {r.code && (
-                  <span className="flex min-w-0 items-center gap-1.5 max-sm:hidden">
-                    <span className="max-w-32 truncate font-mono" title={r.code}>
-                      {r.code}
-                    </span>
-                    ·
-                  </span>
-                )}
+              <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground sm:flex-nowrap sm:whitespace-nowrap">
                 <span className="whitespace-nowrap">
                   <span className="tabular-nums">{r.services}</span> {r.services === 1 ? "service" : "services"} ·
                 </span>
@@ -443,16 +440,9 @@ function LastDeploy({ at, after }: { at: string | null; after: string | null }) 
   );
 }
 
-/** The day over its UTC time, so three date columns fit beside the figures. */
+/** The day; its UTC time on hover, since the hour rarely matters here. */
 function DayTime({ iso }: { iso: string }) {
-  const s = fmtDayTime(iso);
-  const cut = s.lastIndexOf(" ");
-  return (
-    <>
-      <span className="block">{s.slice(0, cut)}</span>
-      <span className="block text-muted-foreground/80">{s.slice(cut + 1)}</span>
-    </>
-  );
+  return <span title={`${fmtDayTime(iso)} UTC`}>{fmtDay(iso)}</span>;
 }
 
 function Health({ r }: { r: Row }) {

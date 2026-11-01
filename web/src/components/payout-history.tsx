@@ -9,17 +9,10 @@ import { Delta } from "~/components/delta";
 import { DOCKET, DocketCell, Fig } from "~/components/page";
 import { PayoutHistoryChart } from "~/components/payout-history-chart";
 import { Button } from "~/components/ui/button";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "~/components/ui/card";
+import { Card, CardContent } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHead, useSort } from "~/components/ui/table";
-import { dayDate, fmtCents, fmtNum } from "~/lib/format";
+import { dayDate, fmtCents, fmtNum, shortNames } from "~/lib/format";
 import { cn } from "~/lib/utils";
 import {
   type PayerChain,
@@ -110,39 +103,10 @@ export function PayoutHistory({ days }: { days: number }) {
   const payers = useSort(data?.payers ?? [], payerValue, "total", ["rank", "name", "template", "status", "due"]);
   const ledger = useSort(data?.payouts ?? [], ledgerValue, "date", ["template", "destination", "status"]);
 
+  const short = shortNames(data?.payers.map((p) => p.templateName) ?? []);
+
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Cash and credits</CardTitle>
-        <CardDescription>
-          Withdrawn from Railway in this range, as cash or credits, and who pays the kickback. Kickback not yet
-          withdrawn is the balance on the docket above.
-        </CardDescription>
-        {data && data.totalRows > 0 && (
-          <CardAction>
-            {hasPayers && (
-              <Button
-                size="xs"
-                aria-pressed={current === "payers"}
-                variant={current === "payers" ? "secondary" : "ghost"}
-                onClick={() => setView("payers")}
-              >
-                Payers
-                <span className="tabular-nums text-muted-foreground">{fmtNum(data.payers.length)}</span>
-              </Button>
-            )}
-            <Button
-              size="xs"
-              aria-pressed={current === "ledger"}
-              variant={current === "ledger" ? "secondary" : "ghost"}
-              onClick={() => setView("ledger")}
-            >
-              Ledger
-              <span className="tabular-nums text-muted-foreground">{fmtNum(data.payouts.length)}</span>
-            </Button>
-          </CardAction>
-        )}
-      </CardHeader>
 
       {history.isPending && (
         <CardContent>
@@ -186,6 +150,30 @@ export function PayoutHistory({ days }: { days: number }) {
           </CardContent>
 
           <CardContent className="space-y-3 border-t pt-4">
+            {data.totalRows > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {hasPayers && (
+                  <Button
+                    size="xs"
+                    aria-pressed={current === "payers"}
+                    variant={current === "payers" ? "secondary" : "ghost"}
+                    onClick={() => setView("payers")}
+                  >
+                    Payers
+                    <span className="tabular-nums text-muted-foreground">{fmtNum(data.payers.length)}</span>
+                  </Button>
+                )}
+                <Button
+                  size="xs"
+                  aria-pressed={current === "ledger"}
+                  variant={current === "ledger" ? "secondary" : "ghost"}
+                  onClick={() => setView("ledger")}
+                >
+                  Ledger
+                  <span className="tabular-nums text-muted-foreground">{fmtNum(data.payouts.length)}</span>
+                </Button>
+              </div>
+            )}
             {current === "payers" ? (
               <>
                 <p className="text-xs text-muted-foreground">
@@ -193,7 +181,7 @@ export function PayoutHistory({ days }: { days: number }) {
                   <Fig>{fmtNum(statusCount("lapsed"))}</Fig> lapsed. One row per deployer, under a made-up name.
                   Returning: paid again on their billing date. Lapsed: missed a due invoice.
                 </p>
-                <Table rows={data.payers.length}>
+                <Table rows={data.payers.length} limit={50}>
                   <TableHeader>
                     <TableRow>
                       {payers.head("rank", "#", { numeric: true, className: "max-sm:hidden" })}
@@ -210,7 +198,7 @@ export function PayoutHistory({ days }: { days: number }) {
                   </TableHeader>
                   <TableBody>
                     {payers.rows.map((c) => (
-                      <PayerRow key={`${c.templateId}-${c.firstAt}`} chain={c} />
+                      <PayerRow key={`${c.templateId}-${c.firstAt}`} chain={c} short={short} />
                     ))}
                   </TableBody>
                 </Table>
@@ -278,7 +266,7 @@ function WindowFigure({ days, data }: { days: number; data: PayoutHistoryData })
   );
 }
 
-function PayerRow({ chain }: { chain: PayerChain }) {
+function PayerRow({ chain, short }: { chain: PayerChain; short: (name: string) => string }) {
   const tone =
     chain.status === "returning"
       ? "text-(--viz-up)"
@@ -292,11 +280,11 @@ function PayerRow({ chain }: { chain: PayerChain }) {
         <div className="font-medium capitalize">{chain.name}</div>
         {/* A phone shows only payer and total; the rest rides here. */}
         <div className="text-xs text-muted-foreground sm:hidden">
-          {chain.templateName} · <span className={tone}>{chain.status}</span>
+          {short(chain.templateName)} · <span className={tone}>{chain.status}</span>
         </div>
       </TableRowHead>
-      <TableCell className={cn("max-sm:hidden", PSEUDO_TEMPLATE_IDS.has(chain.templateId) && "text-muted-foreground")}>
-        {chain.templateName}
+      <TableCell className={cn("max-sm:hidden", PSEUDO_TEMPLATE_IDS.has(chain.templateId) && "text-muted-foreground")} title={chain.templateName}>
+        {short(chain.templateName)}
       </TableCell>
       <TableCell className={cn("max-sm:hidden", tone)}>{chain.status}</TableCell>
       <DateCell iso={chain.firstAt} className="max-sm:hidden" />

@@ -102,7 +102,7 @@ export function Forecast({ data, payers }: { data: TimelineResponse; payers: Pay
           ~<Fig>{f.expected.toFixed(0)}</Fig> start (<Fig>{f.starters}</Fig> did last 30 days), {fmtCents(f.perStarter)} each
         </DocketCell>
       </div>
-      <Table className="sm:min-w-[34rem]">
+      <Table className="sm:min-w-[34rem] lg:max-w-4xl">
         <TableHeader>
           <TableRow>
             <TableHead>Size</TableHead>

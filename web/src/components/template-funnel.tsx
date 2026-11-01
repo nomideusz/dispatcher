@@ -98,7 +98,7 @@ export function TemplateFunnel({
       </p>
 
       {/* The definitions matter once, then they are noise on a page read daily. */}
-      <details className="group mt-auto text-xs text-muted-foreground">
+      <details className="group text-xs text-muted-foreground">
         <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm font-medium text-foreground outline-none select-none hover:underline focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
           <ChevronRight className="size-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
           What each count means

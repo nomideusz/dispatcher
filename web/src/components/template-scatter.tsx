@@ -76,7 +76,8 @@ export function TemplateScatter({
 
   // Name the templates that make the argument (top earners, then the widest
   // reach) wherever the name fits: a label that would land on one already
-  // placed is left to the tooltip.
+  // placed is left to the tooltip. Names on the "none" row sit above their
+  // dots, so the vertical room allowed is about two lines.
   const name = shortNames(templates.map((t) => t.name));
   const placed: [number, number][] = [];
   // A name takes about a fifth of a desktop plot's width but nearly half a
@@ -87,7 +88,7 @@ export function TemplateScatter({
     ...[...dots].sort((a, b) => b.live - a.live).slice(0, 4),
   ]) {
     const [x, y] = [d.x / X, (d.y - NONE_Y) / (Y - NONE_Y)];
-    if (d.label || d.labelLeft || placed.some(([px, py]) => Math.abs(px - x) < gap && Math.abs(py - y) < 0.06)) continue;
+    if (d.label || d.labelLeft || placed.some(([px, py]) => Math.abs(px - x) < gap && Math.abs(py - y) < 0.15)) continue;
     placed.push([x, y]);
     if (x > 0.75) d.labelLeft = name(d.name);
     else d.label = name(d.name);

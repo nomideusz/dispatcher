@@ -99,7 +99,7 @@ export default function Money() {
           <Section
             id="payouts"
             title="Payouts"
-            text="Kickback paid out as cash or credits, what is due next, and the deployers behind it."
+            text="Kickback withdrawn as cash or credits, and the deployers who pay it. What is not yet withdrawn is the balance on the docket above."
           >
             <PayoutHistory days={days} />
           </Section>

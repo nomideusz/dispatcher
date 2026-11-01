@@ -61,12 +61,11 @@ const monthLong = new Intl.DateTimeFormat("en-US", {
 
 /** Payer columns sort on these; ties keep the server's order, biggest
  * total first. Lapsed payers have no next due date, so they sort last. */
-type PayerKey = "rank" | "name" | "template" | "status" | "first" | "last" | "due" | "invoices" | "lastAmount" | "total";
+type PayerKey = "rank" | "template" | "status" | "first" | "last" | "due" | "invoices" | "lastAmount" | "total";
 const STATUS_ORDER: Record<PayerChain["status"], number> = { returning: 0, new: 1, lapsed: 2 };
 const payerValue = (c: PayerChain, key: PayerKey) =>
   ({
     rank: c.rank,
-    name: c.name,
     template: c.templateName,
     status: STATUS_ORDER[c.status],
     first: c.firstAt,
@@ -100,7 +99,7 @@ export function PayoutHistory({ days }: { days: number }) {
     data?.payers.filter((c) => c.status === s).length ?? 0;
   const hasPayers = (data?.payers.length ?? 0) > 0;
   const current: PayoutView = hasPayers ? view : "ledger";
-  const payers = useSort(data?.payers ?? [], payerValue, "total", ["rank", "name", "template", "status", "due"]);
+  const payers = useSort(data?.payers ?? [], payerValue, "total", ["rank", "template", "status", "due"]);
   const ledger = useSort(data?.payouts ?? [], ledgerValue, "date", ["template", "destination", "status"]);
 
   const short = shortNames(data?.payers.map((p) => p.templateName) ?? []);
@@ -177,21 +176,27 @@ export function PayoutHistory({ days }: { days: number }) {
             {current === "payers" ? (
               <>
                 <p className="text-xs text-muted-foreground">
-                  <Fig>{fmtNum(statusCount("returning"))}</Fig> returning · <Fig>{fmtNum(statusCount("new"))}</Fig> new ·{" "}
-                  <Fig>{fmtNum(statusCount("lapsed"))}</Fig> lapsed. One row per deployer, under a made-up name.
-                  Returning: paid again on their billing date. Lapsed: missed a due invoice.
+                  {(["returning", "new", "lapsed"] as const).map((st, i) => (
+                    <span key={st} className="mr-3 inline-flex items-center gap-1.5 whitespace-nowrap">
+                      <Mark status={st} kind={st === "lapsed" ? "missed" : "paid"} />
+                      <Fig>{fmtNum(statusCount(st))}</Fig> {st}
+                    </span>
+                  ))}
+                  <span className="inline-block">
+                    One row per deployer; Railway doesn&apos;t say who. Returning: paid again on their billing date.
+                    Lapsed: missed a due invoice.
+                  </span>
                 </p>
                 <Table rows={data.payers.length} limit={50}>
                   <TableHeader>
                     <TableRow>
                       {payers.head("rank", "#", { numeric: true, className: "max-sm:hidden" })}
-                      {payers.head("name", "Payer", { className: "max-sm:pl-0" })}
-                      {payers.head("template", "Template", { className: "max-sm:hidden" })}
+                      {payers.head("template", "Template", { className: "max-sm:pl-0" })}
                       {payers.head("status", "Status", { hint: "Returning, then new, then lapsed", className: "max-sm:hidden" })}
                       {payers.head("first", "First", { className: "max-sm:hidden" })}
                       {payers.head("last", "Last", { className: "max-sm:hidden" })}
                       {payers.head("due", "Next due", { hint: "Soonest first; lapsed payers last", className: "max-sm:hidden" })}
-                      {payers.head("invoices", "Invoices", { numeric: true, className: "max-sm:hidden" })}
+                      {payers.head("invoices", "Invoices", { hint: "One square per invoice paid; outlined is the next one due, dashed one that was missed", numeric: true, className: "max-sm:hidden" })}
                       {payers.head("lastAmount", "Last amount", { numeric: true, className: "max-sm:hidden" })}
                       {payers.head("total", "Total", { hint: "Paid in all", numeric: true })}
                     </TableRow>
@@ -266,37 +271,88 @@ function WindowFigure({ days, data }: { days: number; data: PayoutHistoryData })
   );
 }
 
-function PayerRow({ chain, short }: { chain: PayerChain; short: (name: string) => string }) {
-  const tone =
-    chain.status === "returning"
-      ? "text-(--viz-up)"
-      : chain.status === "lapsed"
-        ? "text-(--viz-down)"
-        : "text-muted-foreground";
+/** A payer's colour says whether they are still paying: returning in the
+ * running green, new in ink, lapsed faded back. */
+const PAYER_TONE: Record<PayerChain["status"], string> = {
+  returning: "var(--viz-up)",
+  new: "var(--foreground)",
+  lapsed: "var(--muted-foreground)",
+};
+
+/** One mark, three states, used by the status, the invoice strip and the
+ * legend: filled is an invoice paid, outlined the next one due, dashed one
+ * that never came. */
+function Mark({ status, kind = "paid" }: { status: PayerChain["status"]; kind?: "paid" | "due" | "missed" }) {
+  const tone = PAYER_TONE[status];
   return (
-    <TableRow>
+    <span
+      aria-hidden
+      className={cn("inline-block size-2 shrink-0", kind !== "paid" && "border", kind === "missed" && "border-dashed")}
+      style={kind === "paid" ? { background: tone } : { borderColor: tone }}
+    />
+  );
+}
+
+/** The status as its mark and word, never colour alone. */
+function PayerStatus({ status }: { status: PayerChain["status"] }) {
+  return (
+    <span className="inline-flex items-center gap-1.5" style={{ color: status === "lapsed" ? undefined : PAYER_TONE[status] }}>
+      <Mark status={status} kind={status === "lapsed" ? "missed" : "paid"} />
+      {status}
+    </span>
+  );
+}
+
+/** Invoices as a strip: one square per invoice paid, then the next one,
+ * outlined while it is due and dashed once it was missed. */
+function InvoiceStrip({ chain }: { chain: PayerChain }) {
+  const shown = Math.min(chain.invoices, 8);
+  return (
+    <span className="inline-flex items-center justify-end gap-2">
+      <span className="flex gap-0.5">
+        {Array.from({ length: shown }, (_, i) => (
+          <Mark key={i} status={chain.status} />
+        ))}
+        <Mark status={chain.status} kind={chain.status === "lapsed" ? "missed" : "due"} />
+      </span>
+      <span className="w-4">{fmtNum(chain.invoices)}</span>
+    </span>
+  );
+}
+
+const WEEK = 7 * 86_400_000;
+
+function PayerRow({ chain, short }: { chain: PayerChain; short: (name: string) => string }) {
+  const lapsed = chain.status === "lapsed";
+  const dueSoon = !lapsed && Date.parse(chain.nextDueAt) - Date.now() < WEEK;
+  return (
+    <TableRow className={cn(lapsed && "text-muted-foreground")}>
       <TableCell numeric className="text-muted-foreground max-sm:hidden">{chain.rank}</TableCell>
-      <TableRowHead className="max-sm:pl-0">
-        <div className="font-medium capitalize">{chain.name}</div>
-        {/* A phone shows only payer and total; the rest rides here. */}
+      <TableRowHead className="max-w-64 max-sm:pl-0" title={chain.templateName}>
+        <div className={cn("truncate", !lapsed && "font-medium", PSEUDO_TEMPLATE_IDS.has(chain.templateId) && "text-muted-foreground")}>
+          {short(chain.templateName)}
+        </div>
+        {/* A phone shows only template and total; status and age ride here. */}
         <div className="text-xs text-muted-foreground sm:hidden">
-          {short(chain.templateName)} · <span className={tone}>{chain.status}</span>
+          <PayerStatus status={chain.status} /> · since {fmtDate(new Date(chain.firstAt))}
         </div>
       </TableRowHead>
-      <TableCell className={cn("max-sm:hidden", PSEUDO_TEMPLATE_IDS.has(chain.templateId) && "text-muted-foreground")} title={chain.templateName}>
-        {short(chain.templateName)}
+      <TableCell className="max-sm:hidden">
+        <PayerStatus status={chain.status} />
       </TableCell>
-      <TableCell className={cn("max-sm:hidden", tone)}>{chain.status}</TableCell>
       <DateCell iso={chain.firstAt} className="max-sm:hidden" />
       <DateCell iso={chain.lastAt} className="max-sm:hidden" />
-      {chain.status === "lapsed" ? (
-        <TableCell className="text-muted-foreground max-sm:hidden">—</TableCell>
+      {lapsed ? (
+        <TableCell className="max-sm:hidden">—</TableCell>
       ) : (
-        <DateCell iso={chain.nextDueAt} className="text-muted-foreground max-sm:hidden" />
+        // Due within the week: money about to land, so it reads at full ink.
+        <DateCell iso={chain.nextDueAt} className={cn("max-sm:hidden", dueSoon ? "font-medium text-foreground" : "text-muted-foreground")} />
       )}
-      <TableCell numeric className="max-sm:hidden">{fmtNum(chain.invoices)}</TableCell>
+      <TableCell numeric className="max-sm:hidden">
+        <InvoiceStrip chain={chain} />
+      </TableCell>
       <TableCell numeric className="max-sm:hidden">{fmtCents(chain.lastCents)}</TableCell>
-      <TableCell numeric>{fmtCents(chain.totalCents)}</TableCell>
+      <TableCell numeric className={cn(!lapsed && "font-medium")}>{fmtCents(chain.totalCents)}</TableCell>
     </TableRow>
   );
 }

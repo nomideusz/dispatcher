@@ -88,7 +88,9 @@ export function Earnings({ data }: { data: TimelineResponse }) {
 
   const change = (key: (typeof COUNTS)[number]["key"]) => {
     const to = last?.[key];
-    const from = first?.[key];
+    // Each count from its own first known day: lifetime reaches back past
+    // tracking, the counts don't.
+    const from = rows.find((r) => r[key] != null)?.[key];
     return sinceStart && to != null && from != null && to !== from ? signed(to - from, fmtNum) : null;
   };
 
@@ -195,6 +197,8 @@ export function Earnings({ data }: { data: TimelineResponse }) {
           Left axis: kickback. Right axis: templates, not projects. Deployed: someone other than you
           made a project from it. Running: it has a service up that day (before metrics, an active project). Earning: it paid in the
           last 30 days.
+          {rows[0] && rows[0].date < data.trackedSince.slice(0, 10) &&
+            ` Tracking began ${fmtDay(data.trackedSince.slice(0, 10))}: before it, lifetime kickback is rebuilt from the payout ledger and only Published is known.`}
         </p>
       </section>
 

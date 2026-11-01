@@ -89,6 +89,14 @@ func TestTimelineBucketsDeltasGapsAndLedger(t *testing.T) {
 	if p := points[key(day(-20))]; p.EarnedCents != 300 || p.Published != 0 {
 		t.Errorf("%s = %+v, want the 300¢ ledger payout and nothing published yet", key(day(-20)), p)
 	}
+	// Before tracking, lifetime walks back from the first sample through the
+	// ledger, never below zero.
+	if p := points[key(day(-20))]; p.LifetimeCents == nil || *p.LifetimeCents != 100 {
+		t.Errorf("%s lifetime = %v, want 100¢ carried back from the first sample", key(day(-20)), p.LifetimeCents)
+	}
+	if p := points[key(day(-21))]; p.LifetimeCents == nil || *p.LifetimeCents != 0 {
+		t.Errorf("%s lifetime = %v, want 0¢ before the 300¢ ledger payout", key(day(-21)), p.LifetimeCents)
+	}
 	if p := points[key(t1)]; p.Published != 1 || p.Services != 2 {
 		t.Errorf("%s catalog = %d/%d, want 1 template with 2 services", key(t1), p.Published, p.Services)
 	}
@@ -113,6 +121,17 @@ func TestTimelineBucketsDeltasGapsAndLedger(t *testing.T) {
 	// days stand in for its lag.
 	if a.Earned30d == nil || *a.Earned30d != 4 {
 		t.Errorf("earned30d = %v, want 4 from the payouts seen", a.Earned30d)
+	}
+
+	// days=0 is all-time: back to the first publish, ten days ago.
+	rec = httptest.NewRecorder()
+	handleTimeline(db)(rec, httptest.NewRequest("GET", "/api/analytics/timeline?days=0", nil))
+	var all timelineResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &all); err != nil {
+		t.Fatal(err)
+	}
+	if all.Window.Days != 11 || len(all.Points) != 11 || all.Points[0].Date != key(published) {
+		t.Errorf("all-time = %d days from %s, want 11 from %s", all.Window.Days, all.Points[0].Date, key(published))
 	}
 }
 

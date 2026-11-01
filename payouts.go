@@ -34,6 +34,27 @@ const (
 	maxPayoutWindowDays     = 365
 )
 
+// windowDays reads ?days=N (1 to maxPayoutWindowDays, default 30). days=0 is
+// all-time: every whole UTC day since the first template was published.
+func windowDays(r *http.Request, db *gorm.DB, now time.Time) int {
+	v, err := strconv.Atoi(r.URL.Query().Get("days"))
+	switch {
+	case err != nil:
+		return defaultPayoutWindowDays
+	case v == 0:
+		first, err := scanTime(r.Context(), db, `SELECT COALESCE(MIN(published_at), MIN(sampled_at))
+			FROM template_snapshots WHERE status = 'PUBLISHED'`)
+		if err != nil || first == nil {
+			return defaultPayoutWindowDays
+		}
+		day := 24 * time.Hour
+		return int(now.UTC().Truncate(day).Sub(first.Truncate(day))/day) + 1
+	case v >= 1 && v <= maxPayoutWindowDays:
+		return v
+	}
+	return defaultPayoutWindowDays
+}
+
 // voidPayoutStatuses are the withdrawal states where no money actually moved.
 // Everything else — COMPLETED, PENDING, and any state Railway adds later —
 // counts toward the totals, so an unrecognized status never silently drops a
@@ -226,10 +247,7 @@ type payoutHistoryResponse struct {
 // (see syncPayouts) and read locally. ?days=N bounds the chart window.
 func handlePayoutHistory(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		days := defaultPayoutWindowDays
-		if v, err := strconv.Atoi(r.URL.Query().Get("days")); err == nil && v >= 1 && v <= maxPayoutWindowDays {
-			days = v
-		}
+		days := windowDays(r, db, time.Now())
 		payouts := []Payout{}
 		err := db.WithContext(r.Context()).Raw(`
 			SELECT id, created_at, amount_cents, status, kind, destination, template_id, template_name

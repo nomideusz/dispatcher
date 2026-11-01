@@ -135,7 +135,7 @@ export function PayoutHistory({ days }: { days: number }) {
           <CardContent className="space-y-4">
             {/* An odd last cell spans the phone's two columns instead of leaving a hole. */}
             <div className={cn(DOCKET, "grid-cols-2 max-lg:[&>:last-child:nth-child(odd)]:col-span-2 lg:auto-cols-fr lg:grid-flow-col")}>
-              <WindowFigure days={days} data={data} />
+              <WindowFigure days={data.window.days} data={data} />
               <DocketCell label="Withdrawn in all" value={fmtCents(data.totals.lifetimeCents)} small>
                 {data.totals.firstPayoutAt && `since ${monthLong.format(new Date(data.totals.firstPayoutAt))}`}
               </DocketCell>
@@ -211,7 +211,7 @@ export function PayoutHistory({ days }: { days: number }) {
             ) : (
               <>
                 <p className="text-xs text-muted-foreground">
-                  <Fig>{fmtNum(data.payouts.length)}</Fig> payouts and balance accruals in the last <Fig>{days}</Fig>{" "}
+                  <Fig>{fmtNum(data.payouts.length)}</Fig> payouts and balance accruals in the last <Fig>{data.window.days}</Fig>{" "}
                   days, newest first
                   {data.totalRows > data.payouts.length &&
                     `; ${fmtNum(data.totalRows - data.payouts.length)} more before that`}

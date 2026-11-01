@@ -3,7 +3,6 @@ package main
 import (
 	"net/http"
 	"sort"
-	"strconv"
 	"time"
 
 	"gorm.io/gorm"
@@ -132,10 +131,7 @@ const timelineGapThreshold = 24 * time.Hour
 // activity for ?days=N (default 30). Responds null until the first snapshot.
 func handleTimeline(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		days := defaultPayoutWindowDays
-		if v, err := strconv.Atoi(r.URL.Query().Get("days")); err == nil && v >= 1 && v <= maxPayoutWindowDays {
-			days = v
-		}
+		days := windowDays(r, db, time.Now())
 		fail := func(err error) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
@@ -378,6 +374,17 @@ func buildTimeline(days int, now, trackedSince time.Time, events []timelineEvent
 		}
 		p.Published, p.Services = catalogAsOf(publishes, d.Add(24*time.Hour-time.Nanosecond))
 		resp.Points = append(resp.Points, p)
+	}
+	// Before the first snapshot, lifetime is rebuilt from the payout ledger:
+	// each day is the next day's figure less what the next day earned.
+	trackedDay := trackedSince.UTC().Format(dayKeyLayout)
+	for i := len(resp.Points) - 2; i >= 0; i-- {
+		p, next := &resp.Points[i], resp.Points[i+1]
+		if p.LifetimeCents != nil || p.Date >= trackedDay || next.LifetimeCents == nil {
+			continue
+		}
+		life := max(*next.LifetimeCents-next.EarnedCents, 0)
+		p.LifetimeCents = &life
 	}
 	return resp
 }

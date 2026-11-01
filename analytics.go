@@ -324,10 +324,7 @@ type templateProjectsResponse struct {
 // and active project counts over time; ?days=N bounds the window (default 30).
 func handleTemplateProjects(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		days := 30
-		if v, err := strconv.Atoi(r.URL.Query().Get("days")); err == nil && v >= 1 && v <= 365 {
-			days = v
-		}
+		days := windowDays(r, db, time.Now())
 		points, err := templateProjectPoints(r.Context(), db, r.PathValue("template"), time.Now().UTC().AddDate(0, 0, -days))
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})

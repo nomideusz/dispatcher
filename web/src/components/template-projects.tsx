@@ -61,7 +61,7 @@ export function TemplateProjects({ templateId }: { templateId: string }) {
           <div className="text-xs text-muted-foreground">
             {first
               ? `Change since ${fullFmt.format(new Date(first.sampledAt))}`
-              : `Last ${days} days`}
+              : `Last ${data?.days ?? days} days`}
           </div>
         </div>
         {/* This chart's own range, apart from the page's. */}
@@ -91,7 +91,7 @@ export function TemplateProjects({ templateId }: { templateId: string }) {
 
       {data && data.points.length === 0 && (
         <p className="py-6 text-center text-sm text-muted-foreground">
-          No published samples in the last {days} days.
+          No published samples in the last {data.days} days.
         </p>
       )}
 

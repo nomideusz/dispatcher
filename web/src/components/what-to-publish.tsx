@@ -160,7 +160,7 @@ export function WhatToPublish({ data }: { data: TimelineResponse }) {
         <div className="grid gap-6 lg:grid-cols-2">
           <Block title="Kickback per published template, 7-day average">
             <ChartContainer config={{}} className="aspect-auto h-44 w-full">
-              <LineChart title="Kickback per published template by size, 7-day average" data={trend} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+              <LineChart aria-label="Kickback per published template by size, 7-day average" data={trend} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid vertical={false} />
                 <XAxis dataKey="date" {...tick} tickMargin={8} minTickGap={40} tickFormatter={fmtDay} />
                 <YAxis width={44} {...tick} tickCount={3} tickFormatter={perDay} />
@@ -181,7 +181,7 @@ export function WhatToPublish({ data }: { data: TimelineResponse }) {
 
           <Block title="Share paid, by days since publishing">
             <ChartContainer config={{}} className="aspect-auto h-44 w-full">
-              <LineChart title="Share of templates paid within days of publishing, by size" data={curve} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+              <LineChart aria-label="Share of templates paid within days of publishing, by size" data={curve} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid vertical={false} />
                 <XAxis dataKey="day" {...tick} tickMargin={8} tickFormatter={(d) => `${d}d`} minTickGap={24} />
                 <YAxis width={44} {...tick} tickCount={3} domain={[0, "auto"]} tickFormatter={pct} />

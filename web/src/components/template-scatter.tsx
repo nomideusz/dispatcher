@@ -125,7 +125,7 @@ export function TemplateScatter({
         ]}
       />
       <ChartContainer config={{}} className="aspect-auto h-96 w-full">
-        <ScatterChart title="Running instances against 30-day kickback, per template" margin={{ top: 12, right: 16, bottom: 20, left: 0 }}>
+        <ScatterChart aria-label="Running instances against 30-day kickback, per template" margin={{ top: 12, right: 16, bottom: 20, left: 0 }}>
           <CartesianGrid strokeOpacity={0.6} />
           <XAxis
             type="number"

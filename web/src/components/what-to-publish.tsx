@@ -5,7 +5,7 @@ import { Section } from "~/components/page";
 import { ChartContainer } from "~/components/ui/chart";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead, useSort } from "~/components/ui/table";
 import { dayKey, fmtDay, fmtNum, fmtUsd } from "~/lib/format";
-import { KINDS, type TimelineResponse, type TimelineTemplate } from "~/queries/analytics";
+import { KINDS, ORIGINS, type TimelineResponse, type TimelineTemplate } from "~/queries/analytics";
 
 const DAY = 86_400_000;
 const pct = (v: number) => `${Math.round(v * 100)}%`;
@@ -42,49 +42,58 @@ function useWhatToPublish(data: TimelineResponse) {
       return out;
     });
 
-    // Share of the templates at least that old that had paid by each day,
-    // over their whole life: the range picker does not apply. A group's line
-    // stops once fewer than five templates are that old.
+    // Share paid by each day after publishing, over the templates' whole life
+    // (the range picker does not apply). Kaplan–Meier: each day's payers over
+    // the templates still unpaid and at least that old, so a young template
+    // that already paid counts now instead of once it ages past the day.
+    // A group's line stops once fewer than five templates are that old.
     const now = Date.parse(data.sampledAt);
     const life = templates
       .filter((t) => t.publishedAt)
       .map((t) => ({ g: groupOf(t), age: Math.floor((now - Date.parse(t.publishedAt!)) / DAY), paid: daysToPay(t) }));
-    const curve = Array.from({ length: 31 }, (_, k) => {
-      const day = k * 3;
+    const unpaid = GROUPS.map(() => 1);
+    const curve = Array.from({ length: 91 }, (_, day) => {
       const row: Record<string, number | null> = { day };
       GROUPS.forEach((_, g) => {
         const old = life.filter((l) => l.g === g && l.age >= day);
-        row[`g${g}`] = old.length < 5 ? null : old.filter((l) => l.paid != null && l.paid <= day).length / old.length;
+        const atRisk = old.filter((l) => l.paid == null || l.paid >= day).length;
+        const paidToday = old.filter((l) => l.paid === day).length;
+        if (atRisk > 0) unpaid[g] *= 1 - paidToday / atRisk;
+        row[`g${g}`] = old.length < 5 ? null : 1 - unpaid[g];
+        row[`n${g}`] = old.length;
       });
       return row;
     }).filter((r) => r.g0 != null || r.g1 != null || r.g2 != null);
 
     const kindOrder = (k: string) => (k === "" ? KINDS.length : KINDS.findIndex((x) => x.key === k));
-    const byKind = segment(templates, (t) => t.kind).sort((a, b) => kindOrder(a.key) - kindOrder(b.key));
-    const bySize = segment(templates, (t) => String(groupOf(t)));
-    const byMonth = segment(templates, (t) => t.publishedAt?.slice(0, 7) ?? "unknown");
-    return { trend, curve, byKind, bySize, byMonth };
+    const seg = (keyOf: (t: TimelineTemplate) => string) => segment(templates, keyOf, now);
+    const byKind = seg((t) => t.kind).sort((a, b) => kindOrder(a.key) - kindOrder(b.key));
+    const bySize = seg((t) => String(groupOf(t)));
+    const byOrigin = seg((t) => t.origin);
+    const byMonth = seg((t) => t.publishedAt?.slice(0, 7) ?? "unknown");
+    return { trend, curve, byKind, bySize, byOrigin, byMonth };
   }, [data]);
 }
 
-/** The segment that pays most per template over 30 days, among those with
- * at least three templates, so one lucky template doesn't set the verdict. */
+/** The segment whose typical template pays most, among those with at least
+ * three templates; typical leaves out the top earner, so one hit (Twenty)
+ * doesn't set the verdict. */
 function best(rows: Segment[], skip?: string) {
   const fair = rows.filter((r) => r.templates >= 3 && r.key !== skip);
-  return fair.length ? fair.reduce((a, b) => (b.earned / b.templates > a.earned / a.templates ? b : a)) : null;
+  return fair.length ? fair.reduce((a, b) => (b.typical > a.typical ? b : a)) : null;
 }
 
 /** Template size and age against what they earn and how soon: the numbers
  * for deciding what to build next, opened by the decision itself. */
 export function WhatToPublish({ data }: { data: TimelineResponse }) {
-  const { trend, curve, byKind, bySize, byMonth } = useWhatToPublish(data);
+  const { trend, curve, byKind, bySize, byOrigin, byMonth } = useWhatToPublish(data);
   const kindLabel = (k: string) => KINDS.find((x) => x.key === k)?.label ?? "Unsorted";
-  const per = (r: Segment) => perDay(r.earned / r.templates);
+  const per = (r: Segment) => perDay(r.typical);
   const topKind = best(byKind, "");
   const topSize = best(bySize);
   const lowKind = (() => {
     const fair = byKind.filter((r) => r.templates >= 3 && r.key !== "" && r !== topKind);
-    return fair.length ? fair.reduce((a, b) => (b.earned / b.templates < a.earned / a.templates ? b : a)) : null;
+    return fair.length ? fair.reduce((a, b) => (b.typical < a.typical ? b : a)) : null;
   })();
   const key = <Key items={GROUPS.map((g) => ({ label: g.label, color: g.color, line: true }))} />;
 
@@ -96,11 +105,17 @@ export function WhatToPublish({ data }: { data: TimelineResponse }) {
             Build {kindLabel(topKind.key)} templates with {GROUPS[Number(topSize.key)].label}.
           </span>{" "}
           <span className="text-muted-foreground">
-            Over the last 30 days a {kindLabel(topKind.key)} template paid <span className="tabular-nums text-foreground">{per(topKind)}</span>{" "}
+            Per 30 days live, a typical {kindLabel(topKind.key)} template paid <span className="tabular-nums text-foreground">{per(topKind)}</span>{" "}
             and one with {GROUPS[Number(topSize.key)].label} <span className="tabular-nums text-foreground">{per(topSize)}</span>
             {lowKind && (
               <>
                 ; {kindLabel(lowKind.key)} paid <span className="tabular-nums text-foreground">{per(lowKind)}</span>
+              </>
+            )}
+            {topKind.top && topKind.top.earned / topKind.earned >= 0.4 && (
+              <>
+                . {topKind.top.name} alone brought {pct(topKind.top.earned / topKind.earned)} of {kindLabel(topKind.key)}, so
+                it&apos;s left out of these
               </>
             )}
             .
@@ -149,7 +164,13 @@ export function WhatToPublish({ data }: { data: TimelineResponse }) {
                 <Tooltip
                   isAnimationActive={false}
                   cursor={cursor}
-                  content={(p) => <Tip {...p} title={(l) => `${l} days after publishing`} format={(v) => `${pct(v)} paid`} />}
+                  content={(p) => (
+                    <Tip
+                      {...p}
+                      title={(l) => `${l} days after publishing`}
+                      format={(v, k) => `${pct(v)} paid · of ${p.payload?.[0]?.payload?.[`n${k.slice(1)}`]}`}
+                    />
+                  )}
                 />
                 {GROUPS.map((g, i) => (
                   <Line key={g.label} name={g.label} type="stepAfter" dataKey={`g${i}`} stroke={g.color} strokeWidth={2} dot={false} isAnimationActive={false} />
@@ -157,8 +178,10 @@ export function WhatToPublish({ data }: { data: TimelineResponse }) {
               </LineChart>
             </ChartContainer>
             <p className="text-xs text-muted-foreground">
-              Share of templates at least that old that have earned any kickback. Where a line
-              flattens, waiting longer doesn&apos;t help.
+              Estimated share of templates that have earned any kickback by that day, counting
+              young templates for the days they&apos;ve been live. The tooltip shows how many
+              templates are that old; under 15 the line is noisy. Where a line flattens, waiting
+              longer doesn&apos;t help.
             </p>
           </section>
         </div>
@@ -166,8 +189,8 @@ export function WhatToPublish({ data }: { data: TimelineResponse }) {
 
       <Section
         id="segments"
-        title="By kind, size and age"
-        text="Earning and 30d cover the last 30 days. Per template splits that across every template in the row, earning or not. First paid: median wait among those that paid. Set a template's kind under its name on Templates."
+        title="By kind, size, origin and age"
+        text="Earning and 30d cover the last 30 days. Per template is what a typical one earns per 30 days live: young templates count only the days they've been up, and the row's top earner is left out so one hit doesn't carry it. First paid: median wait among those that paid. Set a template's kind and origin under its name on Templates."
       >
         <div className="grid gap-6 xl:grid-cols-2">
           <div className="xl:col-span-2">
@@ -184,10 +207,17 @@ export function WhatToPublish({ data }: { data: TimelineResponse }) {
             )}
           />
           <SegmentTable
-            title="Published"
-            rows={byMonth}
-            format={(k) => (k === "unknown" ? k : monthFmt.format(new Date(`${k}-01T00:00:00Z`)))}
+            title="Origin"
+            rows={byOrigin}
+            format={(k) => ORIGINS.find((x) => x.key === k)?.label ?? "Unsorted"}
           />
+          <div className="xl:col-span-2">
+            <SegmentTable
+              title="Published"
+              rows={byMonth}
+              format={(k) => (k === "unknown" ? k : monthFmt.format(new Date(`${k}-01T00:00:00Z`)))}
+            />
+          </div>
         </div>
       </Section>
     </>
@@ -200,25 +230,39 @@ type Segment = {
   earning: number;
   running: number;
   earned: number;
+  /** 30-day kickback per 30 days live, leaving out the top earner. */
+  typical: number;
+  top: { name: string; earned: number } | null;
   firstPaid: number | null;
 };
 
-function segment(templates: TimelineTemplate[], keyOf: (t: TimelineTemplate) => string): Segment[] {
+function segment(templates: TimelineTemplate[], keyOf: (t: TimelineTemplate) => string, now: number): Segment[] {
+  // Days of the 30-day window each template was live, at least one so a
+  // template's first-day cents don't read as a monthly fortune.
+  const live = (t: TimelineTemplate) =>
+    t.publishedAt ? Math.min(30, Math.max(1, (now - Date.parse(t.publishedAt)) / DAY)) : 30;
   const by = new Map<string, TimelineTemplate[]>();
   for (const t of templates) by.set(keyOf(t), [...(by.get(keyOf(t)) ?? []), t]);
   return [...by.entries()]
-    .map(([key, ts]) => ({
-      key,
-      templates: ts.length,
-      earning: ts.filter((t) => (t.earned30d ?? 0) > 0).length,
-      running: ts.reduce((s, t) => s + (t.running ?? 0), 0),
-      earned: ts.reduce((s, t) => s + (t.earned30d ?? 0), 0),
-      firstPaid: median(ts.flatMap((t) => daysToPay(t) ?? [])),
-    }))
+    .map(([key, ts]) => {
+      const earned = ts.reduce((s, t) => s + (t.earned30d ?? 0), 0);
+      const hit = ts.reduce((a, b) => ((b.earned30d ?? 0) > (a.earned30d ?? 0) ? b : a));
+      const rest = ts.length > 1 ? ts.filter((t) => t !== hit) : ts;
+      return {
+        key,
+        templates: ts.length,
+        earning: ts.filter((t) => (t.earned30d ?? 0) > 0).length,
+        running: ts.reduce((s, t) => s + (t.running ?? 0), 0),
+        earned,
+        typical: (rest.reduce((s, t) => s + (t.earned30d ?? 0), 0) / rest.reduce((s, t) => s + live(t), 0)) * 30,
+        top: (hit.earned30d ?? 0) > 0 ? { name: hit.name.split(" | ")[0], earned: hit.earned30d ?? 0 } : null,
+        firstPaid: median(ts.flatMap((t) => daysToPay(t) ?? [])),
+      };
+    })
     .sort((a, b) => a.key.localeCompare(b.key));
 }
 
-type SegmentKey = "key" | "templates" | "earning" | "earned" | "per" | "perRunning" | "firstPaid";
+type SegmentKey = "key" | "templates" | "earning" | "earned" | "per" | "top" | "perRunning" | "firstPaid";
 
 function SegmentTable({
   title,
@@ -229,7 +273,7 @@ function SegmentTable({
   rows: Segment[];
   format: (key: string) => ReactNode;
 }) {
-  const best = Math.max(0, ...rows.map((r) => r.earned / r.templates));
+  const best = Math.max(0, ...rows.map((r) => r.typical));
   // The label column keeps the segments' own order: kinds as listed, sizes
   // small to large, months oldest first.
   const order = new Map(rows.map((r, i) => [r.key, i]));
@@ -241,7 +285,8 @@ function SegmentTable({
         templates: r.templates,
         earning: r.earning,
         earned: r.earned,
-        per: r.earned / r.templates,
+        per: r.typical,
+        top: r.top ? r.top.earned / r.earned : null,
         perRunning: r.running > 0 ? r.earned / r.running : null,
         firstPaid: r.firstPaid,
       })[key],
@@ -256,14 +301,15 @@ function SegmentTable({
           {head("templates", "Templates", { numeric: true, className: "max-sm:hidden" })}
           {head("earning", "Earning", { numeric: true, className: "max-sm:hidden" })}
           {head("earned", "30d", { numeric: true })}
-          {head("per", "Per template", { className: "pl-6" })}
+          {head("per", "Per template", { className: "pl-6", hint: "Typical, per 30 days live, top earner left out" })}
+          {head("top", "Top earner", { hint: "Its share of the row's 30d", className: "max-sm:hidden" })}
           {head("perRunning", "Per running instance", { numeric: true, className: "max-sm:hidden" })}
           {head("firstPaid", "First paid", { numeric: true, hint: "Shortest wait first", className: "max-sm:hidden" })}
         </TableRow>
       </TableHeader>
       <TableBody>
         {sorted.map((r) => {
-          const per = r.earned / r.templates;
+          const per = r.typical;
           return (
             <TableRow key={r.key}>
               <TableRowHead className="whitespace-nowrap">{format(r.key)}</TableRowHead>
@@ -275,6 +321,16 @@ function SegmentTable({
                   <span className="w-12 text-right tabular-nums">{fmtUsd(per)}</span>
                   <TableMeter value={best > 0 ? per / best : 0} className="w-auto min-w-10 flex-1" />
                 </div>
+              </TableCell>
+              <TableCell className="text-muted-foreground max-sm:hidden">
+                {r.top ? (
+                  <span className="flex items-center justify-between gap-2 whitespace-nowrap">
+                    <span className="max-w-32 truncate" title={r.top.name}>{r.top.name}</span>
+                    <span className="tabular-nums">{pct(r.top.earned / r.earned)}</span>
+                  </span>
+                ) : (
+                  "—"
+                )}
               </TableCell>
               <TableCell numeric className="text-muted-foreground max-sm:hidden">
                 {r.running > 0 ? fmtUsd(r.earned / r.running) : "—"}

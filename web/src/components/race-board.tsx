@@ -26,8 +26,10 @@ const FIELDS: { key: Field; label: string }[] = [
 ];
 const SPEEDS = [1, 2, 4] as const;
 /** A race lasts this long at 1×, whatever the span of days. */
-const SECONDS = 24;
+const SECONDS = 60;
+/** Full rows, then a tail of smaller ones fading out. */
 const SHOWN = 10;
+const TAIL = 10;
 /** Days a stamp or a rank arrow stays up. */
 const LINGER = 3;
 
@@ -144,11 +146,12 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
   useEffect(() => {
     if (!playing) return;
     let raf = 0;
-    let last = performance.now();
+    let last = -1;
     const step = (now: number) => {
-      const cur = tRef.current;
+      if (last < 0) last = now;
+      const cur = Math.max(0, tRef.current);
       const w = race.weight[Math.floor(cur)] ?? 1;
-      const next = Math.min(span, cur + ((now - last) / 1000) * (race.clock / SECONDS) * (speed / w));
+      const next = Math.min(span, cur + (Math.max(0, now - last) / 1000) * (race.clock / SECONDS) * (speed / w));
       tRef.current = next;
       last = now;
       setT(next);
@@ -177,7 +180,11 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
     .sort((a, b) => b.v - a.v || a.r.id.localeCompare(b.r.id));
   // A few past the cut stay mounted, hidden at the bottom, so a racer
   // dropping out slides away instead of vanishing.
-  const field_ = standing.slice(0, SHOWN + 3);
+  const field_ = standing.slice(0, SHOWN + TAIL + 3);
+  const full = Math.min(SHOWN, race.racers.length);
+  const tail = Math.max(0, Math.min(TAIL, race.racers.length - SHOWN));
+  const yOf = (rank: number) =>
+    rank < SHOWN ? `var(--row) * ${rank}` : `var(--row) * ${SHOWN} + var(--tail) * ${Math.min(rank, SHOWN + TAIL) - SHOWN}`;
   const top = standing[0]?.v ?? 0;
   const total = race.racers.reduce((s, r) => s + shown(r), 0);
   const fmt = (v: number) => (measure === "kickback" ? fmtCents(Math.round(v)) : fmtNum(Math.round(v)));
@@ -233,15 +240,17 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
 
         <ol
           aria-hidden
-          className="relative mx-4 my-3 [--row:3.5rem] sm:mx-6 sm:[--row:2.75rem]"
+          // Clipped, so racers parked past the cut never sit over the controls.
+          className="relative mx-4 my-3 overflow-clip [--row:3.5rem] [--tail:1.75rem] sm:mx-6 sm:[--row:2.75rem] sm:[--tail:1.625rem]"
           // Room for the whole field from the gate, so nothing below jumps.
-          style={{ height: `calc(var(--row) * ${Math.max(1, Math.min(SHOWN, race.racers.length))})` }}
+          style={{ height: `calc(var(--row) * ${Math.max(1, full)} + var(--tail) * ${tail})` }}
         >
           {standing.length === 0 && (
             <li className="absolute inset-0 flex items-center text-sm text-muted-foreground">At the gate.</li>
           )}
           {field_.map(({ r, v }, rank) => {
-            const out = rank >= SHOWN;
+            const out = rank >= SHOWN + TAIL;
+            const small = rank >= SHOWN;
             const before = race.ranks[Math.max(0, day - LINGER)].get(r.id);
             const now = race.ranks[day].get(r.id);
             const move = before == null || now == null ? 0 : before - now;
@@ -256,15 +265,19 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
             return (
               <li
                 key={r.id}
-                className="race-row absolute inset-x-0 top-0 grid h-(--row) grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-x-3 border-b border-border/60 max-sm:content-center max-sm:gap-y-1 sm:grid-cols-[2.25rem_minmax(8rem,15rem)_minmax(0,1fr)_7.5rem]"
+                className={cn(
+                  "race-row absolute inset-x-0 top-0 grid grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-x-3 border-b border-border/60 sm:grid-cols-[2.25rem_minmax(8rem,15rem)_minmax(0,1fr)_7.5rem]",
+                  small ? "h-(--tail) border-border/30" : "h-(--row) max-sm:content-center max-sm:gap-y-1",
+                )}
                 style={{
-                  transform: `translateY(calc(var(--row) * ${out ? SHOWN : rank}))`,
-                  opacity: out ? 0 : 1,
+                  transform: `translateY(calc(${yOf(rank)}))`,
+                  // The tail thins out the further down it goes.
+                  opacity: out ? 0 : small ? 0.75 - ((rank - SHOWN) / TAIL) * 0.5 : 1,
                 }}
               >
-                <span className="text-right text-sm text-muted-foreground tabular-nums">{rank + 1}</span>
+                <span className={cn("text-right text-muted-foreground tabular-nums", small ? "text-xs" : "text-sm")}>{rank + 1}</span>
                 <span className="flex min-w-0 items-center gap-2">
-                  <span className={cn("truncate text-sm", rank === 0 && "font-semibold")}>{r.label}</span>
+                  <span className={cn("truncate", small ? "text-xs" : "text-sm", rank === 0 && "font-semibold")}>{r.label}</span>
                   {move !== 0 && (
                     <span className={cn("shrink-0 text-xs", move > 0 ? "text-(--chart-2)" : "text-muted-foreground")}>
                       {move > 0 ? "▲" : "▼"}
@@ -276,7 +289,12 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
                     </span>
                   )}
                 </span>
-                <span className="h-3 min-w-0 max-sm:col-span-2 max-sm:col-start-2 max-sm:row-start-2 sm:h-4">
+                <span
+                  className={cn(
+                    "min-w-0",
+                    small ? "h-2 max-sm:hidden" : "h-3 max-sm:col-span-2 max-sm:col-start-2 max-sm:row-start-2 sm:h-4",
+                  )}
+                >
                   <span
                     className="race-bar block h-full"
                     style={{ width: `${top > 0 ? Math.max(0.5, (v / top) * 100) : 0}%`, color: r.color }}
@@ -284,7 +302,11 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
                 </span>
                 <Odometer
                   text={fmt(shown(r))}
-                  className={cn("justify-self-end text-sm max-sm:row-start-1 max-sm:col-start-3", rank === 0 && "font-semibold")}
+                  className={cn(
+                    "justify-self-end max-sm:col-start-3 max-sm:row-start-1",
+                    small ? "text-xs" : "text-sm",
+                    rank === 0 && "font-semibold",
+                  )}
                 />
               </li>
             );

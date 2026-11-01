@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Fragment, type ReactNode, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Link } from "react-router";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -37,15 +37,17 @@ export function UpgradeQueue() {
   const upgrades = useQuery(upgradesQuery);
   const refresh = useRefreshUpgrades();
   const [filter, setFilter] = useState<UpgradeFilter>("behind");
-  // One heading per template, so its earnings show once instead of on
-  // every service row.
-  const [grouped, setGrouped] = useState(true);
+  // Templates that earned nothing in 30 days wait behind one line: most of
+  // the queue, and the last thing worth an afternoon.
+  const [idleOpen, setIdleOpen] = useState(false);
   const rows = upgrades.data ?? [];
   const names = shortNames(rows.map((u) => u.name ?? u.templateId));
   const shown = rows.filter(MATCHES[filter]);
-  const pins = shown.filter((u) => u.behind !== "unchecked").length;
   const checkedAt = rows.find((u) => u.behind !== "unchecked")?.checkedAt;
   const groups = byTemplate(shown);
+  const earning = groups.filter((g) => (g[0].earningsLast30Days ?? 0) > 0);
+  const idle = groups.filter((g) => (g[0].earningsLast30Days ?? 0) <= 0);
+  const visible = idleOpen ? groups : earning;
   // Most lines have no later major; the column shows only when one does.
   const majors = shown.some((u) => u.major !== "");
   // The server orders behind-first, most-earning-first, so the first
@@ -74,10 +76,6 @@ export function UpgradeQueue() {
           ))}
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
-          <label className="flex items-center gap-1.5">
-            <input type="checkbox" checked={grouped} onChange={(e) => setGrouped(e.target.checked)} />
-            Group by template
-          </label>
           {checkedAt && (
             <span>
               Checked {fmtAgo(checkedAt, new Date().toISOString())} ago · daily at 06:08 UTC
@@ -101,67 +99,88 @@ export function UpgradeQueue() {
           {rows.length === 0 ? "No check has run yet." : "Nothing here: every pinned image is current."}
         </p>
       )}
-      {shown.length > 0 && (
-          <Table rows={grouped ? 0 : shown.length}>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Template</TableHead>
-                <TableHead>Service</TableHead>
-                <TableHead className="max-md:hidden">Image</TableHead>
-                <TableHead>Pinned → newest on line</TableHead>
-                {majors && <TableHead className="max-sm:hidden">Later major</TableHead>}
-                <TableHead numeric className="max-sm:hidden">Earned 30d</TableHead>
-                <TableHead numeric className="max-sm:hidden">Running</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody banded={!grouped}>
-              {grouped
-                ? groups.map((group) => {
-                    const u = group[0];
-                    const checked = group.filter((g) => g.behind !== "unchecked");
-                    const behind = group.filter(MATCHES.behind).length;
-                    return (
-                      <Fragment key={u.templateId}>
-                        <TableRow rule="top">
-                          <TableRowHead scope="rowgroup" className="pt-3 pb-1 font-medium">
-                            <TemplateLink u={u} name={names(u.name ?? u.templateId)} />
-                          </TableRowHead>
-                          <TableCell colSpan={majors ? 4 : 3} className="pt-3 pb-1 text-xs text-muted-foreground">
-                            {checked.length === 0
-                              ? "nothing pinned"
-                              : `${fmtNum(checked.length)} pinned${behind ? `, ${fmtNum(behind)} behind` : ""}`}
-                            {/* A phone hides the earning columns; the heading carries them. */}
-                            {u.earningsLast30Days != null && (
-                              <span className="sm:hidden"> · <span className="tabular-nums">{fmtUsd(u.earningsLast30Days)}</span> in 30d</span>
-                            )}
-                          </TableCell>
-                          <EarningCells u={u} className="pt-3 pb-1" />
-                        </TableRow>
-                        {checked.map((s) => (
-                          <ServiceRow key={`${s.service}-${s.image}`} u={s} template="" majors={majors} />
-                        ))}
-                      </Fragment>
-                    );
-                  })
-                : shown.map((u) => (
-                    <ServiceRow
-                      key={`${u.templateId}-${u.service}-${u.image}`}
-                      u={u}
-                      template={<TemplateLink u={u} name={names(u.name ?? u.templateId)} />}
-                      earnings
-                      majors={majors}
-                    />
-                  ))}
-            </TableBody>
-          </Table>
+      {visible.length > 0 && (
+        <Table rows={0}>
+          <TableHeader>
+            <TableRow>
+              {/* The template's money sits beside its name: it is why the row is where it is. */}
+              <TableHead className="max-sm:hidden">Template</TableHead>
+              <TableHead numeric className="max-sm:hidden">Earned 30d</TableHead>
+              <TableHead numeric className="pr-6 max-sm:hidden">Running</TableHead>
+              <TableHead className="max-sm:pl-0">Service</TableHead>
+              <TableHead className="max-md:hidden">Image</TableHead>
+              <TableHead>Pinned → newest on line</TableHead>
+              {majors && <TableHead className="max-sm:hidden">Later major</TableHead>}
+            </TableRow>
+          </TableHeader>
+          <TableBody banded={false}>
+            {visible.map((group, i) => (
+              <TemplateGroup key={group[0].templateId} group={group} first={i === 0} name={names(group[0].name ?? group[0].templateId)} majors={majors} />
+            ))}
+          </TableBody>
+        </Table>
       )}
-      {shown.length > 0 && (
-        <p className="text-xs text-muted-foreground">
-          {fmtNum(templateCount(shown))} templates, {fmtNum(pins)} pinned{" "}
-          {pins === 1 ? "image or version" : "images and versions"}
-        </p>
+      {idle.length > 0 && (
+        <Button size="xs" variant="ghost" aria-expanded={idleOpen} onClick={() => setIdleOpen((o) => !o)}>
+          {idleOpen ? (
+            "Hide templates that earned nothing"
+          ) : (
+            <>
+              Show <span className="tabular-nums">{fmtNum(idle.length)}</span> more that earned nothing in 30 days
+            </>
+          )}
+        </Button>
       )}
     </div>
+  );
+}
+
+/** One template: its name and money on the line of its first service,
+ * spanning the rest, so the group costs no extra line. A phone hides those
+ * columns, so there the name and money get a heading line of their own. */
+function TemplateGroup({ group, name, majors, first }: { group: ServiceUpgrade[]; name: string; majors: boolean; first: boolean }) {
+  const u = group[0];
+  const services = group.filter((g) => g.behind !== "unchecked");
+  const lead = (
+    <>
+      <TableRowHead scope="rowgroup" rowSpan={Math.max(1, services.length)} className="align-top font-medium max-sm:hidden">
+        <TemplateLink u={u} name={name} />
+      </TableRowHead>
+      <TableCell numeric rowSpan={Math.max(1, services.length)} className="align-top max-sm:hidden">
+        {u.earningsLast30Days == null ? "—" : fmtUsd(u.earningsLast30Days)}
+      </TableCell>
+      <TableCell numeric rowSpan={Math.max(1, services.length)} className="pr-6 align-top max-sm:hidden">
+        {u.runningInstances == null ? "—" : fmtNum(u.runningInstances)}
+      </TableCell>
+    </>
+  );
+  // The table's first group sits right under the header's own rule.
+  const opens = cn(first ? "border-t-0" : "border-t border-border/60", "max-sm:border-t-0");
+  return (
+    <>
+      <TableRow rule="none" className={cn("sm:hidden", !first && "border-t border-border/60")}>
+        <TableRowHead scope="rowgroup" colSpan={3} className="pt-3 pb-0 font-medium">
+          <TemplateLink u={u} name={name} />
+          {u.earningsLast30Days != null && (
+            <span className="font-normal text-muted-foreground">
+              {" "}· <span className="tabular-nums">{fmtUsd(u.earningsLast30Days)}</span> in 30d
+            </span>
+          )}
+        </TableRowHead>
+      </TableRow>
+      {services.length === 0 ? (
+        <TableRow rule="none" className={opens}>
+          {lead}
+          <TableCell colSpan={majors ? 4 : 3} className="text-muted-foreground">nothing pinned</TableCell>
+        </TableRow>
+      ) : (
+        services.map((s, i) => (
+          <ServiceRow key={`${s.service}-${s.image}`} u={s} majors={majors} className={i === 0 ? opens : undefined}>
+            {i === 0 && lead}
+          </ServiceRow>
+        ))
+      )}
+    </>
   );
 }
 
@@ -204,21 +223,23 @@ function TemplateLink({ u, name }: { u: ServiceUpgrade; name: string }) {
 
 function ServiceRow({
   u,
-  template,
-  earnings,
   majors,
+  className,
+  children,
 }: {
   u: ServiceUpgrade;
-  template: ReactNode;
-  earnings?: boolean;
   /** Whether the table has the Later major column. */
   majors: boolean;
+  className?: string;
+  /** The template's spanning cells, on its first service only. */
+  children?: ReactNode;
 }) {
   const moved = u.behind === "minor" || u.behind === "patch";
   return (
-    <TableRow rule={earnings ? "bottom" : "none"}>
-      <TableCell>{template}</TableCell>
-      <TableCell className="text-muted-foreground" title={u.image}>
+    <TableRow rule="none" className={className}>
+      {children}
+      {/* Fourth column on desktop, first on a phone, whichever row it is in. */}
+      <TableCell className="text-muted-foreground max-sm:pl-0 sm:first:pl-3" title={u.image}>
         {u.service}
         {/* Without the Image column, seven "Backend" rows need their image. */}
         <div className="font-mono text-xs md:hidden">{u.image.split("/").pop()}</div>
@@ -251,21 +272,7 @@ function ServiceRow({
           )}
         </TableCell>
       )}
-      {earnings ? <EarningCells u={u} /> : <TableCell colSpan={2} className="max-sm:hidden" />}
     </TableRow>
-  );
-}
-
-function EarningCells({ u, className }: { u: ServiceUpgrade; className?: string }) {
-  return (
-    <>
-      <TableCell numeric className={cn("max-sm:hidden", className)}>
-        {u.earningsLast30Days == null ? "—" : fmtUsd(u.earningsLast30Days)}
-      </TableCell>
-      <TableCell numeric className={cn("max-sm:hidden", className)}>
-        {u.runningInstances == null ? "—" : fmtNum(u.runningInstances)}
-      </TableCell>
-    </>
   );
 }
 

@@ -1,6 +1,5 @@
 import { Pause, Play, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { GROUPS, groupOf } from "~/components/chart-kit";
 import { Button } from "~/components/ui/button";
 import { fmtCents, fmtNum, shortNames } from "~/lib/format";
 import { cn } from "~/lib/utils";
@@ -63,11 +62,24 @@ interface Racer {
   age?: number;
 }
 
-function racerOf(t: TimelineTemplate, field: Field, name: (n: string) => string): Pick<Racer, "id" | "label" | "color"> {
+/** A colour of its own per template, given by where it finishes: the top
+ * ten take ten evenly spaced hues, neighbours in rank 108° apart; the tail
+ * takes the hues between, darker; the rest step by the golden angle. */
+function finishColor(i: number) {
+  if (i < SHOWN) return `oklch(0.8 0.13 ${((i * 3) % 10) * 36 + 15})`;
+  if (i < SHOWN + TAIL) return `oklch(0.68 0.12 ${((i * 3) % 10) * 36 + 33})`;
+  return `oklch(0.7 0.1 ${((i * 137.508) % 360).toFixed(1)})`;
+}
+
+function racerOf(
+  t: TimelineTemplate,
+  field: Field,
+  name: (n: string) => string,
+): Pick<Racer, "id" | "label" | "color"> {
   switch (field) {
     case "templates":
     case "launch":
-      return { id: t.templateId, label: name(t.name), color: GROUPS[groupOf(t)].color };
+      return { id: t.templateId, label: name(t.name), color: UNSORTED };
     case "kinds": {
       const i = KINDS.findIndex((k) => k.key === t.kind);
       return i < 0 ? { id: "unsorted", label: "Unsorted", color: UNSORTED } : { id: KINDS[i].key, label: KINDS[i].label, color: KIND_COLORS[i] };
@@ -82,7 +94,8 @@ function racerOf(t: TimelineTemplate, field: Field, name: (n: string) => string)
 }
 
 function legendOf(field: Field, racers: Racer[]) {
-  if (field === "templates" || field === "launch") return GROUPS.map((g) => ({ label: g.label, color: g.color }));
+  // A template's colour is only its own; there is nothing to key.
+  if (field === "templates" || field === "launch") return [];
   if (field === "kinds") return racers.map((r) => ({ label: r.label, color: r.color }));
   const months = new Map<string, { label: string; color: string }>();
   for (const r of [...racers].sort((a, b) => a.id.localeCompare(b.id))) {
@@ -138,6 +151,10 @@ function build(data: TimelineResponse, measure: Measure, field: Field) {
     r.first = r.cum.findIndex((v) => v > 0);
   }
   const scoring = list.filter((r) => r.first >= 0);
+  if (field === "templates" || field === "launch") {
+    const last = days.length - 1;
+    [...scoring].sort((a, b) => b.cum[last] - a.cum[last]).forEach((r, i) => (r.color = finishColor(i)));
+  }
   if (field === "weeks") {
     // A colour per month in the race, in order, so none repeats.
     const months = [...new Set(scoring.map((r) => r.id.slice(0, 7)).filter((m) => /^\d{4}-\d{2}$/.test(m)))].sort();
@@ -555,6 +572,7 @@ function Odometer({ text, className }: { text: string; className?: string }) {
 }
 
 function Legend({ keys }: { keys: { label: string; color: string }[] }) {
+  if (keys.length === 0) return null;
   return (
     <p className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border px-4 py-2.5 text-xs text-muted-foreground sm:px-6">
       {keys.map((k) => (

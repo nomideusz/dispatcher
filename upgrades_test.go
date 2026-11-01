@@ -187,7 +187,8 @@ func TestTemplateImagesDockerfilePath(t *testing.T) {
 
 // Every template of the latest snapshot run is listed, the ones with
 // nothing checked as a single "unchecked" row; a template gone from the
-// catalog is not. Behind templates come busiest first, whatever they earned.
+// catalog is not. Behind templates that earn come busiest first, whatever
+// they earned; a busy one that earns nothing comes after them.
 func TestUpgradeRows(t *testing.T) {
 	db, err := gorm.Open(duckdb.Open(filepath.Join(t.TempDir(), "rows.duckdb")), &gorm.Config{})
 	if err != nil {
@@ -200,10 +201,12 @@ func TestUpgradeRows(t *testing.T) {
 	db.Create(&[]TemplateSnapshot{
 		{SampledAt: old, TemplateID: "gone", Name: "Gone"},
 		{SampledAt: now, TemplateID: "pinned", Name: "Pinned", ActiveDeployments: new(int64(3)), EarningsLast30Days: new(9.0)},
+		{SampledAt: now, TemplateID: "free", Name: "Free", ActiveDeployments: new(int64(500)), EarningsLast30Days: new(0.0)},
 		{SampledAt: now, TemplateID: "busy", Name: "Busy", ActiveDeployments: new(int64(40)), EarningsLast30Days: new(1.0)},
 		{SampledAt: now, TemplateID: "bare", Name: "Bare"},
 	})
 	db.Create(&[]ServiceImage{
+		{CheckedAt: now, TemplateID: "free", Service: "app", Image: "kasm", Tag: "1.17", Behind: "patch", Latest: "1.17.1"},
 		{CheckedAt: now, TemplateID: "busy", Service: "app", Image: "redis", Tag: "8.0", Behind: "minor", Latest: "8.2"},
 		{CheckedAt: now, TemplateID: "pinned", Service: "app", Image: "ubuntu", Tag: "24.04", Behind: "patch", Latest: "24.04.1"},
 		{CheckedAt: now, TemplateID: "pinned", Service: "db", Image: "postgres", Tag: "17"},
@@ -216,7 +219,7 @@ func TestUpgradeRows(t *testing.T) {
 	for _, r := range rows {
 		got = append(got, r.TemplateID+"/"+r.Service+"/"+r.Behind+"/"+r.Name)
 	}
-	want := "[busy/app/minor/Busy pinned/app/patch/Pinned pinned/db//Pinned bare//unchecked/Bare]"
+	want := "[busy/app/minor/Busy pinned/app/patch/Pinned free/app/patch/Free pinned/db//Pinned bare//unchecked/Bare]"
 	if fmt.Sprint(got) != want {
 		t.Errorf("upgradeRows = %v, want %v", got, want)
 	}

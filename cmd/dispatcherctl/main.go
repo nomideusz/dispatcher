@@ -183,8 +183,11 @@ func parseCommand(args []string, stderr io.Writer) (command, error) {
 			path:         "/api/analytics/payout?days=" + strconv.Itoa(*days),
 			requiresAuth: true,
 		}, nil
-	case "kind", "origin", "fixed":
+	case "kind", "origin", "fixed", "urgent":
 		if len(args) != 3 {
+			if args[0] == "urgent" {
+				return command{}, fmt.Errorf("urgent requires a template id and why its upgrade is urgent (\"\" to clear)")
+			}
 			if args[0] == "fixed" {
 				return command{}, fmt.Errorf("fixed requires a template id and the date a fix was pushed (YYYY-MM-DD, or \"\" to clear)")
 			}
@@ -296,6 +299,10 @@ Other commands:
                            ("" leaves it unmarked)
   fixed TEMPLATE_ID DATE   Record the day a health fix was pushed (YYYY-MM-DD,
                            "" clears it)
+  urgent TEMPLATE_ID REASON
+                           Put a template's upgrade first: a security fix or a
+                           fix for what we break on ("" clears; the daily
+                           check clears it once the template is current)
   proposal URL STATUS [REPLY]
                            Answer a proposal: building, published or skipped
                            ("" puts it back to new), with a reply the owner reads

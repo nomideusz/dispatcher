@@ -706,8 +706,48 @@ func replaceServiceImages(db *gorm.DB, rows []ServiceImage) error {
 		if len(rows) == 0 {
 			return nil
 		}
-		return tx.Session(&gorm.Session{SkipDefaultTransaction: true}).CreateInBatches(&rows, 100).Error
+		if err := tx.Session(&gorm.Session{SkipDefaultTransaction: true}).CreateInBatches(&rows, 100).Error; err != nil {
+			return err
+		}
+		// An urgent flag lasts until the check finds the template current:
+		// the next behind patch is a new read of the release notes.
+		return tx.Exec(`DELETE FROM template_urgents WHERE template_id NOT IN
+			(SELECT template_id FROM service_images WHERE behind IN ('minor', 'patch'))`).Error
 	})
+}
+
+// TemplateUrgent marks a template whose pending upgrade fixes a security
+// hole or something our version breaks on, set by hand from the release
+// notes (the routine check reads them; keyword matching can't tell a
+// Redis cluster-bus CVE from one that reaches our single node). Urgent
+// templates lead the queue by running instances: exposure is per deploy,
+// earning or not.
+type TemplateUrgent struct {
+	TemplateID string `gorm:"primaryKey" json:"templateId"`
+	Reason     string `json:"urgent"`
+}
+
+func handleSetTemplateUrgent(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Urgent string `json:"urgent"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "urgent must be the reason, or empty to clear"})
+			return
+		}
+		row := TemplateUrgent{TemplateID: r.PathValue("id"), Reason: strings.TrimSpace(body.Urgent)}
+		// Raw SQL: the DuckDB dialect drops GORM's OnConflict clause.
+		err := db.WithContext(r.Context()).Exec("DELETE FROM template_urgents WHERE template_id = ?", row.TemplateID).Error
+		if err == nil && row.Reason != "" {
+			err = db.WithContext(r.Context()).Exec("INSERT INTO template_urgents (template_id, reason) VALUES (?, ?)", row.TemplateID, row.Reason).Error
+		}
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, row)
+	}
 }
 
 type upgradeRow struct {
@@ -716,17 +756,19 @@ type upgradeRow struct {
 	Code               string   `json:"code"`
 	Status             string   `json:"status"`
 	EarningsLast30Days *float64 `json:"earningsLast30Days"`
-	// RunningInstances breaks ties in 30-day earnings, mostly among templates
-	// that earn nothing yet. It can't lead: what an instance pays varies ~40x
-	// (Twenty vs Evolution), and desktops run hundreds that never pay (Edge:
-	// 550 running, $0).
+	// RunningInstances orders urgent templates (see TemplateUrgent); for the
+	// rest it only breaks ties in 30-day earnings. Money leads there: what an
+	// instance pays varies ~40x (Twenty vs Evolution), and desktops run
+	// hundreds that never pay (Edge: 550 running, $0).
 	RunningInstances *int64 `json:"runningInstances"`
+	// Urgent is the reason the template's upgrade is urgent, empty if not.
+	Urgent string `json:"urgent"`
 }
 
 // upgradeRows lists every checked service with its template's latest
-// snapshot, behind-first, then by 30-day earnings and running instances, so
-// the top of the list
-// is the upgrade that matters most. Templates in the latest snapshot run
+// snapshot: urgent templates first, most running instances first, then
+// behind ones by 30-day earnings and running instances, so the top of the
+// list is the upgrade that matters most. Templates in the latest snapshot run
 // with nothing checked come back as one row with behind "unchecked", so
 // the list covers the whole catalog.
 func upgradeRows(db *gorm.DB) ([]upgradeRow, error) {
@@ -741,11 +783,14 @@ func upgradeRows(db *gorm.DB) ([]upgradeRow, error) {
 		       COALESCE(si.latest, '') AS latest, COALESCE(si.behind, 'unchecked') AS behind,
 		       COALESCE(si.major, '') AS major, COALESCE(si.ha, '') AS ha,
 		       COALESCE(si.ha_block, '') AS ha_block, COALESCE(si.error, '') AS error,
-		       l.name, l.code, l.status, l.earnings_last30_days, l.active_deployments AS running_instances
+		       l.name, l.code, l.status, l.earnings_last30_days, l.active_deployments AS running_instances,
+		       COALESCE(u.reason, '') AS urgent
 		FROM service_images si
 		FULL JOIN latest l ON l.template_id = si.template_id
+		LEFT JOIN template_urgents u ON u.template_id = COALESCE(si.template_id, l.template_id)
 		WHERE si.template_id IS NOT NULL OR l.sampled_at = (SELECT max(sampled_at) FROM template_snapshots)
-		ORDER BY CASE si.behind WHEN 'minor' THEN 0 WHEN 'patch' THEN 0 ELSE 1 END,
+		ORDER BY CASE WHEN u.reason IS NOT NULL THEN 0 WHEN si.behind IN ('minor', 'patch') THEN 1 ELSE 2 END,
+		         CASE WHEN u.reason IS NOT NULL THEN l.active_deployments END DESC NULLS LAST,
 		         l.earnings_last30_days DESC NULLS LAST, l.active_deployments DESC NULLS LAST, l.name, si.service`).Scan(&rows).Error
 	return rows, err
 }

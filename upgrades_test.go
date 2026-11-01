@@ -100,14 +100,19 @@ func TestReplaceServiceImages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&ServiceImage{}); err != nil {
+	if err := db.AutoMigrate(&ServiceImage{}, &TemplateUrgent{}); err != nil {
 		t.Fatal(err)
 	}
+	// A flag outlives a check that finds its template still behind, and no
+	// more: "current" was upgraded since it was flagged.
+	db.Create(&[]TemplateUrgent{{TemplateID: "t", Reason: "CVE"}, {TemplateID: "current", Reason: "CVE"}})
 	for _, n := range []int{250, 3} {
 		rows := make([]ServiceImage, n)
 		for i := range rows {
-			rows[i] = ServiceImage{TemplateID: "t", Service: fmt.Sprint(i), Image: "postgres", Tag: "17"}
+			rows[i] = ServiceImage{TemplateID: "t", Service: fmt.Sprint(i), Image: "postgres", Tag: "17", Behind: "patch"}
 		}
+		rows = append(rows, ServiceImage{TemplateID: "current", Service: "app", Image: "redis", Tag: "8.2"})
+		n++
 		if err := replaceServiceImages(db, rows); err != nil {
 			t.Fatal(err)
 		}
@@ -116,6 +121,11 @@ func TestReplaceServiceImages(t *testing.T) {
 		if count != int64(n) {
 			t.Fatalf("count = %d, want %d", count, n)
 		}
+	}
+	var flagged []string
+	db.Model(&TemplateUrgent{}).Pluck("template_id", &flagged)
+	if fmt.Sprint(flagged) != "[t]" {
+		t.Errorf("urgent after check = %v, want [t]", flagged)
 	}
 }
 
@@ -194,7 +204,7 @@ func TestUpgradeRows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&ServiceImage{}, &TemplateSnapshot{}); err != nil {
+	if err := db.AutoMigrate(&ServiceImage{}, &TemplateSnapshot{}, &TemplateUrgent{}); err != nil {
 		t.Fatal(err)
 	}
 	old, now := time.Now().Add(-time.Hour), time.Now()
@@ -222,5 +232,19 @@ func TestUpgradeRows(t *testing.T) {
 	want := "[pinned/app/patch/Pinned busy/app/minor/Busy free/app/patch/Free pinned/db//Pinned bare//unchecked/Bare]"
 	if fmt.Sprint(got) != want {
 		t.Errorf("upgradeRows = %v, want %v", got, want)
+	}
+
+	// Urgent templates lead by running instances, earning or not.
+	db.Create(&[]TemplateUrgent{{TemplateID: "busy", Reason: "auth bypass"}, {TemplateID: "free", Reason: "CVE"}})
+	if rows, err = upgradeRows(db); err != nil {
+		t.Fatal(err)
+	}
+	got = []string{}
+	for _, r := range rows {
+		got = append(got, r.TemplateID+"/"+r.Service+"/"+r.Behind+"/"+r.Name)
+	}
+	want = "[free/app/patch/Free busy/app/minor/Busy pinned/app/patch/Pinned pinned/db//Pinned bare//unchecked/Bare]"
+	if fmt.Sprint(got) != want || rows[0].Urgent != "CVE" || rows[2].Urgent != "" {
+		t.Errorf("upgradeRows with urgent = %v, want %v", got, want)
 	}
 }

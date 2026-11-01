@@ -301,4 +301,8 @@ func TestParseCommandKind(t *testing.T) {
 	if err != nil || cmd.path != "/api/templates/1c1b713d-16dc/fixed" || cmd.body != `{"fixed":"2026-10-30"}` {
 		t.Fatalf("fixed command = %+v, %v", cmd, err)
 	}
+	cmd, err = parseCommand([]string{"urgent", "1c1b713d-16dc", "CVE-2026-1"}, &bytes.Buffer{})
+	if err != nil || cmd.path != "/api/templates/1c1b713d-16dc/urgent" || cmd.body != `{"urgent":"CVE-2026-1"}` {
+		t.Fatalf("urgent command = %+v, %v", cmd, err)
+	}
 }

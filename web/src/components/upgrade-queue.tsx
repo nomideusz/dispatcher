@@ -26,7 +26,7 @@ const MATCHES: Record<UpgradeFilter, (u: ServiceUpgrade) => boolean> = {
 const templateCount = (rows: ServiceUpgrade[]) => new Set(rows.map((u) => u.templateId)).size;
 
 /** Rows by template, templates in the order they first appear (the server's
- * behind-first, most-earning-first order). */
+ * order: urgent by running instances, then behind by earnings). */
 function byTemplate(rows: ServiceUpgrade[]): ServiceUpgrade[][] {
   const groups = new Map<string, ServiceUpgrade[]>();
   for (const u of rows) groups.set(u.templateId, [...(groups.get(u.templateId) ?? []), u]);
@@ -37,21 +37,22 @@ export function UpgradeQueue() {
   const upgrades = useQuery(upgradesQuery);
   const refresh = useRefreshUpgrades();
   const [filter, setFilter] = useState<UpgradeFilter>("behind");
-  // Templates that earned nothing in 30 days wait behind one line: most of
-  // the queue, and the last thing worth an afternoon.
+  // Templates that earned nothing in 30 days wait behind one line, unless
+  // urgent: most of the queue, and the last thing worth an afternoon.
   const [idleOpen, setIdleOpen] = useState(false);
   const rows = upgrades.data ?? [];
   const names = shortNames(rows.map((u) => u.name ?? u.templateId));
   const shown = rows.filter(MATCHES[filter]);
   const checkedAt = rows.find((u) => u.behind !== "unchecked")?.checkedAt;
   const groups = byTemplate(shown);
-  const earning = groups.filter((g) => (g[0].earningsLast30Days ?? 0) > 0);
-  const idle = groups.filter((g) => (g[0].earningsLast30Days ?? 0) <= 0);
+  const lead = (g: ServiceUpgrade[]) => !!g[0].urgent || (g[0].earningsLast30Days ?? 0) > 0;
+  const earning = groups.filter(lead);
+  const idle = groups.filter((g) => !lead(g));
   const visible = idleOpen ? groups : earning;
   // Most lines have no later major; the column shows only when one does.
   const majors = shown.some((u) => u.major !== "");
-  // The server orders behind-first, most-earning-first, so the first
-  // template behind is the one to upgrade next.
+  // The server puts urgent templates first, then behind ones by earnings,
+  // so the first template behind is the one to upgrade next.
   const first = byTemplate(rows.filter(MATCHES.behind))[0];
 
   return (
@@ -143,6 +144,7 @@ function TemplateGroup({ group, name, majors, first }: { group: ServiceUpgrade[]
     <>
       <TableRowHead scope="rowgroup" rowSpan={Math.max(1, services.length)} className="align-top font-medium max-sm:hidden">
         <TemplateLink u={u} name={name} />
+        <UrgentNote u={u} />
       </TableRowHead>
       <TableCell numeric rowSpan={Math.max(1, services.length)} className="align-top max-sm:hidden">
         {u.earningsLast30Days == null ? "—" : fmtUsd(u.earningsLast30Days)}
@@ -166,6 +168,7 @@ function TemplateGroup({ group, name, majors, first }: { group: ServiceUpgrade[]
               {" "}· <span className="tabular-nums">{fmtUsd(u.earningsLast30Days)}</span> in 30d
             </span>
           )}
+          <UrgentNote u={u} />
         </TableRowHead>
       </TableRow>
       {services.length === 0 ? (
@@ -185,7 +188,8 @@ function TemplateGroup({ group, name, majors, first }: { group: ServiceUpgrade[]
 }
 
 /** The upgrade to do next: the first template behind on its line, its
- * services and versions, and what it earns. */
+ * services and versions, and why: what makes it urgent and how many deploys
+ * run it, or what it earns. */
 function FirstUp({ group, name }: { group: ServiceUpgrade[]; name: string }) {
   const behind = group.filter(MATCHES.behind);
   const u = group[0];
@@ -198,17 +202,38 @@ function FirstUp({ group, name }: { group: ServiceUpgrade[]; name: string }) {
           {" "}to <span className="font-mono text-xs">{behind[0].latest}</span>
         </>
       )}
-      {u.earningsLast30Days != null && (
+      {u.urgent ? (
         <span className="text-muted-foreground">
-          {" "}· <span className="tabular-nums">{fmtUsd(u.earningsLast30Days)}</span> in 30 days
+          {" "}· <span className="text-(--viz-critical)">urgent:</span> {u.urgent}
           {u.runningInstances != null && (
             <>
               , <span className="tabular-nums">{fmtNum(u.runningInstances)}</span> running
             </>
           )}
         </span>
+      ) : (
+        u.earningsLast30Days != null && (
+          <span className="text-muted-foreground">
+            {" "}· <span className="tabular-nums">{fmtUsd(u.earningsLast30Days)}</span> in 30 days
+            {u.runningInstances != null && (
+              <>
+                , <span className="tabular-nums">{fmtNum(u.runningInstances)}</span> running
+              </>
+            )}
+          </span>
+        )
       )}
     </p>
+  );
+}
+
+/** Why an urgent template leads the queue, under its name. */
+function UrgentNote({ u }: { u: ServiceUpgrade }) {
+  if (!u.urgent) return null;
+  return (
+    <div className="max-w-56 text-xs font-normal">
+      <span className="text-(--viz-critical)">Urgent:</span> <span className="text-muted-foreground">{u.urgent}</span>
+    </div>
   );
 }
 

@@ -36,6 +36,11 @@ export interface ServiceUpgrade {
   status: string | null;
   earningsLast30Days: number | null;
   runningInstances: number | null;
+  /** Why the template's upgrade is urgent (a security fix, or a fix for
+   * something our version breaks on), read from the release notes and set
+   * with dispatcherctl urgent; "" when it isn't. Urgent templates come
+   * first, by running instances. */
+  urgent: string;
 }
 
 export const upgradesQuery = queryOptions({

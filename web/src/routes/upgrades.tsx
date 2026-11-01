@@ -16,7 +16,7 @@ export default function Upgrades() {
       <Section
         id="queue"
         title="Queue"
-        text="Templates behind on their pinned line, the most-earning first. Those that earned nothing wait under the table; majors and every template are a filter away."
+        text="Urgent first: an upgrade that fixes a security hole or something our version breaks on, most running instances first, since every deploy is exposed, paying or not. Then the rest behind on their line, the most-earning first; those that earned nothing wait under the table. Majors and every template are a filter away."
       >
         <UpgradeQueue />
       </Section>

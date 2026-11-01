@@ -37,6 +37,8 @@ const LONE = 0.35;
 /** Full rows, then a tail of smaller ones fading out. */
 const SHOWN = 10;
 const TAIL = 10;
+/** Closer than this counts as level. */
+const TIE = 1e-6;
 /** Days a stamp or a rank arrow stays up. */
 const LINGER = 3;
 
@@ -317,10 +319,16 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
   const wall = typeof performance === "undefined" ? 0 : performance.now();
   if (!playing || wall - tick.current.wall > 120) tick.current = { wall, t };
   const shown = (r: Racer) => at(r, tick.current.t);
+  // Ties keep the order they had: whoever got there first stays ahead.
+  // Without it, racers level on a count flip on rounding noise every frame
+  // and their rows twitch back and forth.
+  const lastOrder = useRef(new Map<string, number>());
+  const before = (id: string) => lastOrder.current.get(id) ?? Infinity;
   const standing = race.racers
     .map((r) => ({ r, v: valueAt(r) }))
-    .filter((x) => x.v > 0)
-    .sort((a, b) => b.v - a.v || a.r.id.localeCompare(b.r.id));
+    .filter((x) => x.v > TIE)
+    .sort((a, b) => (Math.abs(b.v - a.v) > TIE ? b.v - a.v : before(a.r.id) - before(b.r.id) || a.r.id.localeCompare(b.r.id)));
+  lastOrder.current = new Map(standing.map((x, i) => [x.r.id, i]));
   // A few past the cut stay mounted, hidden at the bottom, so a racer
   // dropping out slides away instead of vanishing.
   const field_ = standing.slice(0, SHOWN + TAIL + 3);

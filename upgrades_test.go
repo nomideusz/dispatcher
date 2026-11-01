@@ -187,7 +187,7 @@ func TestTemplateImagesDockerfilePath(t *testing.T) {
 
 // Every template of the latest snapshot run is listed, the ones with
 // nothing checked as a single "unchecked" row; a template gone from the
-// catalog is not.
+// catalog is not. Behind templates come busiest first, whatever they earned.
 func TestUpgradeRows(t *testing.T) {
 	db, err := gorm.Open(duckdb.Open(filepath.Join(t.TempDir(), "rows.duckdb")), &gorm.Config{})
 	if err != nil {
@@ -199,10 +199,12 @@ func TestUpgradeRows(t *testing.T) {
 	old, now := time.Now().Add(-time.Hour), time.Now()
 	db.Create(&[]TemplateSnapshot{
 		{SampledAt: old, TemplateID: "gone", Name: "Gone"},
-		{SampledAt: now, TemplateID: "pinned", Name: "Pinned"},
+		{SampledAt: now, TemplateID: "pinned", Name: "Pinned", ActiveDeployments: new(int64(3)), EarningsLast30Days: new(9.0)},
+		{SampledAt: now, TemplateID: "busy", Name: "Busy", ActiveDeployments: new(int64(40)), EarningsLast30Days: new(1.0)},
 		{SampledAt: now, TemplateID: "bare", Name: "Bare"},
 	})
 	db.Create(&[]ServiceImage{
+		{CheckedAt: now, TemplateID: "busy", Service: "app", Image: "redis", Tag: "8.0", Behind: "minor", Latest: "8.2"},
 		{CheckedAt: now, TemplateID: "pinned", Service: "app", Image: "ubuntu", Tag: "24.04", Behind: "patch", Latest: "24.04.1"},
 		{CheckedAt: now, TemplateID: "pinned", Service: "db", Image: "postgres", Tag: "17"},
 	})
@@ -214,7 +216,7 @@ func TestUpgradeRows(t *testing.T) {
 	for _, r := range rows {
 		got = append(got, r.TemplateID+"/"+r.Service+"/"+r.Behind+"/"+r.Name)
 	}
-	want := "[pinned/app/patch/Pinned bare//unchecked/Bare pinned/db//Pinned]"
+	want := "[busy/app/minor/Busy pinned/app/patch/Pinned pinned/db//Pinned bare//unchecked/Bare]"
 	if fmt.Sprint(got) != want {
 		t.Errorf("upgradeRows = %v, want %v", got, want)
 	}

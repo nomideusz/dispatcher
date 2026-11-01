@@ -231,6 +231,9 @@ type candidateGroup struct {
 	// that looks like the same app, for groups we have none in.
 	Ours    []string `json:"ours"`
 	Similar string   `json:"similar,omitempty"`
+	// OurRecent is the group's 90-day projects that went to our templates:
+	// against Recent, how much of an app we publish others take.
+	OurRecent int64 `json:"ourRecent"`
 	// Rivals counts other creators' templates of the same or a similar app.
 	Rivals int    `json:"rivals"`
 	Status string `json:"status"`
@@ -260,6 +263,7 @@ func groupMarket(rows []MarketTemplate, ours map[string]bool) []*candidateGroup 
 		}
 		if ours[t.ID] {
 			g.Ours = append(g.Ours, t.ID)
+			g.OurRecent += t.RecentProjects
 		} else if g.Leader.Name == "" || t.ActiveProjects > g.Leader.Active {
 			g.Leader = candidateLeader{Name: t.Name, Code: t.Code, Creator: t.Creator, Active: t.ActiveProjects, Health: t.Health, CreatedAt: t.CreatedAt}
 			g.Category = t.Category

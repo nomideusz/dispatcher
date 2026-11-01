@@ -26,6 +26,8 @@ export interface CandidateGroup {
   ours: string[];
   /** The key of one of our groups that looks like the same app. */
   similar?: string;
+  /** The group's 90-day projects that went to our templates. */
+  ourRecent: number;
   /** Other creators' templates of the same or a similar app. */
   rivals: number;
   status: "" | "shortlist" | "skip";

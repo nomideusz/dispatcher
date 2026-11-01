@@ -26,7 +26,7 @@ const MATCHES: Record<UpgradeFilter, (u: ServiceUpgrade) => boolean> = {
 const templateCount = (rows: ServiceUpgrade[]) => new Set(rows.map((u) => u.templateId)).size;
 
 /** Rows by template, templates in the order they first appear (the server's
- * behind-first, most-earning-first order). */
+ * behind-first, most-running-first order). */
 function byTemplate(rows: ServiceUpgrade[]): ServiceUpgrade[][] {
   const groups = new Map<string, ServiceUpgrade[]>();
   for (const u of rows) groups.set(u.templateId, [...(groups.get(u.templateId) ?? []), u]);
@@ -48,7 +48,7 @@ export function UpgradeQueue() {
   const groups = byTemplate(shown);
   // Most lines have no later major; the column shows only when one does.
   const majors = shown.some((u) => u.major !== "");
-  // The server orders behind-first, most-earning-first, so the first
+  // The server orders behind-first, most-running-first, so the first
   // template behind is the one to upgrade next.
   const first = byTemplate(rows.filter(MATCHES.behind))[0];
 
@@ -111,7 +111,7 @@ export function UpgradeQueue() {
                 <TableHead>Pinned → newest on line</TableHead>
                 {majors && <TableHead className="max-sm:hidden">Later major</TableHead>}
                 <TableHead numeric className="max-sm:hidden">Earned 30d</TableHead>
-                <TableHead numeric className="max-sm:hidden">Active</TableHead>
+                <TableHead numeric className="max-sm:hidden">Running</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody banded={!grouped}>
@@ -182,9 +182,9 @@ function FirstUp({ group, name }: { group: ServiceUpgrade[]; name: string }) {
       {u.earningsLast30Days != null && (
         <span className="text-muted-foreground">
           {" "}· <span className="tabular-nums">{fmtUsd(u.earningsLast30Days)}</span> in 30 days
-          {u.activeProjects != null && (
+          {u.runningInstances != null && (
             <>
-              , <span className="tabular-nums">{fmtNum(u.activeProjects)}</span> active
+              , <span className="tabular-nums">{fmtNum(u.runningInstances)}</span> running
             </>
           )}
         </span>
@@ -263,7 +263,7 @@ function EarningCells({ u, className }: { u: ServiceUpgrade; className?: string 
         {u.earningsLast30Days == null ? "—" : fmtUsd(u.earningsLast30Days)}
       </TableCell>
       <TableCell numeric className={cn("max-sm:hidden", className)}>
-        {u.activeProjects == null ? "—" : fmtNum(u.activeProjects)}
+        {u.runningInstances == null ? "—" : fmtNum(u.runningInstances)}
       </TableCell>
     </>
   );

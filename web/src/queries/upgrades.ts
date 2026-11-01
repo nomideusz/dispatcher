@@ -35,7 +35,7 @@ export interface ServiceUpgrade {
   code: string | null;
   status: string | null;
   earningsLast30Days: number | null;
-  activeProjects: number | null;
+  runningInstances: number | null;
 }
 
 export const upgradesQuery = queryOptions({

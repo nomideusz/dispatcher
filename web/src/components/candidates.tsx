@@ -14,7 +14,7 @@ import { type CandidateGroup, candidatesQuery, type MarketCopy, useMarkCandidate
 const PLUMBING = new Set(["Storage", "Starters", "Queues"]);
 const monthFmt = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
 
-type View = "shortlist" | "market" | "skip";
+type View = "shortlist" | "market" | "behind" | "skip";
 
 type SortKey = "app" | "recent" | "active" | "rivals" | "leader" | "newest";
 const sortValue = (g: CandidateGroup, key: SortKey) =>
@@ -46,6 +46,9 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
 
   const groups = q.data?.groups ?? [];
   const inView = (g: CandidateGroup, v: View) => {
+    // Apps we publish (or something like them) where others take most of
+    // the deploys: a listing to fix is cheaper than a template to build.
+    if (v === "behind") return (g.ours.length > 0 || !!g.similar) && g.recent > 0 && g.ourRecent * 2 < g.recent;
     if (v !== "market") return g.status === v;
     if (g.status) return false;
     if (hidePlumbing && PLUMBING.has(g.category)) return false;
@@ -55,6 +58,7 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
   const counts = {
     shortlist: groups.filter((g) => inView(g, "shortlist")).length,
     market: groups.filter((g) => inView(g, "market")).length,
+    behind: groups.filter((g) => inView(g, "behind")).length,
     skip: groups.filter((g) => inView(g, "skip")).length,
   };
   const current: View = view ?? (counts.shortlist > 0 ? "shortlist" : "market");
@@ -89,7 +93,7 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
       <Section
         id="apps"
         title="Apps on Railway"
-        text={`What people deploy, one row per app, from Railway's marketplace read ${fmtAgo(q.data.fetchedAt, new Date().toISOString())} ago. Same-name templates count as one app; Templates counts other creators only.`}
+        text={`What people deploy, one row per app, from Railway's marketplace read ${fmtAgo(q.data.fetchedAt, new Date().toISOString())} ago. Same-name templates count as one app; Templates counts other creators only. Ours behind: apps we publish, or something like them, where others get most of the 90-day deploys.`}
       >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div role="group" aria-label="Candidates view" className="flex gap-1">
@@ -97,6 +101,7 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
             [
               ["shortlist", "Shortlist", counts.shortlist],
               ["market", "Market", counts.market],
+              ["behind", "Ours behind", counts.behind],
               ["skip", "Skipped", counts.skip],
             ] as const
           ).map(([v, label, n]) => (
@@ -161,7 +166,7 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
             {head("rivals", "Templates", { numeric: true })}
             {head("leader", "Leading template", { hint: "Sorted by its deploy health" })}
             {head("newest", "Newest", { numeric: true })}
-            <TableHead>{current === "market" ? "We have" : "Note"}</TableHead>
+            <TableHead>{current === "market" ? "We have" : current === "behind" ? "We get" : "Note"}</TableHead>
             <TableHead>
               <span className="sr-only">Actions</span>
             </TableHead>
@@ -250,6 +255,11 @@ function CandidateRow({
       <TableCell className="max-w-64 text-xs text-muted-foreground">
         {view === "market" ? (
           g.ours.length > 0 ? "Yes" : (g.similar ?? "—")
+        ) : view === "behind" ? (
+          <>
+            <span className="tabular-nums text-foreground">{fmtNum(g.ourRecent)}</span> of {fmtNum(g.recent)}
+            {g.ours.length === 0 && <div className="truncate">ours is {g.similar}</div>}
+          </>
         ) : (
           // Grows to its text, so a long note reads in full.
           <textarea
@@ -261,7 +271,7 @@ function CandidateRow({
             className="field-sizing-content block w-full min-w-40 resize-none border-b border-dashed border-border bg-transparent px-1 py-0.5 text-foreground outline-none placeholder:text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
           />
         )}
-        {view !== "market" && (
+        {(view === "shortlist" || view === "skip") && (
           <span role="status" className={cn("block", mark.isError && "text-(--viz-critical)")}>
             {mark.isPending ? "Saving…" : mark.isError ? "Not saved, try again" : mark.isSuccess ? "Saved" : ""}
           </span>
@@ -276,7 +286,7 @@ function CandidateRow({
           <Button size="xs" variant="ghost" disabled={mark.isPending} aria-label={`Unskip ${app}`} onClick={() => move("", `Moved ${app} back to Market.`)}>
             Unskip
           </Button>
-        ) : (
+        ) : view === "behind" ? null : (
           <>
             <Button size="xs" variant="secondary" disabled={mark.isPending} aria-label={`Shortlist ${app}`} onClick={() => move("shortlist", `Shortlisted ${app}.`)}>
               Shortlist

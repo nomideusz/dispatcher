@@ -716,11 +716,13 @@ type upgradeRow struct {
 	Code               string   `json:"code"`
 	Status             string   `json:"status"`
 	EarningsLast30Days *float64 `json:"earningsLast30Days"`
-	ActiveProjects     int64    `json:"activeProjects"`
+	// RunningInstances is what pays (kickback follows usage), so it orders
+	// the queue ahead of 30-day earnings, which lag a template's growth.
+	RunningInstances *int64 `json:"runningInstances"`
 }
 
 // upgradeRows lists every checked service with its template's latest
-// snapshot, behind-first and then by 30-day earnings, so the top of the list
+// snapshot, behind-first, then by running instances and 30-day earnings, so the top of the list
 // is the upgrade that matters most. Templates in the latest snapshot run
 // with nothing checked come back as one row with behind "unchecked", so
 // the list covers the whole catalog.
@@ -736,12 +738,12 @@ func upgradeRows(db *gorm.DB) ([]upgradeRow, error) {
 		       COALESCE(si.latest, '') AS latest, COALESCE(si.behind, 'unchecked') AS behind,
 		       COALESCE(si.major, '') AS major, COALESCE(si.ha, '') AS ha,
 		       COALESCE(si.ha_block, '') AS ha_block, COALESCE(si.error, '') AS error,
-		       l.name, l.code, l.status, l.earnings_last30_days, l.active_projects
+		       l.name, l.code, l.status, l.earnings_last30_days, l.active_deployments AS running_instances
 		FROM service_images si
 		FULL JOIN latest l ON l.template_id = si.template_id
 		WHERE si.template_id IS NOT NULL OR l.sampled_at = (SELECT max(sampled_at) FROM template_snapshots)
 		ORDER BY CASE si.behind WHEN 'minor' THEN 0 WHEN 'patch' THEN 0 ELSE 1 END,
-		         l.earnings_last30_days DESC NULLS LAST, l.name, si.service`).Scan(&rows).Error
+		         l.active_deployments DESC NULLS LAST, l.earnings_last30_days DESC NULLS LAST, l.name, si.service`).Scan(&rows).Error
 	return rows, err
 }
 

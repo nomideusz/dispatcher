@@ -34,6 +34,11 @@ func TestGroupMarket(t *testing.T) {
 		{ID: "ours2", Name: "Laya", Code: "laya", ActiveProjects: 2, RecentProjects: 1, CreatedAt: day},
 	}
 	groups := groupMarket(rows, map[string]bool{"ours1": true, "ours2": true})
+	for _, g := range groups {
+		if g.Key == "postiz" && g.OurRecent != 3 {
+			t.Errorf("postiz ourRecent = %d, want 3", g.OurRecent)
+		}
+	}
 	by := map[string]*candidateGroup{}
 	for _, g := range groups {
 		by[g.Key] = g

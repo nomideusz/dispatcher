@@ -13,3 +13,5 @@ web/.react-router/
 .impeccable/critique/
 .impeccable/mocks/
 .impeccable/review/
+# Bun owns the lockfile (web/bun.lock); npm run leaves this behind
+web/package-lock.json

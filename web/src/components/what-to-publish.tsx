@@ -216,25 +216,40 @@ export function WhatToPublish({ data }: { data: TimelineResponse }) {
         title="By kind, size, origin and age"
         text="Best-paying first. Point at a column name for what it counts; set kind and origin under a template's name on Templates."
       >
-        <div className="grid gap-x-8 gap-y-6 xl:grid-cols-2">
-          <SegmentTable title="Kind" rows={byKind} format={kindLabel} />
-          <SegmentTable
-            title="Services"
-            rows={bySize}
-            format={(k) => (
-              <span className="flex items-center gap-1.5">
-                <span className="size-2" style={{ background: GROUPS[Number(k)].color }} />
-                {sizeLabel(k)}
-              </span>
-            )}
-          />
-          <SegmentTable title="Origin" rows={byOrigin} format={(k) => ORIGINS.find((x) => x.key === k)?.label ?? "Unsorted"} />
-          <SegmentTable
-            title="Published"
-            rows={byMonth}
-            by="key"
-            format={(k) => (k === "unknown" ? k : monthFmt.format(new Date(`${k}-01T00:00:00Z`)))}
-          />
+        {/* What a template is on the left, its shape and age on the right;
+            each table under its own heading so short ones don't read as
+            more rows of the one above. */}
+        <div className="grid gap-x-8 xl:grid-cols-12">
+          <div className="space-y-8 xl:col-span-7">
+            <Block title="What it's for">
+              <SegmentTable title="Kind" rows={byKind} format={kindLabel} />
+            </Block>
+            <Block title="Original or competitive">
+              <SegmentTable title="Origin" rows={byOrigin} format={(k) => ORIGINS.find((x) => x.key === k)?.label ?? "Unsorted"} />
+            </Block>
+          </div>
+          <div className="space-y-8 max-xl:mt-8 max-xl:border-t max-xl:pt-6 xl:col-span-5 xl:border-l xl:pl-8">
+            <Block title="How many services">
+              <SegmentTable
+                title="Services"
+                rows={bySize}
+                format={(k) => (
+                  <span className="flex items-center gap-1.5">
+                    <span className="size-2" style={{ background: GROUPS[Number(k)].color }} />
+                    {sizeLabel(k)}
+                  </span>
+                )}
+              />
+            </Block>
+            <Block title="When it went live">
+              <SegmentTable
+                title="Month"
+                rows={byMonth}
+                by="key"
+                format={(k) => (k === "unknown" ? k : monthFmt.format(new Date(`${k}-01T00:00:00Z`)))}
+              />
+            </Block>
+          </div>
         </div>
       </Section>
     </>
@@ -278,6 +293,16 @@ function segment(templates: TimelineTemplate[], keyOf: (t: TimelineTemplate) => 
       };
     })
     .sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/** A titled sub-block inside a section (DESIGN.md: subtitle, 16px 600). */
+function Block({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="min-w-0 space-y-2">
+      <h3 className="text-base font-semibold">{title}</h3>
+      {children}
+    </section>
+  );
 }
 
 type SegmentKey = "key" | "earning" | "earned" | "per" | "paid30";

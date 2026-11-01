@@ -16,7 +16,7 @@ type Field = "templates" | "launch" | "kinds" | "weeks";
 
 const MEASURES: { key: Measure; label: string; board: string }[] = [
   { key: "kickback", label: "Kickback", board: "Kickback earned" },
-  { key: "projects", label: "Projects made", board: "Projects made" },
+  { key: "projects", label: "User deploys", board: "Deployed by users" },
 ];
 const FIELDS: { key: Field; label: string }[] = [
   { key: "templates", label: "Templates" },
@@ -433,7 +433,7 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
           ? "Every day takes the same time, a little less while only one racer is in play. "
           : "Days when places change run slowly, days when nothing moves pass quickly. "}
         {measure === "projects" &&
-          "Projects made counts every project anyone made from a template, the New and Projects columns on Templates, whether or not it is still live. "}
+          "User deploys counts every project other users created from a template (its Total deploys on Railway, the New and Projects columns on Templates), whether or not it is still live. "}
         {field === "launch"
           ? "From launch, every template starts on its publish day, so the young ones race the old on equal footing; a bar stops where the template runs out of days."
           : field === "weeks"

@@ -4,19 +4,20 @@ import * as React from "react"
 import { cn } from "~/lib/utils"
 
 /** Rows a table shows before "Show all"; app.css hides the rest. */
-const ROWS = 500
+const ROWS = 500 as const
 
 /** The consignment table: labels in a header on paper, hairline row rules,
  * 8px rows, figures in mono and right-aligned. The page scrolls, never the
  * table: from xl the header sticks under the bar; below it the table
  * scrolls sideways when it is wider than the screen. Pass `rows` (the body's
- * row count) and past 500 it shows the first 500 with a "Show all" under
- * them, so a very long list never buries the sections after it. */
-function Table({ className, rows = 0, ...props }: React.ComponentProps<"table"> & { rows?: number }) {
+ * row count) and past `limit` (500 unless set) it shows the first `limit`
+ * with a "Show all" under them, so a long list never buries the sections
+ * after it. */
+function Table({ className, rows = 0, limit = ROWS, ...props }: React.ComponentProps<"table"> & { rows?: number; limit?: 500 | 50 }) {
   const [all, setAll] = React.useState(false)
-  const capped = rows > ROWS && !all
+  const capped = rows > limit && !all
   return (
-    <div data-slot="table-box" data-capped={capped || undefined}>
+    <div data-slot="table-box" data-capped={capped ? limit : undefined}>
       {/* relative: screen-reader-only labels are absolutely placed, and
           would escape the sideways scroll and widen the whole page. */}
       <div className="relative overflow-x-auto xl:overflow-visible">

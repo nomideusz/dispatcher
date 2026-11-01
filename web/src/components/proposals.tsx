@@ -28,7 +28,7 @@ export function Proposals() {
     <Section
       id="proposals"
       title="Proposals"
-      text={`Paste links to apps worth a template, one or many, with an optional note. Claude reads them at the next routine check and answers each one here.${waiting ? ` ${waiting} waiting.` : ""}`}
+      text={`Links to apps worth a template, one per line. Claude answers each at the next routine check.${waiting ? ` ${waiting} waiting.` : ""}`}
     >
       <form
         className="grid gap-2 sm:grid-cols-[1fr_16rem_auto] sm:items-start"
@@ -40,10 +40,10 @@ export function Proposals() {
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          rows={3}
+          rows={1}
           placeholder="https://github.com/owner/repo"
           aria-label="Links to propose"
-          className="min-h-16 border bg-background px-2 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          className="field-sizing-content min-h-8 max-h-48 resize-none border bg-background px-2 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
         />
         <input
           value={note}

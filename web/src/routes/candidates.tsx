@@ -21,7 +21,6 @@ export default function CandidatesPage() {
         title="Candidates"
         sub="Apps people deploy on Railway, against what we already publish. Shortlist the next build; skip the rest."
       />
-      <Proposals />
       {timeline.isPending && <Skeleton className="h-96 w-full" />}
       {timeline.isError && (
         <p role="alert" className="text-sm text-(--viz-critical)">
@@ -29,6 +28,7 @@ export default function CandidatesPage() {
         </p>
       )}
       {timeline.isSuccess && <Candidates templates={timeline.data?.templates ?? []} />}
+      <Proposals />
     </main>
   );
 }

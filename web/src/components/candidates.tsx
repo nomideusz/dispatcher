@@ -73,6 +73,10 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
     ["app"],
   );
   const maxRecent = Math.max(1, ...rows.map((g) => deploys(g, current)));
+  // Market hides apps we have by default, which would leave "We have" a
+  // column of dashes.
+  const third =
+    current === "market" ? (hideOurs ? null : "We have") : current === "behind" ? "We get" : "Note";
 
   if (q.isPending) return <Skeleton className="h-64 w-full" />;
   if (q.isError) {
@@ -91,12 +95,10 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
 
   return (
     <>
-      <Originals groups={groups} templates={templates} />
-
       <Section
         id="apps"
         title="Apps on Railway"
-        text={`What people deploy, one row per app, from Railway's marketplace read ${fmtAgo(q.data.fetchedAt, new Date().toISOString())} ago. Same-name templates count as one app; Templates counts other creators only. Ours behind: apps we publish where others get most of the 90-day deploys, counting look-alike apps (n8n with postgres, simple n8n) in the app's row.`}
+        text={`What people deploy, one row per app, from Railway's marketplace read ${fmtAgo(q.data.fetchedAt, new Date().toISOString())} ago. Ours behind: apps we publish where others take most of the deploys.`}
       >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div role="group" aria-label="Candidates view" className="flex gap-1">
@@ -160,16 +162,18 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
           {mark.isError && <span className="text-(--viz-critical)"> Not undone, try again.</span>}
         </p>
       )}
-      <Table rows={rows.length} className="min-w-[56rem]">
+      <Table rows={rows.length} limit={50} className="min-w-[56rem]">
         <TableHeader>
           <TableRow>
             {head("app", "App")}
-            {head("recent", "Deployed, 90 days")}
+            {head("recent", "Deployed, 90 days", {
+              hint: current === "behind" ? "Look-alike apps (n8n with postgres, simple n8n) count in the app's row" : "Same-name templates count as one app",
+            })}
             {head("active", "Active", { numeric: true })}
-            {head("rivals", "Templates", { numeric: true })}
-            {head("leader", "Leading template", { hint: "Sorted by its deploy health" })}
-            {head("newest", "Newest", { numeric: true })}
-            <TableHead>{current === "market" ? "We have" : current === "behind" ? "We get" : "Note"}</TableHead>
+            {head("rivals", "Templates", { numeric: true, hint: "Other creators' templates of this app" })}
+            {head("leader", "Leading template", { hint: "Its creator and age; deploy health shows when under 70%. Sorted by health" })}
+            {head("newest", "Newest", { numeric: true, hint: "When the latest template of this app went up" })}
+            {third && <TableHead>{third}</TableHead>}
             <TableHead>
               <span className="sr-only">Actions</span>
             </TableHead>
@@ -177,11 +181,11 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
         </TableHeader>
         <TableBody>
           {rows.map((g) => (
-            <CandidateRow key={g.key} g={g} view={current} maxRecent={maxRecent} onMove={(done) => (setView(current), setUndo({ before: g, done }))} />
+            <CandidateRow key={g.key} g={g} view={current} third={!!third} maxRecent={maxRecent} onMove={(done) => (setView(current), setUndo({ before: g, done }))} />
           ))}
           {rows.length === 0 && (
             <TableRow>
-              <TableCell colSpan={8} className="py-6 text-center text-muted-foreground">
+              <TableCell colSpan={third ? 8 : 7} className="py-6 text-center text-muted-foreground">
                 {current === "shortlist" ? "Nothing shortlisted. Pick from Market." : "No apps match."}
               </TableCell>
             </TableRow>
@@ -189,6 +193,8 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
         </TableBody>
       </Table>
       </Section>
+
+      <Originals groups={groups} templates={templates} />
     </>
   );
 }
@@ -196,11 +202,14 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
 function CandidateRow({
   g,
   view,
+  third,
   maxRecent,
   onMove,
 }: {
   g: CandidateGroup;
   view: View;
+  /** Whether the row has the We have / We get / Note column. */
+  third: boolean;
   maxRecent: number;
   /** Called once a move to another view saved, with what was done. */
   onMove: (done: string) => void;
@@ -244,17 +253,20 @@ function CandidateRow({
       <TableCell className="max-w-56 text-xs whitespace-nowrap text-muted-foreground">
         {l.name ? (
           <div className="truncate">
-            <span className={weak ? "font-medium text-(--viz-caution)" : ""}>
-              {l.health == null ? "—" : `${Math.round(l.health)}%`}
-            </span>{" "}
-            · <Fig>{fmtNum(l.active)}</Fig> active · {monthFmt.format(new Date(l.createdAt))}
-            <div className="truncate">{l.creator || "unknown creator"}</div>
+            <div className="truncate text-foreground">{l.creator || "unknown creator"}</div>
+            since {monthFmt.format(new Date(l.createdAt))}
+            {weak && (
+              <span className="font-medium text-(--viz-caution)">
+                {" "}· health <Fig>{Math.round(l.health!)}%</Fig>
+              </span>
+            )}
           </div>
         ) : (
           "Only ours"
         )}
       </TableCell>
       <TableCell numeric className="text-xs text-muted-foreground">{fmtDay(g.newest)}</TableCell>
+      {third && (
       <TableCell className="max-w-64 text-xs text-muted-foreground">
         {view === "market" ? (
           g.ours.length > 0 ? "Yes" : (g.similar ?? "—")
@@ -280,6 +292,7 @@ function CandidateRow({
           </span>
         )}
       </TableCell>
+      )}
       <TableCell className="text-right whitespace-nowrap">
         {view === "shortlist" ? (
           <Button size="xs" variant="ghost" className="text-muted-foreground" disabled={mark.isPending} aria-label={`Remove ${app} from the shortlist`} onClick={() => move("", `Removed ${app} from the shortlist.`)}>
@@ -291,10 +304,10 @@ function CandidateRow({
           </Button>
         ) : view === "behind" ? null : (
           <>
-            <Button size="xs" variant="secondary" disabled={mark.isPending} aria-label={`Shortlist ${app}`} onClick={() => move("shortlist", `Shortlisted ${app}.`)}>
+            <Button size="xs" variant="ghost" disabled={mark.isPending} aria-label={`Shortlist ${app}`} onClick={() => move("shortlist", `Shortlisted ${app}.`)}>
               Shortlist
             </Button>
-            <Button size="xs" variant="ghost" disabled={mark.isPending} aria-label={`Skip ${app}`} onClick={() => move("skip", `Skipped ${app}.`)}>
+            <Button size="xs" variant="ghost" className="text-muted-foreground" disabled={mark.isPending} aria-label={`Skip ${app}`} onClick={() => move("skip", `Skipped ${app}.`)}>
               Skip
             </Button>
           </>

@@ -14,7 +14,7 @@ import { type PositionShare, type SearchKeyword, searchQuery, useAddKeyword, use
 const PLUMBING = new Set(["Storage", "Starters", "Queues"]);
 
 type View = "ours" | "gaps" | "all";
-type SortKey = "query" | "best" | "demand" | "worth" | "results" | "first";
+type SortKey = "query" | "best" | "demand" | "worth" | "first";
 type Value = (k: SearchKeyword, key: SortKey) => string | number | null;
 
 /** What reaching #1 adds, in 90-day projects: the keyword's demand times the
@@ -88,12 +88,13 @@ export function MarketSearch() {
   const maxDemand = Math.max(1, ...rows.map((k) => k.demand));
   const count = (v: View) => all.filter((k) => inView(k, v, hidePlumbing)).length;
   // A rank or a name reads best from the top; counts from the biggest.
-  const header = (key: SortKey, label: string, hint?: string, numeric = true) => {
+  const header = (key: SortKey, label: string, hint?: string, numeric = true, className?: string) => {
     const on = sort.key === key;
     return (
       <TableSortHead
         numeric={numeric}
         hint={hint}
+        className={className}
         sort={on ? (sort.desc ? "descending" : "ascending") : undefined}
         onSort={() => setSort({ key, desc: on ? !sort.desc : key !== "query" && key !== "best" })}
       >
@@ -124,7 +125,7 @@ export function MarketSearch() {
       <Section
         id="keywords"
         title="Keywords"
-        text={`Railway's top 20 for each keyword, read ${fmtAgo(q.data.sampledAt, new Date().toISOString())} ago. Demand is the 90-day projects of everything a search finds, so broad keywords count big templates more than once. Worth at #1 prices our position with the table below: demand, less its biggest single template, times what #1 holds over what our spot holds.`}
+        text={`Railway's top 20 for each keyword, read ${fmtAgo(q.data.sampledAt, new Date().toISOString())} ago. Open a keyword for its results; point at a column name for what it counts.`}
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div role="group" aria-label="Keywords view" className="flex gap-1">
@@ -152,22 +153,20 @@ export function MarketSearch() {
               type="search"
               value={needle}
               onChange={(e) => setNeedle(e.target.value)}
-              placeholder="Filter keywords"
-              aria-label="Filter keywords"
-              className="h-7 w-40 border bg-background px-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              placeholder="Find or track a keyword"
+              aria-label="Find or track a keyword"
+              className="h-7 w-52 border bg-background px-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
             />
-            <AddKeyword />
           </div>
         </div>
-        <Table rows={rows.length} className="min-w-[48rem]">
+        <Table rows={rows.length} limit={50} className="sm:min-w-[48rem]">
           <TableHeader>
             <TableRow>
               {header("query", "Keyword", undefined, false)}
               {header("best", "We rank", "Our best position now, and the change from a week ago")}
-              {header("demand", "Demand, 90 days", undefined, false)}
-              {header("worth", "Worth at #1", "Projects in 90 days that reaching #1 would add, at most")}
-              {header("results", "Results")}
-              {header("first", "First result", "Sorted by the first result's projects in 90 days", false)}
+              {header("demand", "Demand, 90 days", "Projects in 90 days of everything the search finds, so broad keywords count big templates more than once", false)}
+              {header("worth", "Worth at #1", "Projects in 90 days that reaching #1 would add, at most: demand less its biggest template, times what #1 holds over our spot (see What a position holds)")}
+              {header("first", "First result", "Sorted by the first result's projects in 90 days", false, "max-sm:hidden")}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -175,8 +174,8 @@ export function MarketSearch() {
               <Fragment key={k.query}>
                 <KeywordRow k={k} worth={worth(k)} maxDemand={maxDemand} open={open === k.query} onToggle={() => setOpen(open === k.query ? null : k.query)} />
                 {open === k.query && (
-                  <TableRow>
-                    <TableCell colSpan={6} className="pb-4">
+                  <TableRow data-panel>
+                    <TableCell colSpan={5} className="pb-4">
                       <TopResults k={k} />
                     </TableCell>
                   </TableRow>
@@ -185,7 +184,7 @@ export function MarketSearch() {
             ))}
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
+                <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
                   No keywords match.
                   {/* Not tracked under any view: offer it as typed, so it needn't be retyped. */}
                   {n.length >= 2 && !all.some((k) => k.query === n) && (
@@ -222,25 +221,16 @@ function KeywordRow({
   open: boolean;
   onToggle: () => void;
 }) {
-  const remove = useRemoveKeyword();
   const first = k.top[0];
   return (
     <TableRow>
-      <TableRowHead className="max-w-56">
+      <TableRowHead className="max-w-40 sm:max-w-56">
         <button type="button" aria-expanded={open} onClick={onToggle} className="block max-w-full cursor-pointer truncate text-left font-medium hover:underline">
           {k.query}
         </button>
         <div className="truncate text-xs text-muted-foreground">
           {k.source === "ours" ? "our template" : k.source === "market" ? "market app" : "added by hand"}
           {k.category && k.category !== "Other" ? ` · ${k.category}` : ""}
-          {k.source === "manual" && (
-            <>
-              {" · "}
-              <button type="button" className="cursor-pointer underline underline-offset-3" disabled={remove.isPending} onClick={() => remove.mutate(k.query)}>
-                stop tracking
-              </button>
-            </>
-          )}
         </div>
       </TableRowHead>
       <TableCell numeric>
@@ -249,16 +239,13 @@ function KeywordRow({
       <TableCell>
         <div className="flex items-center gap-2">
           <span className="w-14 text-right tabular-nums">{fmtNum(k.demand)}</span>
-          <TableMeter value={k.demand / maxDemand} color="var(--chart-3)" className="w-24" />
+          <TableMeter value={k.demand / maxDemand} color="var(--chart-3)" className="w-24 max-sm:hidden" />
         </div>
       </TableCell>
       <TableCell numeric className={worth != null && worth >= 1 ? "" : "text-muted-foreground"}>
         {worth == null ? "—" : fmtNum(Math.round(worth))}
       </TableCell>
-      <TableCell numeric className="text-muted-foreground">
-        {k.results === 20 ? "20+" : fmtNum(k.results)}
-      </TableCell>
-      <TableCell className="max-w-72 text-xs text-muted-foreground">
+      <TableCell className="max-w-72 text-xs text-muted-foreground max-sm:hidden">
         {first ? (
           <div className="truncate">
             <a href={`https://railway.com/deploy/${first.code}`} target="_blank" rel="noreferrer" className={cn("hover:underline", first.ours ? "font-medium text-foreground" : "")}>
@@ -297,9 +284,23 @@ function Rank({ k }: { k: SearchKeyword }) {
   );
 }
 
+/** A keyword opened: Railway's results, and for one added by hand the way
+ * to stop tracking it. */
 function TopResults({ k }: { k: SearchKeyword }) {
-  if (k.top.length === 0) return <p className="text-xs text-muted-foreground">Railway returns nothing for this keyword.</p>;
+  const remove = useRemoveKeyword();
+  const stop = k.source === "manual" && (
+    <Button size="xs" variant="ghost" className="text-muted-foreground" disabled={remove.isPending} onClick={() => remove.mutate(k.query)}>
+      {remove.isPending ? "Removing…" : `Stop tracking \u201c${k.query}\u201d`}
+    </Button>
+  );
+  if (k.top.length === 0)
+    return (
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        Railway returns nothing for this keyword. {stop}
+      </div>
+    );
   return (
+    <div className="space-y-2">
     <ol className="grid gap-x-6 gap-y-0.5 text-xs sm:grid-cols-2">
       {k.top.map((r) => (
         <li key={r.templateId} className={cn("flex min-w-0 gap-2", r.ours ? "font-medium text-foreground" : "text-muted-foreground")}>
@@ -312,32 +313,8 @@ function TopResults({ k }: { k: SearchKeyword }) {
         </li>
       ))}
     </ol>
-  );
-}
-
-function AddKeyword() {
-  const add = useAddKeyword();
-  const [value, setValue] = useState("");
-  return (
-    <form
-      className="flex items-center gap-1"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (value.trim().length >= 2) add.mutate(value, { onSuccess: () => setValue("") });
-      }}
-    >
-      <input
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        placeholder="Track a keyword"
-        aria-label="Track a keyword"
-        className="h-7 w-40 border bg-background px-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
-      />
-      <Button size="xs" type="submit" variant="secondary" disabled={add.isPending}>
-        {add.isPending ? "Searching…" : "Track"}
-      </Button>
-      {add.isError && <span role="alert" className="text-(--viz-critical)">Not added</span>}
-    </form>
+    {stop}
+    </div>
   );
 }
 

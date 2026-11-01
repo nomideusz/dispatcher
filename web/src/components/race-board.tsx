@@ -67,6 +67,8 @@ interface Racer {
   first: number;
   /** From launch: the last day it has lived through so far. */
   age?: number;
+  /** From launch: days since it was published, for the "days old" note. */
+  old?: number;
 }
 
 /** A colour of its own per template, given by where it finishes: the top
@@ -143,7 +145,10 @@ function build(data: TimelineResponse, measure: Measure, field: Field, from: Sta
   for (const t of entrants) {
     const base = racerOf(t, field, name);
     const r: Racer = racers.get(base.id) ?? { ...base, cum: new Array(days.length).fill(0), tan: [], first: Infinity };
-    if (launch) r.age = indexOf(t, end);
+    if (launch) {
+      r.age = indexOf(t, end);
+      r.old = since(t.publishedAt!.slice(0, 10), end);
+    }
     racers.set(base.id, r);
     for (const a of t.activity) {
       const i = indexOf(t, a.date);
@@ -473,7 +478,7 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
                 <span className="flex min-w-0 items-center gap-2">
                   <span className={cn("truncate", small ? "text-xs" : "text-sm", rank === 0 && "font-semibold")}>{r.label}</span>
                   {r.age != null && day > r.age && (
-                    <span className="shrink-0 text-xs text-muted-foreground">{Math.max(0, r.age - 1)} days old</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">{r.old} days old</span>
                   )}
                   {move !== 0 && (
                     <span className={cn("shrink-0 text-xs", move > 0 ? "text-(--chart-2)" : "text-muted-foreground")}>

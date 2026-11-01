@@ -25,6 +25,11 @@ const FIELDS: { key: Field; label: string }[] = [
 ];
 const SPEEDS = [0.5, 1, 2, 4] as const;
 type Pace = "real" | "eventful";
+type Start = "full" | "first";
+const STARTS: { key: Start; label: string }[] = [
+  { key: "full", label: "Board full" },
+  { key: "first", label: "First day" },
+];
 const PACES: { key: Pace; label: string }[] = [
   { key: "real", label: "Real time" },
   { key: "eventful", label: "Eventful" },
@@ -111,7 +116,7 @@ function legendOf(field: Field, racers: Racer[]) {
 /** Days from the one before anything scored to the last sample, and each
  * racer's running total over them. From launch, the days are each
  * template's own, counted from the day it was published. */
-function build(data: TimelineResponse, measure: Measure, field: Field) {
+function build(data: TimelineResponse, measure: Measure, field: Field, from: Start) {
   const score = (a: { earnedCents: number; newProjects: number }) => (measure === "kickback" ? a.earnedCents : a.newProjects);
   const dates = data.templates.flatMap((t) => t.activity.filter((a) => score(a) > 0).map((a) => a.date));
   const end = data.sampledAt.slice(0, 10);
@@ -153,6 +158,24 @@ function build(data: TimelineResponse, measure: Measure, field: Field) {
     r.first = r.cum.findIndex((v) => v > 0);
   }
   const scoring = list.filter((r) => r.first >= 0);
+  // Board full: the early stretch (one template paid until August, nothing
+  // in a launch's first days) is a few bars and the odd payment, no race.
+  // Start on the first day the board's top rows are all taken; what came
+  // before is the head start they line up with.
+  if (from === "full") {
+    const need = Math.min(SHOWN, scoring.length);
+    const full = days.findIndex((_, d) => scoring.filter((r) => r.cum[d] > 0).length >= need);
+    const cut = Math.max(0, full - 1);
+    if (cut > 0) {
+      days.splice(0, cut);
+      for (const r of scoring) {
+        r.cum = r.cum.slice(cut);
+        r.tan = r.tan.slice(cut);
+        r.first -= cut;
+        if (r.age != null) r.age -= cut;
+      }
+    }
+  }
   if (field === "templates" || field === "launch") {
     const last = days.length - 1;
     [...scoring].sort((a, b) => b.cum[last] - a.cum[last]).forEach((r, i) => (r.color = finishColor(i)));
@@ -261,7 +284,8 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
   const [field, setField] = useState<Field>("templates");
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(1);
   const [pace, setPace] = useState<Pace>("real");
-  const race = useMemo(() => build(data, measure, field), [data, measure, field]);
+  const [start, setStart] = useState<Start>("full");
+  const race = useMemo(() => build(data, measure, field, start), [data, measure, field, start]);
   const span = race.days.length - 1;
 
   const reduced = useRef(false);
@@ -348,7 +372,7 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
 
   const date = new Date(`${race.days[day] ?? race.days[0]}T00:00:00Z`);
   const flapDate = race.launch
-    ? `DAY ${String(Math.max(0, day - 1)).padStart(String(span).length, "0")}`
+    ? `DAY ${(race.days[day] ?? "").slice(4).padStart((race.days[span] ?? "").slice(4).length, "0")}`
     : `${flapMonth.format(date).toUpperCase()} ${String(date.getUTCDate()).padStart(2, "0")}`;
   const lastLead = (() => {
     for (let d = day; d >= Math.max(0, day - LINGER); d--) if (race.tookLead[d] >= 0) return d;
@@ -372,6 +396,7 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
         <Choice label="Race" options={MEASURES} value={measure} onChange={setMeasure} />
         <Choice label="Between" options={FIELDS} value={field} onChange={setField} />
         <Choice label="Pace" options={PACES} value={pace} onChange={setPace} />
+        <Choice label="Start" options={STARTS} value={start} onChange={setStart} />
       </div>
 
       {/* The board is a carbon island: the dark tokens, whatever the theme. */}
@@ -519,6 +544,7 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
 
       <p className="max-w-[72ch] text-xs text-muted-foreground">
         Each bar is a running total and the longest leads.{" "}
+        {start === "full" && "The race starts once ten racers have scored; what they had by then is their head start. "}
         {measure === "kickback"
           ? "A payout is spread over the week after it lands, so bars grow rather than leap. "
           : "Each day's deploys are spread over the next three days. "}

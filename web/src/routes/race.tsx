@@ -16,7 +16,7 @@ export default function Race() {
 
   return (
     <main className="viz shell space-y-6 py-6">
-      <PageHeader title="Race" sub="Kickback and new projects, day by day, run as a race between templates and their groups" />
+      <PageHeader title="Race" sub="Kickback and projects made, day by day, run as a race between templates and their groups" />
       {timeline.isPending && <Skeleton className="h-[36rem] w-full" />}
       {timeline.isError && (
         <p role="alert" className="text-sm text-(--viz-critical)">

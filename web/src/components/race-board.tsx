@@ -16,7 +16,7 @@ type Field = "templates" | "launch" | "kinds" | "weeks";
 
 const MEASURES: { key: Measure; label: string; board: string }[] = [
   { key: "kickback", label: "Kickback", board: "Kickback earned" },
-  { key: "projects", label: "New projects", board: "New projects" },
+  { key: "projects", label: "Projects made", board: "Projects made" },
 ];
 const FIELDS: { key: Field; label: string }[] = [
   { key: "templates", label: "Templates" },
@@ -143,13 +143,23 @@ function build(data: TimelineResponse, measure: Measure, field: Field) {
   const leader = ranks.map((m) => [...m].find(([, i]) => i === 0)?.[0] ?? null);
   const tookLead = leader.map((id, d) => (d > 0 && id != null && leader[d - 1] != null && id !== leader[d - 1] ? d : -1));
 
-  // The clock warps: a day weighs what moved on it, so a quiet stretch
-  // (kickback's lone payouts from May to August) flies by and the busy days
-  // get the screen. A floor keeps an idle day from passing unseen.
-  const sum = (d: number) => scoring.reduce((s, r) => s + r.cum[d], 0);
-  const totals = days.map((_, d) => sum(d));
-  const mean = Math.max(1, totals[days.length - 1] - totals[0]) / Math.max(1, days.length - 1);
-  const weight = days.map((_, d) => 0.15 + Math.max(0, (totals[d + 1] ?? totals[d]) - totals[d]) / mean);
+  // The clock warps: a day weighs mostly how many places changed on the
+  // board, a little how much the totals grew. Days of overtaking get time to
+  // follow; a stretch where nothing moves (kickback's lone payouts before
+  // August, a burst feeding a runaway leader) passes quickly. A floor keeps
+  // an idle day from passing unseen.
+  const totals = days.map((_, d) => scoring.reduce((s, r) => s + r.cum[d], 0));
+  const swaps = days.map((_, d) => {
+    if (d + 1 >= days.length) return 0;
+    let n = 0;
+    for (const [id, rank] of ranks[d + 1]) if (rank < SHOWN + TAIL && ranks[d].get(id) !== rank) n++;
+    return n;
+  });
+  const per = (xs: number[]) => Math.max(1e-9, xs.reduce((s, x) => s + x, 0) / Math.max(1, xs.length - 1));
+  const growth = days.map((_, d) => Math.max(0, (totals[d + 1] ?? totals[d]) - totals[d]));
+  const meanSwaps = per(swaps);
+  const meanGrowth = per(growth);
+  const weight = days.map((_, d) => 0.12 + Math.min(2, swaps[d] / meanSwaps) + 0.5 * Math.min(2, growth[d] / meanGrowth));
   const clock = weight.slice(0, -1).reduce((s, w) => s + w, 0) || 1;
   return { days, racers: scoring, ranks, leader, tookLead, weight, clock, launch, legend: legendOf(field, scoring) };
 }
@@ -400,14 +410,16 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
       </p>
 
       <p className="max-w-[72ch] text-xs text-muted-foreground">
-        Each bar is a running total and the longest leads. Quiet days pass quickly, busy ones slowly.{" "}
+        Each bar is a running total and the longest leads. Days when places change run slowly, days when nothing moves pass quickly.{" "}
+        {measure === "projects" &&
+          "Projects made counts every project anyone made from a template, the New and Projects columns on Templates, whether or not it is still live. "}
         {field === "launch"
           ? "From launch, every template starts on its publish day, so the young ones race the old on equal footing; a bar stops where the template runs out of days."
           : field === "weeks"
             ? "Templates grouped by the week they were published, coloured by month."
             : measure === "kickback"
               ? "Kickback goes back to the first payout in May."
-              : "New projects start when collection began in August."}
+              : "The count starts when collection began in August."}
       </p>
     </div>
   );

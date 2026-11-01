@@ -12,20 +12,20 @@ const pct = (v: number) => `${Math.round(v * 100)}%`;
 const monthFmt = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
 
 /** Whole days from publishing to the first kickback; null if it never paid. */
-const daysToPay = (t: TimelineTemplate) =>
+export const daysToPay = (t: TimelineTemplate) =>
   t.publishedAt && t.firstPaidAt
     ? Math.max(0, Math.floor((Date.parse(t.firstPaidAt) - Date.parse(t.publishedAt)) / DAY))
     : null;
 
-type Life = { age: number; paid: number | null };
-const lifeOf = (t: TimelineTemplate, now: number): Life | null =>
+export type Life = { age: number; paid: number | null };
+export const lifeOf = (t: TimelineTemplate, now: number): Life | null =>
   t.publishedAt ? { age: Math.floor((now - Date.parse(t.publishedAt)) / DAY), paid: daysToPay(t) } : null;
 
 /** Share paid by each day 0..last after publishing, Kaplan–Meier: each
  * day's payers over the templates still unpaid and at least that old, so a
  * young template that already paid counts now instead of once it ages past
  * the day. n is how many are that old; under five the share is null. */
-function paidCurve(life: Life[], last: number) {
+export function paidCurve(life: Life[], last: number) {
   let unpaid = 1;
   return Array.from({ length: last + 1 }, (_, day) => {
     const old = life.filter((l) => l.age >= day);

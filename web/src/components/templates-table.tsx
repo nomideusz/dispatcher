@@ -30,7 +30,12 @@ const FILTERS = {
   earning: { label: "Earning", test: (r: Row) => (r.earned30d ?? 0) > 0 },
   idle: {
     label: "Deployed, not earning",
-    test: (r: Row) => (r.running ?? r.activeProjects) > 0 && !r.earned30d,
+    // Two weeks in: younger ones mostly haven't had time to pay.
+    test: (r: Row) =>
+      (r.running ?? r.activeProjects) > 0 &&
+      !r.earned30d &&
+      r.publishedAt != null &&
+      Date.now() - Date.parse(r.publishedAt) >= 14 * 86_400_000,
   },
   unused: { label: "No projects", test: (r: Row) => r.projects === 0 },
   unsorted: { label: "Unsorted", test: (r: Row) => !r.kind },
@@ -99,11 +104,12 @@ export function TemplatesTable({
   // typing would outrun the navigation and drop letters.
   const [search, setSearch] = useState(() => params.get("q") ?? "");
   useEffect(() => setParams({ q: search || null }), [search]);
-  const s = params.get("sort") ?? "-lifetimeCents";
+  // Earned in the range by default: what pays now, not what paid since July.
+  const s = params.get("sort") ?? "-earnedCents";
   const sortKey = s.replace(/^-/, "") as SortKey;
   const sort = SORT_KEYS.includes(sortKey)
     ? { key: sortKey, desc: s.startsWith("-") }
-    : { key: "lifetimeCents" as SortKey, desc: true };
+    : { key: "earnedCents" as SortKey, desc: true };
   const setFilter = (v: Filter) => setParams({ filter: v === "all" ? null : v });
   const showAll = () => {
     setSearch("");
@@ -150,7 +156,7 @@ export function TemplatesTable({
         sort={on ? (sort.desc ? "descending" : "ascending") : undefined}
         onSort={() => {
           const desc = on ? !sort.desc : key !== "name";
-          setParams({ sort: key === "lifetimeCents" && desc ? null : `${desc ? "-" : ""}${key}` });
+          setParams({ sort: key === "earnedCents" && desc ? null : `${desc ? "-" : ""}${key}` });
         }}
       >
         {label}

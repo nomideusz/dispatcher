@@ -181,7 +181,6 @@ export function PayoutHistory({ days }: { days: number }) {
                   <Fig>{data.totals.pendingCount}</Fig> pending
                 </DocketCell>
               )}
-              <DueFigure payers={data.payers} />
             </div>
             {data.window.count > 0 && <PayoutHistoryChart points={data.points} />}
           </CardContent>
@@ -275,23 +274,6 @@ function WindowFigure({ days, data }: { days: number; data: PayoutHistoryData })
           <Fig>{count}</Fig> {count === 1 ? "payout" : "payouts"}
         </>
       )}
-    </DocketCell>
-  );
-}
-
-/** Kickback the current payers should bring in over the next 30 days: each
- * one's last amount, if they're due again in that time. */
-function DueFigure({ payers }: { payers: PayerChain[] }) {
-  const horizon = new Date(Date.now() + 30 * 86_400_000).toISOString();
-  const due = payers.filter((p) => p.status !== "lapsed" && p.nextDueAt <= horizon);
-  if (due.length === 0) return null;
-  const now = new Date().toISOString();
-  const upcoming = due.filter((p) => p.nextDueAt >= now);
-  const next = upcoming.length ? upcoming.reduce((a, b) => (a.nextDueAt < b.nextDueAt ? a : b)) : null;
-  return (
-    <DocketCell label="Expected from payers, 30 days" value={`~${fmtCents(due.reduce((s, p) => s + p.lastCents, 0))}`} small>
-      <Fig>{due.length}</Fig> {due.length === 1 ? "payer" : "payers"}
-      {next ? `, next ${relDay(next.nextDueAt)}` : ""}
     </DocketCell>
   );
 }

@@ -12,7 +12,11 @@ import type { Route } from "./+types/root";
 import { Skeleton } from "~/components/ui/skeleton";
 import "./app.css";
 
-const queryClient = new QueryClient();
+// The collector samples hourly and the market and search reads run daily;
+// polling every five minutes (only while the tab is visible) shows new data
+// without a browser refresh.
+// ponytail: blind poll; push from the collector if five minutes feels slow.
+const queryClient = new QueryClient({ defaultOptions: { queries: { refetchInterval: 5 * 60_000 } } });
 
 export const links: Route.LinksFunction = () => [
   { rel: "icon", href: "/favicon.ico", sizes: "48x48" },

@@ -7,6 +7,7 @@ import { Earnings } from "~/components/earnings";
 import { DOCKET, DocketCell, Fig, PageHeader, Section, useHashFollow } from "~/components/page";
 import { behindTemplateCount } from "~/components/upgrade-queue";
 import { AutoWithdraw } from "~/components/auto-withdraw-dialog";
+import { Forecast } from "~/components/forecast";
 import { PayoutHistory } from "~/components/payout-history";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
@@ -80,6 +81,20 @@ export default function Money() {
               </CardContent>
             </Card>
           </Section>
+
+          {payouts.data && (
+            <Section
+              id="forecast"
+              title="Forecast"
+              text="Kickback the next 30 days should bring: payers due again, new payers on templates that already pay, and templates yet to pay, by size. A rough guide built from the last 30 days."
+            >
+              <Card>
+                <CardContent>
+                  <Forecast data={data} payers={payouts.data.payers} />
+                </CardContent>
+              </Card>
+            </Section>
+          )}
 
           <Section
             id="payouts"

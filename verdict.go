@@ -11,12 +11,15 @@ import (
 )
 
 // The day-14 verdict (docs/designs/day-14-template-verdict.md): read every
-// template at day 14, test against day 45 (later day 90) whether that
-// reading told which ones went on to earn, and call a template keep or
+// template at verdictReadDay, test against day 45 (later day 90) whether
+// that reading told which ones went on to earn, and call a template keep or
 // watch only while a stored checkpoint says its predictor passed.
 
 const (
-	verdictReadDay      = 14
+	// verdictReadDay was 14 until 2026-11-01: 11 of the 17 scored templates
+	// that ever paid first paid after day 14, so P1 could never get its five
+	// true and "keep" was unreachable. By day 21, 10 of the 17 had paid.
+	verdictReadDay      = 21
 	verdictTolerance    = 24 * time.Hour // a reading is the real row closest to its day, at most a day off
 	verdictMinN         = 20
 	verdictMinPositives = 4
@@ -53,10 +56,13 @@ type verdictSubject struct {
 	FirstSeenAt time.Time
 	// Published: still in the catalog at the latest sample.
 	Published bool
-	// Services from the first snapshot at or after day 14 that recorded
-	// them, so it stays fixed like the day-14 reading.
+	// Services from the first snapshot at or after the read day that
+	// recorded them, so it stays fixed like the reading.
 	Services int64
-	rows     []verdictRow
+	// FirstPaidAt is the first payout attributed to it. Railway's
+	// total_earnings lags payouts by up to a day, so P1 reads both.
+	FirstPaidAt *time.Time
+	rows        []verdictRow
 }
 
 // verdictRow is a snapshot where templateMetrics came back; rows where it
@@ -94,7 +100,7 @@ type originGroup struct {
 type verdictExcluded struct {
 	PreTracking int `json:"preTracking"`
 	Unpublished int `json:"unpublished"`
-	NoDay14     int `json:"noDay14"`
+	NoReading   int `json:"noReading"`
 	NoOutcome   int `json:"noOutcome"`
 }
 
@@ -114,7 +120,7 @@ type verdictBacktest struct {
 type templateVerdict struct {
 	TemplateID string          `json:"templateId"`
 	State      string          `json:"state"` // too early, pre-tracking, keep, watch, no signal
-	Day14      *verdictReading `json:"day14"`
+	Reading    *verdictReading `json:"reading"`
 	P1         *bool           `json:"p1"`
 	P2         *bool           `json:"p2"`
 }
@@ -160,14 +166,18 @@ func (s verdictSubject) reading(n int, now time.Time) *verdictReading {
 }
 
 // preTracking: already live when tracking began, so its first sample is not
-// its day 0 and its "day 14" would hold months of earnings.
+// its day 0 and its read-day reading would hold months of earnings.
 func (s verdictSubject) preTracking(trackedSince time.Time) bool {
 	return s.FirstSeenAt.Equal(trackedSince)
 }
 
-// P1: accruing at day 14. P2: heavy (2+ services) and in use.
-func p1(r *verdictReading) bool                   { return r.Earnings > 0 }
-func p2(s verdictSubject, r *verdictReading) bool { return r.ActiveProjects > 0 && s.Services >= 2 }
+// P1: paid by the read day, by Railway's count or our payout ledger.
+// P2: heavy (2+ services) and in use by more than one project: one active
+// project is mostly our own lingering canary.
+func p1(s verdictSubject, r *verdictReading) bool {
+	return r.Earnings > 0 || (s.FirstPaidAt != nil && !s.FirstPaidAt.After(s.FirstSeenAt.Add(days(verdictReadDay))))
+}
+func p2(s verdictSubject, r *verdictReading) bool { return r.ActiveProjects >= 2 && s.Services >= 2 }
 
 func backtestAt(subjects []verdictSubject, trackedSince, now time.Time, horizon int) verdictBacktest {
 	b := verdictBacktest{Horizon: horizon, Origins: map[string]*originGroup{}}
@@ -189,26 +199,26 @@ func backtestAt(subjects []verdictSubject, trackedSince, now time.Time, horizon 
 			b.Excluded.PreTracking++
 			continue
 		}
-		day14, outcome := s.reading(verdictReadDay, now), s.reading(horizon, now)
+		read, outcome := s.reading(verdictReadDay, now), s.reading(horizon, now)
 		switch {
-		case (day14 == nil || outcome == nil) && !s.Published:
+		case (read == nil || outcome == nil) && !s.Published:
 			b.Excluded.Unpublished++
 			continue
-		case day14 == nil:
-			b.Excluded.NoDay14++
+		case read == nil:
+			b.Excluded.NoReading++
 			continue
 		case outcome == nil:
 			b.Excluded.NoOutcome++
 			continue
 		}
-		positive := outcome.Earnings >= day14.Earnings+minOutcomeRise
+		positive := outcome.Earnings >= read.Earnings+minOutcomeRise
 		pos := idx(positive)
 		b.N++
 		b.Positives += pos
-		p1Groups[idx(p1(day14))][0]++
-		p1Groups[idx(p1(day14))][1] += pos
-		p2Groups[idx(p2(s, day14))][0]++
-		p2Groups[idx(p2(s, day14))][1] += pos
+		p1Groups[idx(p1(s, read))][0]++
+		p1Groups[idx(p1(s, read))][1] += pos
+		p2Groups[idx(p2(s, read))][0]++
+		p2Groups[idx(p2(s, read))][1] += pos
 		if s.TemplateID == twentyTemplateID {
 			continue
 		}
@@ -262,9 +272,9 @@ func verdictStates(subjects []verdictSubject, trackedSince, now time.Time, check
 	out := make([]templateVerdict, 0, len(subjects))
 	for _, s := range subjects {
 		v := templateVerdict{TemplateID: s.TemplateID}
-		v.Day14 = s.reading(verdictReadDay, now)
-		if v.Day14 != nil && !s.preTracking(trackedSince) {
-			a, b := p1(v.Day14), p2(s, v.Day14)
+		v.Reading = s.reading(verdictReadDay, now)
+		if v.Reading != nil && !s.preTracking(trackedSince) {
+			a, b := p1(s, v.Reading), p2(s, v.Reading)
 			v.P1, v.P2 = &a, &b
 		}
 		switch {
@@ -362,7 +372,9 @@ func loadVerdictSubjects(db *gorm.DB) ([]verdictSubject, error) {
 		       seen.last_seen_at = (SELECT MAX(last_seen_at) FROM seen) AS published,
 		       COALESCE((SELECT arg_min(s.services, s.sampled_at) FROM template_snapshots s
 		                 WHERE s.template_id = seen.template_id AND s.services > 0
-		                   AND s.sampled_at >= seen.first_seen_at + INTERVAL 14 DAY), 0) AS services
+		                   AND s.sampled_at >= seen.first_seen_at + INTERVAL ` + fmt.Sprint(verdictReadDay) + ` DAY), 0) AS services,
+		       (SELECT MIN(p.created_at) FROM payouts p
+		         WHERE p.template_id = seen.template_id AND p.amount_cents > 0) AS first_paid_at
 		FROM seen LEFT JOIN template_origins o USING (template_id)
 		ORDER BY seen.first_seen_at, seen.template_id`).Scan(&subjects).Error
 	if err != nil {

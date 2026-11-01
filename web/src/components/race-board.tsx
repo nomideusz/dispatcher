@@ -289,7 +289,10 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
   const span = race.days.length - 1;
 
   const reduced = useRef(false);
-  const [t, setT] = useState(0);
+  // Clamped: switching from a finished long race to a shorter one renders
+  // once with the old clock before the reset below lands, past the last day.
+  const [clockT, setT] = useState(0);
+  const t = Math.min(clockT, span);
   const [playing, setPlaying] = useState(false);
   const tRef = useRef(0);
   tRef.current = t;

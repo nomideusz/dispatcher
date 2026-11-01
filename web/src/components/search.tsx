@@ -14,13 +14,21 @@ import { type PositionShare, type SearchKeyword, searchQuery, useAddKeyword, use
 const PLUMBING = new Set(["Storage", "Starters", "Queues"]);
 
 type View = "ours" | "gaps" | "all";
-type SortKey = "query" | "best" | "demand" | "results" | "first";
+type SortKey = "query" | "best" | "demand" | "worth" | "results" | "first";
+type Value = (k: SearchKeyword, key: SortKey) => string | number | null;
 
-const sortValue = (k: SearchKeyword, key: SortKey): string | number | null =>
-  key === "first" ? (k.top[0]?.recent ?? null) : k[key];
+/** What reaching #1 adds, in 90-day projects: the keyword's demand times the
+ * share #1 holds over the share at our position (none when we're unlisted).
+ * ponytail: average shares across all keywords, an upper bound; per-keyword
+ * click data would sharpen it if Railway ever exposes it. */
+function worthOf(curve: PositionShare[]) {
+  const share = new Map(curve.map((c) => [c.position, c.share]));
+  const first = share.get(1) ?? 0;
+  return (k: SearchKeyword) => (k.best === 1 ? null : k.demand * (first - (k.best == null ? 0 : (share.get(k.best) ?? 0))));
+}
 
 /** Blanks (not ranked, no results) stay last whichever way it's sorted. */
-function compare(a: SearchKeyword, b: SearchKeyword, key: SortKey, desc: boolean): number {
+function compare(a: SearchKeyword, b: SearchKeyword, key: SortKey, desc: boolean, sortValue: Value): number {
   const x = sortValue(a, key);
   const y = sortValue(b, key);
   if (x == null || y == null) return x == null ? (y == null ? 0 : 1) : -1;
@@ -44,7 +52,7 @@ export function MarketSearch() {
   const [needle, setNeedle] = useState("");
   const [hidePlumbing, setHidePlumbing] = useState(true);
   const [open, setOpen] = useState<string | null>(null);
-  const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: "demand", desc: true });
+  const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: "worth", desc: true });
   const add = useAddKeyword();
 
   if (q.isPending) return <Skeleton className="h-96 w-full" />;
@@ -63,11 +71,13 @@ export function MarketSearch() {
   }
 
   const all = q.data.keywords;
+  const worth = worthOf(q.data.curve);
+  const value: Value = (k, key) => (key === "worth" ? worth(k) : key === "first" ? (k.top[0]?.recent ?? null) : k[key]);
   const own = all.filter((k) => k.source === "ours");
   const n = needle.trim().toLowerCase();
   const rows = all
     .filter((k) => inView(k, view, hidePlumbing) && (!n || k.query.includes(n)))
-    .sort((a, b) => compare(a, b, sort.key, sort.desc) || b.demand - a.demand);
+    .sort((a, b) => compare(a, b, sort.key, sort.desc, value) || b.demand - a.demand);
   const maxDemand = Math.max(1, ...rows.map((k) => k.demand));
   const count = (v: View) => all.filter((k) => inView(k, v, hidePlumbing)).length;
   // A rank or a name reads best from the top; counts from the biggest.
@@ -107,7 +117,7 @@ export function MarketSearch() {
       <Section
         id="keywords"
         title="Keywords"
-        text={`Railway's top 20 for each keyword, read ${fmtAgo(q.data.sampledAt, new Date().toISOString())} ago. Demand is the 90-day projects of everything a search finds, so broad keywords count big templates more than once.`}
+        text={`Railway's top 20 for each keyword, read ${fmtAgo(q.data.sampledAt, new Date().toISOString())} ago. Demand is the 90-day projects of everything a search finds, so broad keywords count big templates more than once. Worth at #1 prices our position with the table below: demand times what #1 holds over what our spot holds.`}
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div role="group" aria-label="Keywords view" className="flex gap-1">
@@ -148,6 +158,7 @@ export function MarketSearch() {
               {header("query", "Keyword", undefined, false)}
               {header("best", "We rank", "Our best position now, and the change from a week ago")}
               {header("demand", "Demand, 90 days", undefined, false)}
+              {header("worth", "Worth at #1", "Projects in 90 days that reaching #1 would add, at most")}
               {header("results", "Results")}
               {header("first", "First result", "Sorted by the first result's projects in 90 days", false)}
             </TableRow>
@@ -155,10 +166,10 @@ export function MarketSearch() {
           <TableBody>
             {rows.map((k) => (
               <Fragment key={k.query}>
-                <KeywordRow k={k} maxDemand={maxDemand} open={open === k.query} onToggle={() => setOpen(open === k.query ? null : k.query)} />
+                <KeywordRow k={k} worth={worth(k)} maxDemand={maxDemand} open={open === k.query} onToggle={() => setOpen(open === k.query ? null : k.query)} />
                 {open === k.query && (
                   <TableRow>
-                    <TableCell colSpan={5} className="pb-4">
+                    <TableCell colSpan={6} className="pb-4">
                       <TopResults k={k} />
                     </TableCell>
                   </TableRow>
@@ -167,7 +178,7 @@ export function MarketSearch() {
             ))}
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
                   No keywords match.
                   {/* Not tracked under any view: offer it as typed, so it needn't be retyped. */}
                   {n.length >= 2 && !all.some((k) => k.query === n) && (
@@ -191,7 +202,19 @@ export function MarketSearch() {
   );
 }
 
-function KeywordRow({ k, maxDemand, open, onToggle }: { k: SearchKeyword; maxDemand: number; open: boolean; onToggle: () => void }) {
+function KeywordRow({
+  k,
+  worth,
+  maxDemand,
+  open,
+  onToggle,
+}: {
+  k: SearchKeyword;
+  worth: number | null;
+  maxDemand: number;
+  open: boolean;
+  onToggle: () => void;
+}) {
   const remove = useRemoveKeyword();
   const first = k.top[0];
   return (
@@ -221,6 +244,9 @@ function KeywordRow({ k, maxDemand, open, onToggle }: { k: SearchKeyword; maxDem
           <span className="w-14 text-right tabular-nums">{fmtNum(k.demand)}</span>
           <TableMeter value={k.demand / maxDemand} color="var(--chart-3)" className="w-24" />
         </div>
+      </TableCell>
+      <TableCell numeric className={worth != null && worth >= 1 ? "" : "text-muted-foreground"}>
+        {worth == null ? "—" : fmtNum(Math.round(worth))}
       </TableCell>
       <TableCell numeric className="text-muted-foreground">
         {k.results === 20 ? "20+" : fmtNum(k.results)}

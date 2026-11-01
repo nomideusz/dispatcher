@@ -32,7 +32,10 @@ const sortValue = (g: CandidateGroup, key: SortKey) =>
  * templates that have no rival at all. */
 export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
   const q = useQuery(candidatesQuery);
-  const [view, setView] = useState<View>("shortlist");
+  // Unset until picked: opens on the shortlist, or on Market while nothing
+  // is shortlisted. The first move pins it, so shortlisting the first app
+  // doesn't jump the page to Shortlist.
+  const [view, setView] = useState<View | null>(null);
   const [search, setSearch] = useState("");
   const [hidePlumbing, setHidePlumbing] = useState(true);
   const [hideOurs, setHideOurs] = useState(true);
@@ -54,9 +57,10 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
     market: groups.filter((g) => inView(g, "market")).length,
     skip: groups.filter((g) => inView(g, "skip")).length,
   };
+  const current: View = view ?? (counts.shortlist > 0 ? "shortlist" : "market");
   const needle = search.trim().toLowerCase();
   const { rows, head } = useSort(
-    groups.filter((g) => inView(g, view) && (!needle || g.key.includes(needle) || g.leader.name.toLowerCase().includes(needle))),
+    groups.filter((g) => inView(g, current) && (!needle || g.key.includes(needle) || g.leader.name.toLowerCase().includes(needle))),
     sortValue,
     "recent",
     ["app"],
@@ -99,8 +103,8 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
             <Button
               key={v}
               size="xs"
-              aria-pressed={view === v}
-              variant={view === v ? "secondary" : "ghost"}
+              aria-pressed={current === v}
+              variant={current === v ? "secondary" : "ghost"}
               onClick={() => setView(v)}
             >
               {label}
@@ -109,7 +113,7 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
           ))}
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
-          {view === "market" && (
+          {current === "market" && (
             <>
               <label className="flex items-center gap-1.5">
                 <input type="checkbox" checked={hidePlumbing} onChange={(e) => setHidePlumbing(e.target.checked)} />
@@ -157,7 +161,7 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
             {head("rivals", "Templates", { numeric: true })}
             {head("leader", "Leading template", { hint: "Sorted by its deploy health" })}
             {head("newest", "Newest", { numeric: true })}
-            <TableHead>{view === "market" ? "We have" : "Note"}</TableHead>
+            <TableHead>{current === "market" ? "We have" : "Note"}</TableHead>
             <TableHead>
               <span className="sr-only">Actions</span>
             </TableHead>
@@ -165,12 +169,12 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
         </TableHeader>
         <TableBody>
           {rows.map((g) => (
-            <CandidateRow key={g.key} g={g} view={view} maxRecent={maxRecent} onMove={(done) => setUndo({ before: g, done })} />
+            <CandidateRow key={g.key} g={g} view={current} maxRecent={maxRecent} onMove={(done) => (setView(current), setUndo({ before: g, done }))} />
           ))}
           {rows.length === 0 && (
             <TableRow>
               <TableCell colSpan={8} className="py-6 text-center text-muted-foreground">
-                {view === "shortlist" ? "Nothing shortlisted. Pick from Market." : "No apps match."}
+                {current === "shortlist" ? "Nothing shortlisted. Pick from Market." : "No apps match."}
               </TableCell>
             </TableRow>
           )}

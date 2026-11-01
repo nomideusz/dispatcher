@@ -180,14 +180,14 @@ func runMarketFetch(db *gorm.DB) {
 }
 
 var (
-	marketCut   = regexp.MustCompile(`[(\[–—:|]| - `)
+	marketCut   = regexp.MustCompile(`[(\[–—:|]| - | by `)
 	marketNoise = regexp.MustCompile(`\b(production|prod|self[- ]?hosted|template|railway|latest|official|community|edition|v?\d+(\.\d+)*)\b`)
 	marketSpace = regexp.MustCompile(`\s+`)
 	marketPunct = regexp.MustCompile(`[^a-z0-9]`)
 )
 
 // marketKey groups templates of the same app: "Ghost (Production)",
-// "ghost v5" and "Ghost - blog" all read "ghost". Stacks keep their extras
+// "ghost v5", "Ghost - blog" and "Ghost by Acme" all read "ghost". Stacks keep their extras
 // ("ghost + mysql"), which is what sets them apart.
 func marketKey(name string) string {
 	n := strings.ToLower(name)

@@ -9,13 +9,14 @@ import (
 
 func TestMarketKey(t *testing.T) {
 	for name, want := range map[string]string{
-		"Ghost (Production)":         "ghost",
-		"Ghost v5":                   "ghost",
-		"Ghost - blog":               "ghost",
-		"Ghost + MySQL":              "ghost + mysql",
-		"n8n | Self-hosted workflow": "n8n",
-		"Twenty CRM Production":      "twenty crm",
-		"Moodle 5.2":                 "moodle",
+		"Ghost (Production)":            "ghost",
+		"Ghost v5":                      "ghost",
+		"Ghost - blog":                  "ghost",
+		"Ghost + MySQL":                 "ghost + mysql",
+		"n8n | Self-hosted workflow":    "n8n",
+		"Twenty CRM Production":         "twenty crm",
+		"Moodle 5.2":                    "moodle",
+		"Hermes Agent by Nous Research": "hermes agent",
 	} {
 		if got := marketKey(name); got != want {
 			t.Errorf("marketKey(%q) = %q, want %q", name, got, want)

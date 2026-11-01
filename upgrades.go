@@ -716,15 +716,16 @@ type upgradeRow struct {
 	Code               string   `json:"code"`
 	Status             string   `json:"status"`
 	EarningsLast30Days *float64 `json:"earningsLast30Days"`
-	// RunningInstances orders the queue among templates that earned in 30
-	// days: it tracks earnings better than active projects, but desktops
-	// run hundreds of instances that never pay (Edge: 550 running, $0).
+	// RunningInstances breaks ties in 30-day earnings, mostly among templates
+	// that earn nothing yet. It can't lead: what an instance pays varies ~40x
+	// (Twenty vs Evolution), and desktops run hundreds that never pay (Edge:
+	// 550 running, $0).
 	RunningInstances *int64 `json:"runningInstances"`
 }
 
 // upgradeRows lists every checked service with its template's latest
-// snapshot, behind-first, earning templates before the rest, then by running
-// instances and 30-day earnings, so the top of the list
+// snapshot, behind-first, then by 30-day earnings and running instances, so
+// the top of the list
 // is the upgrade that matters most. Templates in the latest snapshot run
 // with nothing checked come back as one row with behind "unchecked", so
 // the list covers the whole catalog.
@@ -745,7 +746,7 @@ func upgradeRows(db *gorm.DB) ([]upgradeRow, error) {
 		FULL JOIN latest l ON l.template_id = si.template_id
 		WHERE si.template_id IS NOT NULL OR l.sampled_at = (SELECT max(sampled_at) FROM template_snapshots)
 		ORDER BY CASE si.behind WHEN 'minor' THEN 0 WHEN 'patch' THEN 0 ELSE 1 END,
-		         COALESCE(l.earnings_last30_days, 0) > 0 DESC, l.active_deployments DESC NULLS LAST, l.earnings_last30_days DESC NULLS LAST, l.name, si.service`).Scan(&rows).Error
+		         l.earnings_last30_days DESC NULLS LAST, l.active_deployments DESC NULLS LAST, l.name, si.service`).Scan(&rows).Error
 	return rows, err
 }
 

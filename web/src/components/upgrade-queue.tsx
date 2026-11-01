@@ -26,7 +26,7 @@ const MATCHES: Record<UpgradeFilter, (u: ServiceUpgrade) => boolean> = {
 const templateCount = (rows: ServiceUpgrade[]) => new Set(rows.map((u) => u.templateId)).size;
 
 /** Rows by template, templates in the order they first appear (the server's
- * behind-first, earning-first, most-running-first order). */
+ * behind-first, most-earning-first order). */
 function byTemplate(rows: ServiceUpgrade[]): ServiceUpgrade[][] {
   const groups = new Map<string, ServiceUpgrade[]>();
   for (const u of rows) groups.set(u.templateId, [...(groups.get(u.templateId) ?? []), u]);
@@ -48,7 +48,7 @@ export function UpgradeQueue() {
   const groups = byTemplate(shown);
   // Most lines have no later major; the column shows only when one does.
   const majors = shown.some((u) => u.major !== "");
-  // The server orders behind-first, earning-first, most-running-first, so the first
+  // The server orders behind-first, most-earning-first, so the first
   // template behind is the one to upgrade next.
   const first = byTemplate(rows.filter(MATCHES.behind))[0];
 

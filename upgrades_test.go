@@ -187,8 +187,8 @@ func TestTemplateImagesDockerfilePath(t *testing.T) {
 
 // Every template of the latest snapshot run is listed, the ones with
 // nothing checked as a single "unchecked" row; a template gone from the
-// catalog is not. Behind templates that earn come busiest first, whatever
-// they earned; a busy one that earns nothing comes after them.
+// catalog is not. Behind templates come most-earning first, however many
+// instances run; running only orders those earning the same.
 func TestUpgradeRows(t *testing.T) {
 	db, err := gorm.Open(duckdb.Open(filepath.Join(t.TempDir(), "rows.duckdb")), &gorm.Config{})
 	if err != nil {
@@ -219,7 +219,7 @@ func TestUpgradeRows(t *testing.T) {
 	for _, r := range rows {
 		got = append(got, r.TemplateID+"/"+r.Service+"/"+r.Behind+"/"+r.Name)
 	}
-	want := "[busy/app/minor/Busy pinned/app/patch/Pinned free/app/patch/Free pinned/db//Pinned bare//unchecked/Bare]"
+	want := "[pinned/app/patch/Pinned busy/app/minor/Busy free/app/patch/Free pinned/db//Pinned bare//unchecked/Bare]"
 	if fmt.Sprint(got) != want {
 		t.Errorf("upgradeRows = %v, want %v", got, want)
 	}

@@ -16,7 +16,7 @@ export default function Upgrades() {
       <Section
         id="queue"
         title="Queue"
-        text="Templates behind on their pinned line first, earning ones first, the most-running first. Majors and every template are a filter away."
+        text="Templates behind on their pinned line first, the most-earning first, then the most running. Majors and every template are a filter away."
       >
         <UpgradeQueue />
       </Section>

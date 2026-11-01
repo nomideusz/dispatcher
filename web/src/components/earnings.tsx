@@ -150,7 +150,10 @@ export function Earnings({ data }: { data: TimelineResponse }) {
             </defs>
             <CartesianGrid vertical={false} />
             <XAxis dataKey="date" scale="band" hide />
-            <YAxis yAxisId="usd" width={52} {...tick} tickCount={4} domain={[0, "auto"]} tickFormatter={fmtUsdTick} />
+            {/* Kickback only rises: from zero, a week of it is a flat line at
+                the top. The axis starts near the window's first figure instead
+                (still zero when the window reaches the first payout). */}
+            <YAxis yAxisId="usd" width={52} {...tick} tickCount={4} domain={["auto", "auto"]} tickFormatter={fmtUsdTick} />
             <YAxis yAxisId="n" orientation="right" width={36} {...tick} tickCount={4} allowDecimals={false} domain={[0, "auto"]} />
             <Tooltip
               isAnimationActive={false}

@@ -59,8 +59,10 @@ func TestTimelineBucketsDeltasGapsAndLedger(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got.Window.EarnedCents != 400 || got.Window.NewProjects != 3 {
-		t.Errorf("window = %+v, want 400¢ earned (300 ledger + 50 + 50) and 3 new projects", got.Window)
+	// Published inside the window: the 5 projects the first snapshot found
+	// were made in it too, if not seen arriving.
+	if got.Window.EarnedCents != 400 || got.Window.NewProjects != 8 {
+		t.Errorf("window = %+v, want 400¢ earned (300 ledger + 50 + 50) and 8 new projects", got.Window)
 	}
 	if got.Window.PreviousNewProjects != nil {
 		t.Errorf("previous new projects = %d, want nil: tracking began inside the window", *got.Window.PreviousNewProjects)
@@ -105,8 +107,8 @@ func TestTimelineBucketsDeltasGapsAndLedger(t *testing.T) {
 		t.Fatalf("templates = %d, want 1", len(got.Templates))
 	}
 	a := got.Templates[0]
-	if a.LifetimeCents != 200 || a.EarnedCents != 400 || a.NewProjects != 3 || len(a.Activity) != 3 {
-		t.Errorf("template = %+v, want 200¢ lifetime, 400¢ earned, 3 new over 3 active days", a)
+	if a.LifetimeCents != 200 || a.EarnedCents != 400 || a.NewProjects != 8 || len(a.Activity) != 3 {
+		t.Errorf("template = %+v, want 200¢ lifetime, 400¢ earned, 8 new (3 over 3 active days)", a)
 	}
 	if a.LastDeployAt == nil || !a.LastDeployAt.Equal(t4) || !a.LastDeployAfter.Equal(t2) {
 		t.Errorf("last deploy = %v after %v, want %v after %v", a.LastDeployAt, a.LastDeployAfter, t4, t2)
@@ -132,6 +134,17 @@ func TestTimelineBucketsDeltasGapsAndLedger(t *testing.T) {
 	}
 	if all.Window.Days != 11 || len(all.Points) != 11 || all.Points[0].Date != key(published) {
 		t.Errorf("all-time = %d days from %s, want 11 from %s", all.Window.Days, all.Points[0].Date, key(published))
+	}
+
+	// A week starts after the publish: only the projects seen arriving.
+	rec = httptest.NewRecorder()
+	handleTimeline(db)(rec, httptest.NewRequest("GET", "/api/analytics/timeline?days=7", nil))
+	var week timelineResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &week); err != nil {
+		t.Fatal(err)
+	}
+	if week.Window.NewProjects != 3 || week.Templates[0].NewProjects != 3 {
+		t.Errorf("week new = %d/%d, want 3/3", week.Window.NewProjects, week.Templates[0].NewProjects)
 	}
 }
 

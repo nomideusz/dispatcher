@@ -91,11 +91,14 @@ export function TemplatesTable({
   templates,
   byTemplate,
   dates,
+  trackedSince,
 }: {
   templates: TimelineTemplate[];
   byTemplate: PayoutTemplateTotal[] | undefined;
   /** The range's days, oldest first; the activity strip's x axis. */
   dates: string[];
+  /** The first snapshot: projects are seen arriving only after it. */
+  trackedSince: string;
 }) {
   const [params, setParams] = useUrlState();
   const f = params.get("filter");
@@ -207,7 +210,7 @@ export function TemplatesTable({
               <TableHead className="max-sm:hidden" hint="New projects above the line, kickback below, day by day">
                 Last {dates.length}d
               </TableHead>
-              {header("newProjects", "New", `Projects made from it in the last ${dates.length} days`)}
+              {header("newProjects", "New", newHint(dates, trackedSince.slice(0, 10), templates))}
               {header("projects", "Projects", "Projects ever made from it")}
               {header("activeProjects", "Active", "Projects live today")}
               {header("running", "Running", "Service instances up now")}
@@ -245,6 +248,17 @@ export function TemplatesTable({
       </Table>
     </div>
   );
+}
+
+/** A range that starts before tracking can't see projects made before it on
+ * templates published before the range: the server counts all of a
+ * template's projects only when the range holds its whole life. */
+function newHint(dates: string[], tracked: string, templates: TimelineTemplate[]) {
+  const hint = `Projects made from it in the last ${dates.length} days`;
+  const blind = dates[0] < tracked && templates.some((t) => t.publishedAt != null && t.publishedAt.slice(0, 10) < dates[0]);
+  return blind
+    ? `${hint}. Tracking began ${fmtDay(tracked)}: for a template published before ${fmtDay(dates[0])}, only projects made after ${fmtDay(tracked)} count`
+    : hint;
 }
 
 type Scale = { dates: string[]; maxNew: number; maxEarned: number };

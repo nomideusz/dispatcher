@@ -335,6 +335,21 @@ func buildTimeline(days int, now, trackedSince time.Time, events []timelineEvent
 			t.Earned30d = &own
 		}
 	}
+	// Projects are seen arriving only between snapshots, so a template's
+	// first snapshot hides those it already had: all of them for templates
+	// published before tracking began. A window that holds the whole life
+	// of a template holds every project it has, so New is all of them.
+	for i := range resp.Templates {
+		t := &resp.Templates[i]
+		born := t.PublishedAt
+		if born == nil && t.FirstSeenAt.After(trackedSince) {
+			born = &t.FirstSeenAt
+		}
+		if born != nil && !born.Before(windowStart) && t.Projects > t.NewProjects {
+			resp.Window.NewProjects += t.Projects - t.NewProjects
+			t.NewProjects = t.Projects
+		}
+	}
 	if !trackedSince.After(previousStart) {
 		resp.Window.PreviousNewProjects = &previousNew
 	}

@@ -1,7 +1,8 @@
 import { type ReactNode, useMemo } from "react";
 import { CartesianGrid, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import { cursor, GROUPS, groupOf, Key, perDay, Tip, tick } from "~/components/chart-kit";
-import { Section } from "~/components/page";
+import { DOCKET, DocketCell, Fig, Section } from "~/components/page";
+import { cn } from "~/lib/utils";
 import { ChartContainer } from "~/components/ui/chart";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead, useSort } from "~/components/ui/table";
 import { dayKey, fmtDay, fmtNum, fmtUsd } from "~/lib/format";
@@ -84,7 +85,8 @@ function useWhatToPublish(data: TimelineResponse) {
     const bySize = seg((t) => String(groupOf(t)));
     const byOrigin = seg((t) => t.origin);
     const byMonth = seg((t) => t.publishedAt?.slice(0, 7) ?? "unknown");
-    return { trend, curve, byKind, bySize, byOrigin, byMonth };
+    const all: Segment | undefined = segment(templates, () => "", now)[0];
+    return { trend, curve, byKind, bySize, byOrigin, byMonth, all };
   }, [data]);
 }
 
@@ -99,52 +101,65 @@ function best(rows: Segment[], skip?: string) {
 /** Template size and age against what they earn and how soon: the numbers
  * for deciding what to build next, opened by the decision itself. */
 export function WhatToPublish({ data }: { data: TimelineResponse }) {
-  const { trend, curve, byKind, bySize, byOrigin, byMonth } = useWhatToPublish(data);
+  const { trend, curve, byKind, bySize, byOrigin, byMonth, all } = useWhatToPublish(data);
   const kindLabel = (k: string) => KINDS.find((x) => x.key === k)?.label ?? "Unsorted";
-  const per = (r: Segment) => perDay(r.typical);
+  const sizeLabel = (k: string) => GROUPS[Number(k)].label;
+  const per = (r: Segment) => fmtUsd(r.typical);
   const topKind = best(byKind, "");
   const topSize = best(bySize);
   const lowKind = (() => {
     const fair = byKind.filter((r) => r.templates >= 3 && r.key !== "" && r !== topKind);
     return fair.length ? fair.reduce((a, b) => (b.typical < a.typical ? b : a)) : null;
   })();
-  const key = <Key items={GROUPS.map((g) => ({ label: g.label, color: g.color, line: true }))} />;
+  const soonest = bySize.reduce<Segment | null>((a, b) => ((b.paid30 ?? -1) > (a?.paid30 ?? -1) ? b : a), null);
+  const dominant = topKind?.top && topKind.top.earned / topKind.earned >= 0.4 ? topKind.top : null;
 
   return (
     <>
-      {topKind && topSize && (
-        <p className="max-w-[75ch] text-lg leading-snug">
-          <span className="font-semibold">
-            Build {kindLabel(topKind.key)} templates with {GROUPS[Number(topSize.key)].label}.
-          </span>{" "}
-          <span className="text-muted-foreground">
-            Per 30 days live, a typical {kindLabel(topKind.key)} template paid <span className="tabular-nums text-foreground">{per(topKind)}</span>{" "}
-            and one with {GROUPS[Number(topSize.key)].label} <span className="tabular-nums text-foreground">{per(topSize)}</span>
-            {lowKind && (
-              <>
-                ; {kindLabel(lowKind.key)} paid <span className="tabular-nums text-foreground">{per(lowKind)}</span>
-              </>
-            )}
-            {topKind.top && topKind.top.earned / topKind.earned >= 0.4 && (
-              <>
-                . {topKind.top.name} alone brought {pct(topKind.top.earned / topKind.earned)} of {kindLabel(topKind.key)}, so
-                it&apos;s left out of these
-              </>
-            )}
-            .
-          </span>
-        </p>
-      )}
+      {/* The answer first: four figures, then the evidence below them. */}
+      <div className={cn(DOCKET, "grid-cols-2 lg:grid-cols-4")}>
+        <DocketCell label="Build" value={topKind ? kindLabel(topKind.key) : "—"} small>
+          {topKind && (
+            <>
+              typical <Fig>{per(topKind)}</Fig> per 30 days live
+              {lowKind && (
+                <>
+                  ; {kindLabel(lowKind.key)} <Fig>{per(lowKind)}</Fig>
+                </>
+              )}
+              {dominant && (
+                <span className="block">
+                  {dominant.name} left out ({pct(dominant.earned / topKind!.earned)} of it)
+                </span>
+              )}
+            </>
+          )}
+        </DocketCell>
+        <DocketCell label="With" value={topSize ? sizeLabel(topSize.key) : "—"} small>
+          {topSize && (
+            <>
+              typical <Fig>{per(topSize)}</Fig> per 30 days live
+            </>
+          )}
+        </DocketCell>
+        <DocketCell label="Paid within 30 days" value={all?.paid30 == null ? "—" : pct(all.paid30)} small>
+          of templates
+          {soonest?.paid30 != null && (
+            <>
+              ; {sizeLabel(soonest.key)} <Fig>{pct(soonest.paid30)}</Fig>
+            </>
+          )}
+        </DocketCell>
+        <DocketCell label="Last 30 days" value={fmtUsd(all?.earned ?? 0)} small>
+          <Fig>{fmtNum(all?.earning ?? 0)}</Fig> of <Fig>{fmtNum(all?.templates ?? 0)}</Fig> templates earned
+        </DocketCell>
+      </div>
 
-      <Section
-        id="trend"
-        title="Earning by size"
-        text="What one template of each size brings in, and how soon a new one starts paying."
-      >
+      <Section id="trend" title="Earning by size" text="What one template of each size brings in, and how soon a new one starts paying.">
+        <Key items={GROUPS.map((g) => ({ label: g.label, color: g.color, line: true }))} />
         <div className="grid gap-6 lg:grid-cols-2">
           <section className="min-w-0 space-y-2">
-            <h3 className="text-sm font-medium">Kickback per published template, 7-day average, last 90 days</h3>
-            {key}
+            <h3 className="text-sm font-medium">Kickback per published template, 7-day average</h3>
             <ChartContainer config={{}} className="aspect-auto h-44 w-full">
               <LineChart title="Kickback per published template by size, 7-day average" data={trend} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid vertical={false} />
@@ -161,14 +176,12 @@ export function WhatToPublish({ data }: { data: TimelineResponse }) {
               </LineChart>
             </ChartContainer>
             <p className="text-xs text-muted-foreground">
-              Daily kickback per published template of that size. If it falls while the catalog
-              grows, new templates of that size earn less than older ones.
+              Falling while the catalog grows means new templates of that size earn less than old ones.
             </p>
           </section>
 
           <section className="min-w-0 space-y-2">
-            <h3 className="text-sm font-medium">Paid within days of publishing</h3>
-            {key}
+            <h3 className="text-sm font-medium">Share paid, by days since publishing</h3>
             <ChartContainer config={{}} className="aspect-auto h-44 w-full">
               <LineChart title="Share of templates paid within days of publishing, by size" data={curve} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid vertical={false} />
@@ -191,10 +204,8 @@ export function WhatToPublish({ data }: { data: TimelineResponse }) {
               </LineChart>
             </ChartContainer>
             <p className="text-xs text-muted-foreground">
-              Estimated share of templates that have earned any kickback by that day, counting
-              young templates for the days they&apos;ve been live. The tooltip shows how many
-              templates are that old; under 15 the line is noisy. Where a line flattens, waiting
-              longer doesn&apos;t help.
+              Young templates count for the days they&apos;ve been live; under 15 that old (see the tooltip) the line is noisy.
+              Where it flattens, waiting longer doesn&apos;t help.
             </p>
           </section>
         </div>
@@ -203,34 +214,27 @@ export function WhatToPublish({ data }: { data: TimelineResponse }) {
       <Section
         id="segments"
         title="By kind, size, origin and age"
-        text="Earning and 30d cover the last 30 days. Per template is what a typical one earns per 30 days live: young templates count only the days they've been up, and the row's top earner is left out so one hit doesn't carry it. Paid by 30d: share that earned within 30 days of publishing, estimated like the curve above; blank under five templates that old. Set a template's kind and origin under its name on Templates."
+        text="Best-paying first. Point at a column name for what it counts; set kind and origin under a template's name on Templates."
       >
-        <div className="grid gap-6 xl:grid-cols-2">
-          <div className="xl:col-span-2">
-            <SegmentTable title="Kind" rows={byKind} format={kindLabel} />
-          </div>
+        <div className="grid gap-x-8 gap-y-6 xl:grid-cols-2">
+          <SegmentTable title="Kind" rows={byKind} format={kindLabel} />
           <SegmentTable
             title="Services"
             rows={bySize}
             format={(k) => (
               <span className="flex items-center gap-1.5">
-                <span className="size-2 rounded-[2px]" style={{ background: GROUPS[Number(k)].color }} />
-                {GROUPS[Number(k)].label}
+                <span className="size-2" style={{ background: GROUPS[Number(k)].color }} />
+                {sizeLabel(k)}
               </span>
             )}
           />
+          <SegmentTable title="Origin" rows={byOrigin} format={(k) => ORIGINS.find((x) => x.key === k)?.label ?? "Unsorted"} />
           <SegmentTable
-            title="Origin"
-            rows={byOrigin}
-            format={(k) => ORIGINS.find((x) => x.key === k)?.label ?? "Unsorted"}
+            title="Published"
+            rows={byMonth}
+            by="key"
+            format={(k) => (k === "unknown" ? k : monthFmt.format(new Date(`${k}-01T00:00:00Z`)))}
           />
-          <div className="xl:col-span-2">
-            <SegmentTable
-              title="Published"
-              rows={byMonth}
-              format={(k) => (k === "unknown" ? k : monthFmt.format(new Date(`${k}-01T00:00:00Z`)))}
-            />
-          </div>
         </div>
       </Section>
     </>
@@ -276,81 +280,71 @@ function segment(templates: TimelineTemplate[], keyOf: (t: TimelineTemplate) => 
     .sort((a, b) => a.key.localeCompare(b.key));
 }
 
-type SegmentKey = "key" | "templates" | "earning" | "earned" | "per" | "top" | "perRunning" | "paid30";
+type SegmentKey = "key" | "earning" | "earned" | "per" | "paid30";
 
+/** Five columns, the per-template rate first: the row's top earner shows
+ * under its name only when it carries the row. */
 function SegmentTable({
   title,
   rows,
   format,
+  by = "per",
 }: {
   title: string;
   rows: Segment[];
   format: (key: string) => ReactNode;
+  /** Months read in order; everything else best-paying first. */
+  by?: SegmentKey;
 }) {
   const best = Math.max(0, ...rows.map((r) => r.typical));
-  // The label column keeps the segments' own order: kinds as listed, sizes
-  // small to large, months oldest first.
   const order = new Map(rows.map((r, i) => [r.key, i]));
   const { rows: sorted, head } = useSort(
     rows,
     (r, key: SegmentKey) =>
       ({
         key: order.get(r.key),
-        templates: r.templates,
-        earning: r.earning,
+        earning: r.earning / r.templates,
         earned: r.earned,
         per: r.typical,
-        top: r.top ? r.top.earned / r.earned : null,
-        perRunning: r.running > 0 ? r.earned / r.running : null,
         paid30: r.paid30,
       })[key],
-    "key",
+    by,
     ["key"],
   );
   return (
-    <Table className="sm:min-w-[34rem]">
+    <Table>
       <TableHeader>
         <TableRow>
           {head("key", title)}
-          {head("templates", "Templates", { numeric: true, className: "max-sm:hidden" })}
-          {head("earning", "Earning", { numeric: true, className: "max-sm:hidden" })}
-          {head("earned", "30d", { numeric: true })}
-          {head("per", "Per template", { className: "pl-6", hint: "Typical, per 30 days live, top earner left out" })}
-          {head("top", "Top earner", { hint: "Its share of the row's 30d", className: "max-sm:hidden" })}
-          {head("perRunning", "Per running instance", { numeric: true, className: "max-sm:hidden" })}
-          {head("paid30", "Paid by 30d", { numeric: true, hint: "Share paid within 30 days of publishing, young templates counted for the days they've been up", className: "max-sm:hidden" })}
+          {head("per", "Per template", { hint: "Typical 30-day kickback per 30 days live, the row's top earner left out" })}
+          {head("paid30", "Paid by 30d", { numeric: true, hint: "Share that earned within 30 days of publishing; blank under five templates that old" })}
+          {head("earned", "30d", { numeric: true, hint: "All kickback in the last 30 days", className: "max-sm:hidden" })}
+          {head("earning", "Earning", { numeric: true, hint: "Templates that earned in the last 30 days, of all in the row", className: "max-sm:hidden" })}
         </TableRow>
       </TableHeader>
       <TableBody>
         {sorted.map((r) => {
-          const per = r.typical;
+          const carried = r.top && r.top.earned / r.earned >= 0.4 && r.templates > 1;
           return (
             <TableRow key={r.key}>
-              <TableRowHead className="whitespace-nowrap">{format(r.key)}</TableRowHead>
-              <TableCell numeric className="max-sm:hidden">{fmtNum(r.templates)}</TableCell>
-              <TableCell numeric className="text-muted-foreground max-sm:hidden">{fmtNum(r.earning)}</TableCell>
-              <TableCell numeric>{fmtUsd(r.earned)}</TableCell>
-              <TableCell className="pl-6">
+              <TableRowHead>
+                <div className="whitespace-nowrap">{format(r.key)}</div>
+                {carried && (
+                  <div className="max-w-48 truncate text-xs text-muted-foreground" title={r.top!.name}>
+                    {r.top!.name} <span className="tabular-nums">{pct(r.top!.earned / r.earned)}</span> of 30d
+                  </div>
+                )}
+              </TableRowHead>
+              <TableCell className="w-[40%]">
                 <div className="flex items-center gap-2">
-                  <span className="w-12 text-right tabular-nums">{fmtUsd(per)}</span>
-                  <TableMeter value={best > 0 ? per / best : 0} className="w-auto min-w-10 flex-1" />
+                  <span className="w-14 text-right tabular-nums">{fmtUsd(r.typical)}</span>
+                  <TableMeter value={best > 0 ? r.typical / best : 0} className="w-auto min-w-10 flex-1" />
                 </div>
               </TableCell>
-              <TableCell className="text-muted-foreground max-sm:hidden">
-                {r.top ? (
-                  <span className="flex items-center justify-between gap-2 whitespace-nowrap">
-                    <span className="max-w-32 truncate" title={r.top.name}>{r.top.name}</span>
-                    <span className="tabular-nums">{pct(r.top.earned / r.earned)}</span>
-                  </span>
-                ) : (
-                  "—"
-                )}
-              </TableCell>
+              <TableCell numeric className="text-muted-foreground">{r.paid30 == null ? "—" : pct(r.paid30)}</TableCell>
+              <TableCell numeric className="max-sm:hidden">{fmtUsd(r.earned)}</TableCell>
               <TableCell numeric className="text-muted-foreground max-sm:hidden">
-                {r.running > 0 ? fmtUsd(r.earned / r.running) : "—"}
-              </TableCell>
-              <TableCell numeric className="text-muted-foreground max-sm:hidden">
-                {r.paid30 == null ? "—" : pct(r.paid30)}
+                {fmtNum(r.earning)}/{fmtNum(r.templates)}
               </TableCell>
             </TableRow>
           );

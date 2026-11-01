@@ -55,13 +55,15 @@ interface Racer {
   color: string;
   /** Running total at the end of each day. */
   cum: number[];
+  /** Slopes at each day for monotone cubic easing between them. */
+  tan: number[];
   /** The day it first scored, for the stamp. */
   first: number;
   /** From launch: the last day it has lived through so far. */
   age?: number;
 }
 
-function racerOf(t: TimelineTemplate, field: Field, name: (n: string) => string): Omit<Racer, "cum" | "first"> {
+function racerOf(t: TimelineTemplate, field: Field, name: (n: string) => string): Pick<Racer, "id" | "label" | "color"> {
   switch (field) {
     case "templates":
     case "launch":
@@ -120,7 +122,7 @@ function build(data: TimelineResponse, measure: Measure, field: Field) {
   const racers = new Map<string, Racer>();
   for (const t of entrants) {
     const base = racerOf(t, field, name);
-    const r = racers.get(base.id) ?? { ...base, cum: new Array(days.length).fill(0), first: Infinity };
+    const r: Racer = racers.get(base.id) ?? { ...base, cum: new Array(days.length).fill(0), tan: [], first: Infinity };
     if (launch) r.age = indexOf(t, end);
     racers.set(base.id, r);
     for (const a of t.activity) {
@@ -130,7 +132,9 @@ function build(data: TimelineResponse, measure: Measure, field: Field) {
   }
   const list = [...racers.values()];
   for (const r of list) {
+    r.cum = spread(r.cum, measure === "kickback" ? 7 : 3);
     for (let i = 1; i < r.cum.length; i++) r.cum[i] += r.cum[i - 1];
+    r.tan = monotoneSlopes(r.cum);
     r.first = r.cum.findIndex((v) => v > 0);
   }
   const scoring = list.filter((r) => r.first >= 0);
@@ -167,15 +171,62 @@ function build(data: TimelineResponse, measure: Measure, field: Field) {
   const growth = days.map((_, d) => Math.max(0, (totals[d + 1] ?? totals[d]) - totals[d]));
   const meanSwaps = per(swaps);
   const meanGrowth = per(growth);
-  const weight = days.map((_, d) => 0.12 + Math.min(2, swaps[d] / meanSwaps) + 0.5 * Math.min(2, growth[d] / meanGrowth));
+  const weight = smooth(days.map((_, d) => 0.12 + Math.min(2, swaps[d] / meanSwaps) + 0.5 * Math.min(2, growth[d] / meanGrowth)));
   const clock = weight.slice(0, -1).reduce((s, w) => s + w, 0) || 1;
   // Real time: every day the same, except while one racer at most is in
   // play (kickback's first template alone until July, or from launch the
   // oldest template outliving the rest).
   const inPlay = (d: number) =>
     scoring.filter((r) => (launch ? (r.age ?? 0) >= d + 1 : r.cum[Math.min(d + 1, days.length - 1)] > 0)).length;
-  const even = days.map((_, d) => (inPlay(d) <= 1 ? LONE : 1));
+  const even = smooth(days.map((_, d) => (inPlay(d) <= 1 ? LONE : 1)));
   return { days, racers: scoring, ranks, leader, tookLead, weight, clock, even, launch, legend: legendOf(field, scoring) };
+}
+
+/** Kickback lands in monthly invoice lumps, deploys in bursts: shown as
+ * they came, a bar leaps in a blink and then stands still for weeks. Each
+ * day's amount is spread over the days that follow, so bars grow; nothing
+ * shows before it arrived, and the last day still adds up to the total. */
+function spread(daily: number[], days: number) {
+  const out = new Array<number>(daily.length).fill(0);
+  daily.forEach((v, i) => {
+    if (!v) return;
+    const last = Math.min(daily.length - 1, i + days - 1);
+    for (let j = i; j <= last; j++) out[j] += v / (last - i + 1);
+  });
+  return out;
+}
+
+/** Fritsch–Carlson slopes: a cubic through every day's total that never
+ * overshoots or runs backwards, so a bar eases into a busy day and out of
+ * it instead of lurching at midnight. */
+function monotoneSlopes(y: number[]) {
+  const n = y.length;
+  const delta = y.slice(0, -1).map((v, i) => y[i + 1] - v);
+  const m = y.map((_, i) => (i === 0 ? (delta[0] ?? 0) : i === n - 1 ? delta[n - 2] : delta[i - 1] * delta[i] > 0 ? (delta[i - 1] + delta[i]) / 2 : 0));
+  for (let i = 0; i < n - 1; i++) {
+    if (delta[i] === 0) {
+      m[i] = m[i + 1] = 0;
+      continue;
+    }
+    const a = m[i] / delta[i];
+    const b = m[i + 1] / delta[i];
+    const h = a * a + b * b;
+    if (h > 9) {
+      const k = 3 / Math.sqrt(h);
+      m[i] = k * a * delta[i];
+      m[i + 1] = k * b * delta[i];
+    }
+  }
+  return m;
+}
+
+/** A five-day moving average, so the clock speeds up and slows down
+ * gradually instead of at day boundaries. */
+function smooth(xs: number[]) {
+  return xs.map((_, i) => {
+    const w = xs.slice(Math.max(0, i - 2), i + 3);
+    return w.reduce((s, x) => s + x, 0) / w.length;
+  });
 }
 
 const flapMonth = new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" });
@@ -217,7 +268,8 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
       const cur = Math.max(0, tRef.current);
       const d = Math.floor(cur);
       // Seconds the current day lasts at 1×.
-      const lasts = pace === "real" ? DAY_SECONDS * (race.even[d] ?? 1) : (SECONDS / race.clock) * (race.weight[d] ?? 1);
+      const lerp = (xs: number[]) => (xs[d] ?? 1) + ((xs[d + 1] ?? xs[d] ?? 1) - (xs[d] ?? 1)) * (cur - d);
+      const lasts = pace === "real" ? DAY_SECONDS * lerp(race.even) : (SECONDS / race.clock) * lerp(race.weight);
       const next = Math.min(span, cur + (Math.max(0, now - last) / 1000) * (speed / lasts));
       tRef.current = next;
       last = now;
@@ -232,7 +284,14 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
   const day = Math.floor(t);
   const at = (r: Racer, when: number) => {
     const d = Math.floor(when);
-    return r.cum[d] + ((r.cum[Math.min(span, d + 1)] ?? r.cum[d]) - r.cum[d]) * (when - d);
+    if (d >= span) return r.cum[span];
+    // Cubic Hermite between day d and d+1 on the monotone slopes.
+    const h = when - d;
+    const h2 = h * h;
+    const h3 = h2 * h;
+    return (
+      (2 * h3 - 3 * h2 + 1) * r.cum[d] + (h3 - 2 * h2 + h) * r.tan[d] + (-2 * h3 + 3 * h2) * r.cum[d + 1] + (h3 - h2) * r.tan[d + 1]
+    );
   };
   const valueAt = (r: Racer) => at(r, t);
   // Bars move every frame; figures tick a few times a second, like a pump
@@ -429,6 +488,9 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
 
       <p className="max-w-[72ch] text-xs text-muted-foreground">
         Each bar is a running total and the longest leads.{" "}
+        {measure === "kickback"
+          ? "A payout is spread over the week after it lands, so bars grow rather than leap. "
+          : "Each day's deploys are spread over the next three days. "}
         {pace === "real"
           ? "Every day takes the same time, a little less while only one racer is in play. "
           : "Days when places change run slowly, days when nothing moves pass quickly. "}

@@ -25,14 +25,14 @@ export const lifeOf = (t: TimelineTemplate, now: number): Life | null =>
 /** Share paid by each day 0..last after publishing, Kaplan–Meier: each
  * day's payers over the templates still unpaid and at least that old, so a
  * young template that already paid counts now instead of once it ages past
- * the day. n is how many are that old; under five the share is null. */
-export function paidCurve(life: Life[], last: number) {
+ * the day. n is how many are that old; under min the share is null. */
+export function paidCurve(life: Life[], last: number, min = 5) {
   let unpaid = 1;
   return Array.from({ length: last + 1 }, (_, day) => {
     const old = life.filter((l) => l.age >= day);
     const atRisk = old.filter((l) => l.paid == null || l.paid >= day).length;
     if (atRisk > 0) unpaid *= 1 - old.filter((l) => l.paid === day).length / atRisk;
-    return { share: old.length < 5 ? null : 1 - unpaid, n: old.length };
+    return { share: old.length < min ? null : 1 - unpaid, n: old.length };
   });
 }
 
@@ -63,10 +63,10 @@ function useWhatToPublish(data: TimelineResponse) {
 
     // Share paid by each day after publishing, over the templates' whole life
     // (the range picker does not apply). A group's line stops once fewer
-    // than five templates are that old.
+    // than 15 templates are that old: past that one payer moves it 7+ points.
     const now = Date.parse(data.sampledAt);
     const byGroup = GROUPS.map((_, g) =>
-      paidCurve(templates.filter((t) => groupOf(t) === g).flatMap((t) => lifeOf(t, now) ?? []), 90),
+      paidCurve(templates.filter((t) => groupOf(t) === g).flatMap((t) => lifeOf(t, now) ?? []), 90, 15),
     );
     const curve = byGroup[0]
       .map((_, day) => {
@@ -118,7 +118,7 @@ export function WhatToPublish({ data }: { data: TimelineResponse }) {
     <>
       {/* The answer first: four figures, then the evidence below them. */}
       <div className={cn(DOCKET, "grid-cols-2 lg:grid-cols-4")}>
-        <DocketCell label="Build" value={topKind ? kindLabel(topKind.key) : "—"} small>
+        <DocketCell label="Build" value={<span className="font-sans">{topKind ? kindLabel(topKind.key) : "—"}</span>} small>
           {topKind && (
             <>
               typical <Fig>{per(topKind)}</Fig> per 30 days live
@@ -135,7 +135,7 @@ export function WhatToPublish({ data }: { data: TimelineResponse }) {
             </>
           )}
         </DocketCell>
-        <DocketCell label="With" value={topSize ? sizeLabel(topSize.key) : "—"} small>
+        <DocketCell label="Size" value={<span className="font-sans">{topSize ? sizeLabel(topSize.key) : "—"}</span>} small>
           {topSize && (
             <>
               typical <Fig>{per(topSize)}</Fig> per 30 days live
@@ -158,8 +158,7 @@ export function WhatToPublish({ data }: { data: TimelineResponse }) {
       <Section id="trend" title="Earning by size" text="What one template of each size brings in, and how soon a new one starts paying.">
         <Key items={GROUPS.map((g) => ({ label: g.label, color: g.color, line: true }))} />
         <div className="grid gap-6 lg:grid-cols-2">
-          <section className="min-w-0 space-y-2">
-            <h3 className="text-sm font-medium">Kickback per published template, 7-day average</h3>
+          <Block title="Kickback per published template, 7-day average">
             <ChartContainer config={{}} className="aspect-auto h-44 w-full">
               <LineChart title="Kickback per published template by size, 7-day average" data={trend} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid vertical={false} />
@@ -178,10 +177,9 @@ export function WhatToPublish({ data }: { data: TimelineResponse }) {
             <p className="text-xs text-muted-foreground">
               Falling while the catalog grows means new templates of that size earn less than old ones.
             </p>
-          </section>
+          </Block>
 
-          <section className="min-w-0 space-y-2">
-            <h3 className="text-sm font-medium">Share paid, by days since publishing</h3>
+          <Block title="Share paid, by days since publishing">
             <ChartContainer config={{}} className="aspect-auto h-44 w-full">
               <LineChart title="Share of templates paid within days of publishing, by size" data={curve} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid vertical={false} />
@@ -204,10 +202,10 @@ export function WhatToPublish({ data }: { data: TimelineResponse }) {
               </LineChart>
             </ChartContainer>
             <p className="text-xs text-muted-foreground">
-              Young templates count for the days they&apos;ve been live; under 15 that old (see the tooltip) the line is noisy.
+              Young templates count for the days they&apos;ve been live; a line stops where fewer than 15 are that old.
               Where it flattens, waiting longer doesn&apos;t help.
             </p>
-          </section>
+          </Block>
         </div>
       </Section>
 
@@ -308,7 +306,8 @@ function Block({ title, children }: { title: string; children: ReactNode }) {
 type SegmentKey = "key" | "earning" | "earned" | "per" | "paid30";
 
 /** Five columns, the per-template rate first: the row's top earner shows
- * under its name only when it carries the row. */
+ * under its name only when it is most of the row (75%+); most rows lean on
+ * one hit, so a lower bar puts a second line on nearly all of them. */
 function SegmentTable({
   title,
   rows,
@@ -340,7 +339,8 @@ function SegmentTable({
     <Table>
       <TableHeader>
         <TableRow>
-          {head("key", title)}
+          {/* One name width, so stacked tables line their columns up. */}
+          {head("key", title, { className: "sm:w-44" })}
           {head("per", "Per template", { hint: "Typical 30-day kickback per 30 days live, the row's top earner left out" })}
           {head("paid30", "Paid by 30d", { numeric: true, hint: "Share that earned within 30 days of publishing; blank under five templates that old" })}
           {head("earned", "30d", { numeric: true, hint: "All kickback in the last 30 days", className: "max-sm:hidden" })}
@@ -349,7 +349,7 @@ function SegmentTable({
       </TableHeader>
       <TableBody>
         {sorted.map((r) => {
-          const carried = r.top && r.top.earned / r.earned >= 0.4 && r.templates > 1;
+          const carried = r.top && r.top.earned / r.earned >= 0.75 && r.templates > 1;
           return (
             <TableRow key={r.key}>
               <TableRowHead>

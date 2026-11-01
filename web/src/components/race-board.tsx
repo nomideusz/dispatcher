@@ -25,8 +25,16 @@ const FIELDS: { key: Field; label: string }[] = [
   { key: "weeks", label: "Publish weeks" },
 ];
 const SPEEDS = [0.5, 1, 2, 4] as const;
-/** A race lasts this long at 1×, whatever the span of days. */
+type Pace = "real" | "eventful";
+const PACES: { key: Pace; label: string }[] = [
+  { key: "real", label: "Real time" },
+  { key: "eventful", label: "Eventful" },
+];
+/** Eventful: a race lasts this long at 1×, whatever the span of days. */
 const SECONDS = 60;
+/** Real time: a day lasts this long at 1×; a lone racer's days run faster. */
+const DAY_SECONDS = 0.45;
+const LONE = 0.35;
 /** Full rows, then a tail of smaller ones fading out. */
 const SHOWN = 10;
 const TAIL = 10;
@@ -161,7 +169,13 @@ function build(data: TimelineResponse, measure: Measure, field: Field) {
   const meanGrowth = per(growth);
   const weight = days.map((_, d) => 0.12 + Math.min(2, swaps[d] / meanSwaps) + 0.5 * Math.min(2, growth[d] / meanGrowth));
   const clock = weight.slice(0, -1).reduce((s, w) => s + w, 0) || 1;
-  return { days, racers: scoring, ranks, leader, tookLead, weight, clock, launch, legend: legendOf(field, scoring) };
+  // Real time: every day the same, except while one racer at most is in
+  // play (kickback's first template alone until July, or from launch the
+  // oldest template outliving the rest).
+  const inPlay = (d: number) =>
+    scoring.filter((r) => (launch ? (r.age ?? 0) >= d + 1 : r.cum[Math.min(d + 1, days.length - 1)] > 0)).length;
+  const even = days.map((_, d) => (inPlay(d) <= 1 ? LONE : 1));
+  return { days, racers: scoring, ranks, leader, tookLead, weight, clock, even, launch, legend: legendOf(field, scoring) };
 }
 
 const flapMonth = new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" });
@@ -170,6 +184,7 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
   const [measure, setMeasure] = useState<Measure>("kickback");
   const [field, setField] = useState<Field>("templates");
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(1);
+  const [pace, setPace] = useState<Pace>("real");
   const race = useMemo(() => build(data, measure, field), [data, measure, field]);
   const span = race.days.length - 1;
 
@@ -200,8 +215,10 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
     const step = (now: number) => {
       if (last < 0) last = now;
       const cur = Math.max(0, tRef.current);
-      const w = race.weight[Math.floor(cur)] ?? 1;
-      const next = Math.min(span, cur + (Math.max(0, now - last) / 1000) * (race.clock / SECONDS) * (speed / w));
+      const d = Math.floor(cur);
+      // Seconds the current day lasts at 1×.
+      const lasts = pace === "real" ? DAY_SECONDS * (race.even[d] ?? 1) : (SECONDS / race.clock) * (race.weight[d] ?? 1);
+      const next = Math.min(span, cur + (Math.max(0, now - last) / 1000) * (speed / lasts));
       tRef.current = next;
       last = now;
       setT(next);
@@ -210,7 +227,7 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [playing, speed, span, race]);
+  }, [playing, speed, pace, span, race]);
 
   const day = Math.floor(t);
   const at = (r: Racer, when: number) => {
@@ -264,6 +281,7 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
         <Choice label="Race" options={MEASURES} value={measure} onChange={setMeasure} />
         <Choice label="Between" options={FIELDS} value={field} onChange={setField} />
+        <Choice label="Pace" options={PACES} value={pace} onChange={setPace} />
       </div>
 
       {/* The board is a carbon island: the dark tokens, whatever the theme. */}
@@ -410,7 +428,10 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
       </p>
 
       <p className="max-w-[72ch] text-xs text-muted-foreground">
-        Each bar is a running total and the longest leads. Days when places change run slowly, days when nothing moves pass quickly.{" "}
+        Each bar is a running total and the longest leads.{" "}
+        {pace === "real"
+          ? "Every day takes the same time, a little less while only one racer is in play. "
+          : "Days when places change run slowly, days when nothing moves pass quickly. "}
         {measure === "projects" &&
           "Projects made counts every project anyone made from a template, the New and Projects columns on Templates, whether or not it is still live. "}
         {field === "launch"

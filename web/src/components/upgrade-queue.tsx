@@ -113,11 +113,9 @@ export function UpgradeQueue() {
               {majors && <TableHead className="max-sm:hidden">Later major</TableHead>}
             </TableRow>
           </TableHeader>
-          <TableBody banded={false}>
-            {visible.map((group, i) => (
-              <TemplateGroup key={group[0].templateId} group={group} first={i === 0} name={names(group[0].name ?? group[0].templateId)} majors={majors} />
-            ))}
-          </TableBody>
+          {visible.map((group, i) => (
+            <TemplateGroup key={group[0].templateId} group={group} first={i === 0} name={names(group[0].name ?? group[0].templateId)} majors={majors} />
+          ))}
         </Table>
       )}
       {idle.length > 0 && (
@@ -156,8 +154,10 @@ function TemplateGroup({ group, name, majors, first }: { group: ServiceUpgrade[]
   );
   // The table's first group sits right under the header's own rule.
   const opens = cn(first ? "border-t-0" : "border-t border-border/60", "max-sm:border-t-0");
+  // A body of its own: the spanning cells belong to the first row, so the
+  // whole group lights up on hover, not just that row.
   return (
-    <>
+    <TableBody banded={false} data-grouped>
       <TableRow rule="none" className={cn("sm:hidden", !first && "border-t border-border/60")}>
         <TableRowHead scope="rowgroup" colSpan={3} className="pt-3 pb-0 font-medium">
           <TemplateLink u={u} name={name} />
@@ -180,7 +180,7 @@ function TemplateGroup({ group, name, majors, first }: { group: ServiceUpgrade[]
           </ServiceRow>
         ))
       )}
-    </>
+    </TableBody>
   );
 }
 

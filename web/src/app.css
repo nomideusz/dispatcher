@@ -226,7 +226,8 @@ tr[data-marked] > :is(td, th) {
   display: none;
 }
 @media (hover: hover) {
-  [data-slot="table-body"] > tr:not([data-panel], [data-open]):hover {
+  [data-slot="table-body"]:not([data-grouped]) > tr:not([data-panel], [data-open]):hover,
+  [data-slot="table-body"][data-grouped]:hover > tr {
     background: var(--secondary);
   }
 }

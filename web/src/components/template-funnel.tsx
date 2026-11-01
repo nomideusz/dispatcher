@@ -21,6 +21,9 @@ export function TemplateFunnel({
   const active = sum(templates.map((t) => t.activeProjects));
   const running = sum(templates.map((t) => t.running));
   const earned = sum(templates.map((t) => t.earned30d));
+  // Instances of templates that earned: desktops run hundreds that never pay
+  // (Edge: 550 running, $0), which would sink the per-instance figure.
+  const earningRunning = sum(templates.filter((t) => (t.earned30d ?? 0) > 0).map((t) => t.running));
 
   const stages = [
     {
@@ -83,8 +86,8 @@ export function TemplateFunnel({
       <p className="border-t pt-3 text-xs text-muted-foreground">
         <span className="font-medium text-foreground">{fmtUsd(earned)}</span> kickback in
         Railway&apos;s 30-day count (the docket adds up our hourly samples, so it can differ a
-        little): <span className="text-foreground">{running > 0 ? fmtUsd(earned / running) : "—"}</span>{" "}
-        per running instance
+        little): <span className="text-foreground">{earningRunning > 0 ? fmtUsd(earned / earningRunning) : "—"}</span>{" "}
+        per running instance of an earning template
         {payers ? (
           <>
             , <span className="text-foreground">{fmtUsd(earned / payers)}</span> per payer

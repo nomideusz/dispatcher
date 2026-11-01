@@ -200,14 +200,19 @@ func marketKey(name string) string {
 func squash(key string) string { return marketPunct.ReplaceAllString(key, "") }
 
 // alike says whether two squashed group keys look like the same app, one
-// name inside the other: "postiz" and "postiz app", "n8n" and "n8n queue".
-// ponytail: substring match; misses renames (medusa.js vs medusa v2) and
-// can pair short names with longer ones, fine for a hint.
+// name opening or closing the other: "postiz" and "postiz app", "edge" and
+// "microsoft edge". A name in the middle doesn't count, so "kan" isn't
+// "hermes kanban web" and "crm" isn't "duskcodes crm meta tech provider".
+// ponytail: still pairs "kan" with "kaneo" and "coder" with "lowcoder",
+// fine for a hint; misses renames (python telegram bot).
 func alike(a, b string) bool {
 	if len(a) < 3 || len(b) < 3 {
 		return false
 	}
-	return strings.Contains(a, b) || strings.Contains(b, a)
+	if len(a) > len(b) {
+		a, b = b, a
+	}
+	return strings.HasPrefix(b, a) || strings.HasSuffix(b, a)
 }
 
 type candidateLeader struct {
@@ -234,6 +239,9 @@ type candidateGroup struct {
 	// OurRecent is the group's 90-day projects that went to our templates:
 	// against Recent, how much of an app we publish others take.
 	OurRecent int64 `json:"ourRecent"`
+	// SimilarRecent is the 90-day projects of groups whose Similar names this
+	// one, so an app we publish carries its look-alikes' deploys in one row.
+	SimilarRecent int64 `json:"similarRecent"`
 	// Rivals counts other creators' templates of the same or a similar app.
 	Rivals int    `json:"rivals"`
 	Status string `json:"status"`
@@ -288,6 +296,7 @@ func groupMarket(rows []MarketTemplate, ours map[string]bool) []*candidateGroup 
 			o.Rivals += g.Templates - len(g.Ours)
 			if len(o.Ours) > 0 && len(g.Ours) == 0 && g.Similar == "" {
 				g.Similar = o.Key
+				o.SimilarRecent += g.Recent
 			}
 		}
 	}

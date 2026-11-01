@@ -35,8 +35,8 @@ func TestGroupMarket(t *testing.T) {
 	}
 	groups := groupMarket(rows, map[string]bool{"ours1": true, "ours2": true})
 	for _, g := range groups {
-		if g.Key == "postiz" && g.OurRecent != 3 {
-			t.Errorf("postiz ourRecent = %d, want 3", g.OurRecent)
+		if g.Key == "postiz" && (g.OurRecent != 3 || g.SimilarRecent != 30) {
+			t.Errorf("postiz ourRecent, similarRecent = %d, %d, want 3, 30", g.OurRecent, g.SimilarRecent)
 		}
 	}
 	by := map[string]*candidateGroup{}
@@ -109,5 +109,23 @@ func TestAddCatalog(t *testing.T) {
 	})
 	if len(groups) != 1 || fmt.Sprint(groups[0].Ours) != "[ours]" {
 		t.Errorf("groups = %+v, want metabase with ours", groups[0])
+	}
+}
+
+func TestAlike(t *testing.T) {
+	for _, c := range []struct {
+		a, b string
+		want bool
+	}{
+		{"postiz", "postizapp", true},
+		{"microsoftedge", "edge", true},
+		{"espocrm", "crm", true},
+		{"kan", "hermeskanbanweb", false},
+		{"crm", "duskcodescrmmetatechprovider", false},
+		{"ab", "abc", false},
+	} {
+		if got := alike(c.a, c.b); got != c.want {
+			t.Errorf("alike(%q, %q) = %v, want %v", c.a, c.b, got, c.want)
+		}
 	}
 }

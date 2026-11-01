@@ -17,10 +17,13 @@ const monthFmt = new Intl.DateTimeFormat("en-US", { month: "short", year: "numer
 type View = "shortlist" | "market" | "behind" | "skip";
 
 type SortKey = "app" | "recent" | "active" | "rivals" | "leader" | "newest";
-const sortValue = (g: CandidateGroup, key: SortKey) =>
+/** Deploys a row stands for: under Ours behind, an app of ours carries its
+ * look-alikes' deploys too, so n8n is one row, not nine. */
+const deploys = (g: CandidateGroup, view: View) => g.recent + (view === "behind" ? g.similarRecent : 0);
+const sortValue = (view: View) => (g: CandidateGroup, key: SortKey) =>
   ({
     app: (g.leader.name || g.key).toLowerCase(),
-    recent: g.recent,
+    recent: deploys(g, view),
     active: g.active,
     rivals: g.rivals,
     leader: g.leader.name ? g.leader.health : null,
@@ -48,7 +51,7 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
   const inView = (g: CandidateGroup, v: View) => {
     // Apps we publish (or something like them) where others take most of
     // the deploys: a listing to fix is cheaper than a template to build.
-    if (v === "behind") return (g.ours.length > 0 || !!g.similar) && g.recent > 0 && g.ourRecent * 2 < g.recent;
+    if (v === "behind") return g.ours.length > 0 && g.ourRecent * 2 < deploys(g, v);
     if (v !== "market") return g.status === v;
     if (g.status) return false;
     if (hidePlumbing && PLUMBING.has(g.category)) return false;
@@ -65,11 +68,11 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
   const needle = search.trim().toLowerCase();
   const { rows, head } = useSort(
     groups.filter((g) => inView(g, current) && (!needle || g.key.includes(needle) || g.leader.name.toLowerCase().includes(needle))),
-    sortValue,
+    sortValue(current),
     "recent",
     ["app"],
   );
-  const maxRecent = Math.max(1, ...rows.map((g) => g.recent));
+  const maxRecent = Math.max(1, ...rows.map((g) => deploys(g, current)));
 
   if (q.isPending) return <Skeleton className="h-64 w-full" />;
   if (q.isError) {
@@ -93,7 +96,7 @@ export function Candidates({ templates }: { templates: TimelineTemplate[] }) {
       <Section
         id="apps"
         title="Apps on Railway"
-        text={`What people deploy, one row per app, from Railway's marketplace read ${fmtAgo(q.data.fetchedAt, new Date().toISOString())} ago. Same-name templates count as one app; Templates counts other creators only. Ours behind: apps we publish, or something like them, where others get most of the 90-day deploys.`}
+        text={`What people deploy, one row per app, from Railway's marketplace read ${fmtAgo(q.data.fetchedAt, new Date().toISOString())} ago. Same-name templates count as one app; Templates counts other creators only. Ours behind: apps we publish where others get most of the 90-day deploys, counting look-alike apps (n8n with postgres, simple n8n) in the app's row.`}
       >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div role="group" aria-label="Candidates view" className="flex gap-1">
@@ -232,8 +235,8 @@ function CandidateRow({
       </TableRowHead>
       <TableCell>
         <div className="flex items-center gap-2">
-          <span className="w-12 text-right tabular-nums">{fmtNum(g.recent)}</span>
-          <TableMeter value={g.recent / maxRecent} color="var(--chart-3)" className="w-24" />
+          <span className="w-12 text-right tabular-nums">{fmtNum(deploys(g, view))}</span>
+          <TableMeter value={deploys(g, view) / maxRecent} color="var(--chart-3)" className="w-24" />
         </div>
       </TableCell>
       <TableCell numeric>{fmtNum(g.active)}</TableCell>
@@ -257,8 +260,8 @@ function CandidateRow({
           g.ours.length > 0 ? "Yes" : (g.similar ?? "—")
         ) : view === "behind" ? (
           <>
-            <span className="tabular-nums text-foreground">{fmtNum(g.ourRecent)}</span> of {fmtNum(g.recent)}
-            {g.ours.length === 0 && <div className="truncate">ours is {g.similar}</div>}
+            <span className="tabular-nums text-foreground">{fmtNum(g.ourRecent)}</span> of {fmtNum(deploys(g, view))}
+            {g.similarRecent > 0 && <div className="truncate">{fmtNum(g.similarRecent)} from look-alike apps</div>}
           </>
         ) : (
           // Grows to its text, so a long note reads in full.

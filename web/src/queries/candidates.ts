@@ -28,6 +28,8 @@ export interface CandidateGroup {
   similar?: string;
   /** The group's 90-day projects that went to our templates. */
   ourRecent: number;
+  /** 90-day projects of the groups whose similar names this one. */
+  similarRecent: number;
   /** Other creators' templates of the same or a similar app. */
   rivals: number;
   status: "" | "shortlist" | "skip";

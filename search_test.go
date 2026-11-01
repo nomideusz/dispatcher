@@ -58,3 +58,17 @@ func TestNormalizeKeyword(t *testing.T) {
 		}
 	}
 }
+
+func TestBrandAfterBar(t *testing.T) {
+	for name, want := range map[string]string{
+		"Analytics | Rybbit, Privacy-Friendly Google Analytics Alternative":  "Rybbit",
+		"CRM | EspoCRM, Open-Source Salesforce Alternative":                  "EspoCRM",
+		"Obsidian | Desktop App in the Cloud":                                "",
+		"Moli | Headless Browser for AI Agents (CDP, WebDriver, Playwright)": "",
+		"Ghost": "",
+	} {
+		if got := brandAfterBar(name); got != want {
+			t.Errorf("brandAfterBar(%q) = %q, want %q", name, got, want)
+		}
+	}
+}

@@ -84,9 +84,6 @@ export function Earnings({ data }: { data: TimelineResponse }) {
   const { rows, earners, first, last } = useEarnings(data);
   const dayIndex = new Map(rows.map((r, i) => [r.date, i]));
   const sync = { data: rows, syncId: "earnings", margin: { top: 6, right: 0, left: 0, bottom: 4 } };
-  const perTemplate = (r: Row | undefined) => (r?.life != null && r.published > 0 ? r.life / r.published : null);
-  const nowPer = perTemplate(last);
-  const thenPer = perTemplate(first);
   const sinceStart = first && last && first !== last;
 
   const change = (key: (typeof COUNTS)[number]["key"]) => {
@@ -98,20 +95,9 @@ export function Earnings({ data }: { data: TimelineResponse }) {
   return (
     <div className="space-y-5">
       <section className="space-y-2">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <h3 className="text-sm font-medium">Lifetime kickback against the catalog</h3>
-          {nowPer != null && (
-            <span className="text-xs text-muted-foreground">
-              <span className="font-medium text-foreground tabular-nums">{fmtUsd(nowPer)}</span> per
-              published template
-              {sinceStart && thenPer != null && (
-                <>
-                  , <span className="tabular-nums">{fmtUsd(thenPer)}</span> on {fmtDay(first.date)}
-                </>
-              )}
-            </span>
-          )}
-        </div>
+        {/* No per-template figure: lifetime over a catalog that doubled in a
+            month reads as a decline that is only new templates. */}
+        <h3 className="text-sm font-medium">Lifetime kickback against the catalog</h3>
         <Key
           items={[
             {

@@ -115,3 +115,19 @@ func TestTimelineBucketsDeltasGapsAndLedger(t *testing.T) {
 		t.Errorf("earned30d = %v, want 4 from the payouts seen", a.Earned30d)
 	}
 }
+
+// The previous range stops as far into its last day as the window has run
+// into today, so a morning doesn't read as a drop.
+func TestTimelinePreviousMatchesElapsed(t *testing.T) {
+	now := time.Date(2026, 11, 1, 6, 0, 0, 0, time.UTC)
+	at := func(s string) time.Time { v, _ := time.Parse(time.RFC3339, s); return v }
+	events := []timelineEvent{
+		{TemplateID: "a", SampledAt: at("2026-10-20T10:00:00Z"), EarnedCents: 100},
+		{TemplateID: "a", SampledAt: at("2026-10-25T12:00:00Z"), EarnedCents: 40}, // past 06:00 of the range's last day
+		{TemplateID: "a", SampledAt: at("2026-10-31T10:00:00Z"), EarnedCents: 70},
+	}
+	got := buildTimeline(7, now, at("2026-01-01T00:00:00Z"), events, nil, []timelineTemplate{{TemplateID: "a"}}, nil)
+	if got.Window.EarnedCents != 70 || got.Window.PreviousEarnedCents != 100 {
+		t.Errorf("window = %d¢, previous = %d¢; want 70¢ and 100¢", got.Window.EarnedCents, got.Window.PreviousEarnedCents)
+	}
+}

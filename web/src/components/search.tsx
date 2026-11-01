@@ -19,12 +19,19 @@ type Value = (k: SearchKeyword, key: SortKey) => string | number | null;
 
 /** What reaching #1 adds, in 90-day projects: the keyword's demand times the
  * share #1 holds over the share at our position (none when we're unlisted).
+ * The biggest single result's projects are left out of demand: a template
+ * holding most of a keyword from #14 ("hermes") gets them by name, not by
+ * position, and no rank takes them.
  * ponytail: average shares across all keywords, an upper bound; per-keyword
  * click data would sharpen it if Railway ever exposes it. */
 function worthOf(curve: PositionShare[]) {
   const share = new Map(curve.map((c) => [c.position, c.share]));
   const first = share.get(1) ?? 0;
-  return (k: SearchKeyword) => (k.best === 1 ? null : k.demand * (first - (k.best == null ? 0 : (share.get(k.best) ?? 0))));
+  return (k: SearchKeyword) => {
+    if (k.best === 1) return null;
+    const open = k.demand - Math.max(0, ...k.top.map((r) => r.recent));
+    return open * (first - (k.best == null ? 0 : (share.get(k.best) ?? 0)));
+  };
 }
 
 /** Blanks (not ranked, no results) stay last whichever way it's sorted. */
@@ -117,7 +124,7 @@ export function MarketSearch() {
       <Section
         id="keywords"
         title="Keywords"
-        text={`Railway's top 20 for each keyword, read ${fmtAgo(q.data.sampledAt, new Date().toISOString())} ago. Demand is the 90-day projects of everything a search finds, so broad keywords count big templates more than once. Worth at #1 prices our position with the table below: demand times what #1 holds over what our spot holds.`}
+        text={`Railway's top 20 for each keyword, read ${fmtAgo(q.data.sampledAt, new Date().toISOString())} ago. Demand is the 90-day projects of everything a search finds, so broad keywords count big templates more than once. Worth at #1 prices our position with the table below: demand, less its biggest single template, times what #1 holds over what our spot holds.`}
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div role="group" aria-label="Keywords view" className="flex gap-1">

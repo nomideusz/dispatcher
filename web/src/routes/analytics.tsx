@@ -11,7 +11,7 @@ import { PayoutHistory } from "~/components/payout-history";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
-import { dayDate, dayKey, fmtAgo, fmtCents, fmtDay, fmtNum, shortName, shortNames } from "~/lib/format";
+import { dayDate, dayKey, fmtAgo, fmtCents, fmtDay, fmtNum, fmtUsd, shortName, shortNames } from "~/lib/format";
 import { cn } from "~/lib/utils";
 import {
   qualifiesForBonus,
@@ -101,7 +101,12 @@ function Docket({ data }: { data: TimelineResponse }) {
   const withdraw = useQuery(withdrawSettingsQuery);
   const { window: w, points, templates } = data;
 
-  const perDay = w.earnedCents / w.days;
+  // The window runs to now, partway through today: divide by the days
+  // actually elapsed, or every morning reads low.
+  const elapsed = points[0]
+    ? Math.max(1, (Date.parse(data.sampledAt) - Date.parse(`${points[0].date}T00:00:00Z`)) / 86_400_000)
+    : w.days;
+  const perDay = w.earnedCents / elapsed;
   const lifetime = templates.reduce((s, t) => s + t.lifetimeCents, 0);
   const first = points.find((p) => p.running != null);
   const last = points[points.length - 1];
@@ -255,6 +260,8 @@ function Held({
 }) {
   const upgrades = useQuery(upgradesQuery);
   const candidates = useQuery(candidatesQuery);
+  const accounts = useQuery(withdrawAccountsQuery);
+  const withdraw = useQuery(withdrawSettingsQuery);
   const { search } = useLocation();
   const name = shortNames(data.templates.map((t) => t.name));
   const jump = (t: { templateId: string; name: string }) => (
@@ -277,7 +284,8 @@ function Held({
   }
   const failing = data.templates
     .filter((t) => (t.running ?? t.activeProjects) > 0 && t.health != null && t.health < 50)
-    .sort((a, b) => (a.health ?? 0) - (b.health ?? 0));
+    // What a failing deploy costs us first: earners, then the most used.
+    .sort((a, b) => (b.earned30d ?? 0) - (a.earned30d ?? 0) || (b.running ?? 0) - (a.running ?? 0));
   for (const t of failing) {
     held.push({
       key: `health-${t.templateId}`,
@@ -321,13 +329,30 @@ function Held({
       ),
     });
   }
+  const balance = accounts.data?.availableBalance;
+  const minimum = accounts.data?.minimumBalance ?? 10_000;
+  if (balance != null && balance > minimum && withdraw.data && !withdraw.data.enabled) {
+    next.push({
+      key: "withdraw",
+      text: (
+        // The Balance cell at the top holds the withdraw controls.
+        <span>
+          <Fig>{fmtCents(balance)}</Fig> withdrawable, auto-withdraw is off
+        </span>
+      ),
+    });
+  }
   const behind = upgrades.data ? behindTemplateCount(upgrades.data) : 0;
-  if (behind > 0) {
+  // The server orders the queue most-earning first: name the one that pays.
+  const top = upgrades.data?.find((u) => u.behind === "minor" || u.behind === "patch");
+  if (behind > 0 && top) {
     next.push({
       key: "upgrades",
       text: (
         <Link to="/upgrades" className="text-primary underline">
-          {fmtNum(behind)} {behind === 1 ? "template" : "templates"} behind on upgrades
+          Upgrade {shortName(top.name ?? top.templateId)}
+          {top.earningsLast30Days ? ` (${fmtUsd(top.earningsLast30Days)} in 30 days)` : ""}
+          {behind > 1 ? ` and ${fmtNum(behind - 1)} more` : ""}
         </Link>
       ),
     });

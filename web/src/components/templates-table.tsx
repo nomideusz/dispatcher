@@ -121,7 +121,8 @@ export function TemplatesTable({
   const payers = new Map(byTemplate?.map((p) => [p.templateId, p]));
   const all: Row[] = templates.map((t) => ({
     ...t,
-    perRunning: t.running && t.earned30d != null ? t.earned30d / t.running : null,
+    // Under three instances, one more or less halves or doubles it: noise.
+    perRunning: t.running != null && t.running >= 3 && t.earned30d != null ? t.earned30d / t.running : null,
     payers: payers.get(t.templateId),
   }));
   const needle = search.trim().toLowerCase();
@@ -204,7 +205,7 @@ export function TemplatesTable({
               {header("activeProjects", "Active", "Projects live today")}
               {header("running", "Running", "Service instances up now")}
               {header("earnedCents", `Earned ${dates.length}d`, `Kickback in the last ${dates.length} days`)}
-              {header("perRunning", "$/running", "30-day kickback per running instance")}
+              {header("perRunning", "$/running", "30-day kickback per running instance, from 3 running")}
               {header("payers", "Payers", "Deployers whose invoices paid us kickback")}
               {header("lifetimeCents", "Lifetime", "Kickback since it was published")}
               {header("publishedAt", "Published", "When it went live on the marketplace, UTC")}

@@ -81,6 +81,19 @@ func normalizeKeyword(q string) string {
 // searchKeywords lists what to search, each with the first source that
 // asked for it: manual, then our templates (name and code), then the most
 // deployed apps on the market that aren't skipped.
+// brandAfterBar reads the brand of a "Generic | Brand, description" name
+// ("Analytics | Rybbit, Privacy-Friendly…" gives "rybbit"), which neither
+// the name's head nor its code carries. Only a lone word before a comma
+// counts, so "Obsidian | Desktop App in the Cloud" gives nothing.
+func brandAfterBar(name string) string {
+	_, tail, ok := strings.Cut(name, "|")
+	head, _, comma := strings.Cut(tail, ",")
+	if !ok || !comma || strings.Contains(strings.TrimSpace(head), " ") {
+		return ""
+	}
+	return strings.TrimSpace(head)
+}
+
 func searchKeywords(ctx context.Context, db *gorm.DB) (map[string]string, error) {
 	out := map[string]string{}
 	add := func(q, source string) {
@@ -103,6 +116,7 @@ func searchKeywords(ctx context.Context, db *gorm.DB) (map[string]string, error)
 	for _, t := range ours {
 		add(marketKey(t.Name), "ours")
 		add(strings.ReplaceAll(t.Code, "-", " "), "ours")
+		add(brandAfterBar(t.Name), "ours")
 	}
 	var rows []MarketTemplate
 	if err := db.WithContext(ctx).Find(&rows).Error; err != nil {

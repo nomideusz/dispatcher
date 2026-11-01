@@ -11,13 +11,6 @@ export const GROUPS = [
 ] as const;
 export const groupOf = (t: TimelineTemplate) => GROUPS.findIndex((g) => g.has(t.services)) as 0 | 1 | 2;
 
-export function median(xs: number[]) {
-  if (xs.length === 0) return null;
-  const s = [...xs].sort((a, b) => a - b);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
-}
-
 export const tick = { tickLine: false, axisLine: false } as const;
 export const cursor = { stroke: "var(--border)", fill: "var(--foreground)", fillOpacity: 0.05 };
 /** Under a dollar a day reads better in cents. */

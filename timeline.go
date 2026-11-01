@@ -254,6 +254,10 @@ func buildTimeline(days int, now, trackedSince time.Time, events []timelineEvent
 	today := now.UTC().Truncate(24 * time.Hour)
 	windowStart := timelineStart(now, days)
 	previousStart := windowStart.AddDate(0, 0, -days)
+	// The window ends now, partway through today, so the range it is compared
+	// with ends as far into its own last day: whole days against whole days
+	// read every morning as a drop.
+	previousEnd := previousStart.Add(now.Sub(windowStart))
 	resp := timelineResponse{
 		TrackedSince: trackedSince,
 		Window:       timelineWindow{Days: days},
@@ -300,7 +304,7 @@ func buildTimeline(days int, now, trackedSince time.Time, events []timelineEvent
 		}
 
 		if at.Before(windowStart) {
-			if !at.Before(previousStart) {
+			if !at.Before(previousStart) && at.Before(previousEnd) {
 				resp.Window.PreviousEarnedCents += e.EarnedCents
 				previousNew += e.NewProjects
 			}

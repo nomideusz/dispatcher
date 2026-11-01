@@ -1,6 +1,6 @@
 import { type ReactNode, useMemo } from "react";
 import { CartesianGrid, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
-import { cursor, GROUPS, groupOf, Key, median, perDay, Tip, tick } from "~/components/chart-kit";
+import { cursor, GROUPS, groupOf, Key, perDay, Tip, tick } from "~/components/chart-kit";
 import { Section } from "~/components/page";
 import { ChartContainer } from "~/components/ui/chart";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead, useSort } from "~/components/ui/table";
@@ -16,6 +16,24 @@ const daysToPay = (t: TimelineTemplate) =>
   t.publishedAt && t.firstPaidAt
     ? Math.max(0, Math.floor((Date.parse(t.firstPaidAt) - Date.parse(t.publishedAt)) / DAY))
     : null;
+
+type Life = { age: number; paid: number | null };
+const lifeOf = (t: TimelineTemplate, now: number): Life | null =>
+  t.publishedAt ? { age: Math.floor((now - Date.parse(t.publishedAt)) / DAY), paid: daysToPay(t) } : null;
+
+/** Share paid by each day 0..last after publishing, Kaplan–Meier: each
+ * day's payers over the templates still unpaid and at least that old, so a
+ * young template that already paid counts now instead of once it ages past
+ * the day. n is how many are that old; under five the share is null. */
+function paidCurve(life: Life[], last: number) {
+  let unpaid = 1;
+  return Array.from({ length: last + 1 }, (_, day) => {
+    const old = life.filter((l) => l.age >= day);
+    const atRisk = old.filter((l) => l.paid == null || l.paid >= day).length;
+    if (atRisk > 0) unpaid *= 1 - old.filter((l) => l.paid === day).length / atRisk;
+    return { share: old.length < 5 ? null : 1 - unpaid, n: old.length };
+  });
+}
 
 function useWhatToPublish(data: TimelineResponse) {
   return useMemo(() => {
@@ -43,27 +61,22 @@ function useWhatToPublish(data: TimelineResponse) {
     });
 
     // Share paid by each day after publishing, over the templates' whole life
-    // (the range picker does not apply). Kaplan–Meier: each day's payers over
-    // the templates still unpaid and at least that old, so a young template
-    // that already paid counts now instead of once it ages past the day.
-    // A group's line stops once fewer than five templates are that old.
+    // (the range picker does not apply). A group's line stops once fewer
+    // than five templates are that old.
     const now = Date.parse(data.sampledAt);
-    const life = templates
-      .filter((t) => t.publishedAt)
-      .map((t) => ({ g: groupOf(t), age: Math.floor((now - Date.parse(t.publishedAt!)) / DAY), paid: daysToPay(t) }));
-    const unpaid = GROUPS.map(() => 1);
-    const curve = Array.from({ length: 91 }, (_, day) => {
-      const row: Record<string, number | null> = { day };
-      GROUPS.forEach((_, g) => {
-        const old = life.filter((l) => l.g === g && l.age >= day);
-        const atRisk = old.filter((l) => l.paid == null || l.paid >= day).length;
-        const paidToday = old.filter((l) => l.paid === day).length;
-        if (atRisk > 0) unpaid[g] *= 1 - paidToday / atRisk;
-        row[`g${g}`] = old.length < 5 ? null : 1 - unpaid[g];
-        row[`n${g}`] = old.length;
-      });
-      return row;
-    }).filter((r) => r.g0 != null || r.g1 != null || r.g2 != null);
+    const byGroup = GROUPS.map((_, g) =>
+      paidCurve(templates.filter((t) => groupOf(t) === g).flatMap((t) => lifeOf(t, now) ?? []), 90),
+    );
+    const curve = byGroup[0]
+      .map((_, day) => {
+        const row: Record<string, number | null> = { day };
+        byGroup.forEach((c, g) => {
+          row[`g${g}`] = c[day].share;
+          row[`n${g}`] = c[day].n;
+        });
+        return row;
+      })
+      .filter((r) => r.g0 != null || r.g1 != null || r.g2 != null);
 
     const kindOrder = (k: string) => (k === "" ? KINDS.length : KINDS.findIndex((x) => x.key === k));
     const seg = (keyOf: (t: TimelineTemplate) => string) => segment(templates, keyOf, now);
@@ -190,7 +203,7 @@ export function WhatToPublish({ data }: { data: TimelineResponse }) {
       <Section
         id="segments"
         title="By kind, size, origin and age"
-        text="Earning and 30d cover the last 30 days. Per template is what a typical one earns per 30 days live: young templates count only the days they've been up, and the row's top earner is left out so one hit doesn't carry it. First paid: median wait among those that paid. Set a template's kind and origin under its name on Templates."
+        text="Earning and 30d cover the last 30 days. Per template is what a typical one earns per 30 days live: young templates count only the days they've been up, and the row's top earner is left out so one hit doesn't carry it. Paid by 30d: share that earned within 30 days of publishing, estimated like the curve above; blank under five templates that old. Set a template's kind and origin under its name on Templates."
       >
         <div className="grid gap-6 xl:grid-cols-2">
           <div className="xl:col-span-2">
@@ -233,7 +246,8 @@ type Segment = {
   /** 30-day kickback per 30 days live, leaving out the top earner. */
   typical: number;
   top: { name: string; earned: number } | null;
-  firstPaid: number | null;
+  /** Share paid within 30 days of publishing, by paidCurve. */
+  paid30: number | null;
 };
 
 function segment(templates: TimelineTemplate[], keyOf: (t: TimelineTemplate) => string, now: number): Segment[] {
@@ -256,13 +270,13 @@ function segment(templates: TimelineTemplate[], keyOf: (t: TimelineTemplate) => 
         earned,
         typical: (rest.reduce((s, t) => s + (t.earned30d ?? 0), 0) / rest.reduce((s, t) => s + live(t), 0)) * 30,
         top: (hit.earned30d ?? 0) > 0 ? { name: hit.name.split(" | ")[0], earned: hit.earned30d ?? 0 } : null,
-        firstPaid: median(ts.flatMap((t) => daysToPay(t) ?? [])),
+        paid30: paidCurve(ts.flatMap((t) => lifeOf(t, now) ?? []), 30)[30].share,
       };
     })
     .sort((a, b) => a.key.localeCompare(b.key));
 }
 
-type SegmentKey = "key" | "templates" | "earning" | "earned" | "per" | "top" | "perRunning" | "firstPaid";
+type SegmentKey = "key" | "templates" | "earning" | "earned" | "per" | "top" | "perRunning" | "paid30";
 
 function SegmentTable({
   title,
@@ -288,10 +302,10 @@ function SegmentTable({
         per: r.typical,
         top: r.top ? r.top.earned / r.earned : null,
         perRunning: r.running > 0 ? r.earned / r.running : null,
-        firstPaid: r.firstPaid,
+        paid30: r.paid30,
       })[key],
     "key",
-    ["key", "firstPaid"],
+    ["key"],
   );
   return (
     <Table className="sm:min-w-[34rem]">
@@ -304,7 +318,7 @@ function SegmentTable({
           {head("per", "Per template", { className: "pl-6", hint: "Typical, per 30 days live, top earner left out" })}
           {head("top", "Top earner", { hint: "Its share of the row's 30d", className: "max-sm:hidden" })}
           {head("perRunning", "Per running instance", { numeric: true, className: "max-sm:hidden" })}
-          {head("firstPaid", "First paid", { numeric: true, hint: "Shortest wait first", className: "max-sm:hidden" })}
+          {head("paid30", "Paid by 30d", { numeric: true, hint: "Share paid within 30 days of publishing, young templates counted for the days they've been up", className: "max-sm:hidden" })}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -336,7 +350,7 @@ function SegmentTable({
                 {r.running > 0 ? fmtUsd(r.earned / r.running) : "—"}
               </TableCell>
               <TableCell numeric className="text-muted-foreground max-sm:hidden">
-                {r.firstPaid == null ? "—" : `${r.firstPaid}d`}
+                {r.paid30 == null ? "—" : pct(r.paid30)}
               </TableCell>
             </TableRow>
           );

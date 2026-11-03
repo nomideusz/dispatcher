@@ -132,7 +132,7 @@ footer code { font-family: var(--mono); font-size: 12.5px; background: var(--car
           <ol class="sub">
             <li data-n="a"><span><em>Check its upgrades first.</em> Open <a href="https://dispatcher.zaur.app/upgrades" target="_blank" rel="noreferrer">Upgrades</a> and find the template. If it&rsquo;s behind, read the changelog for your symptom: an upstream fix may already exist.</span></li>
             <li data-n="b"><span><em>Find the root cause.</em> Logs and memory on a fresh deploy. Railway can show SUCCESS while the app is dead inside the container (AzuraCast&rsquo;s OOM loop).</span></li>
-            <li data-n="c"><span><em>Ship one push.</em> A patch or minor bump rides along with the fix. A major doesn&rsquo;t: fix on the current version first, then do the major on its own, so a later drop points at one change.</span></li>
+            <li data-n="c"><span><em>Ship one push.</em> Pending bumps ride along with the fix, majors included, because every push notifies the deployers. Only a major that has to migrate data, such as a database, gets its own tested change.</span></li>
             <li data-n="d"><span><em>Canary, then main.</em> Every push to main notifies all deployers. It&rsquo;s the only way to reach the instances that are already broken.</span></li>
           </ol>
         </div>

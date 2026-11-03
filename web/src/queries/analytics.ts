@@ -18,6 +18,8 @@ export interface TimelinePoint {
   /** templateMetrics.activeDeployments — Railway's metrics page "Active":
    * running instances, not projects. Null before metrics were collected. */
   running: number | null;
+  /** Microsoft Edge's part of running, so a chart can leave its surge out. */
+  edgeRunning: number | null;
   /** Published templates with any project ever, with a live project, and
    * with kickback in Railway's trailing 30 days (null before Railway
    * reported it), at the day's last sample; null on a day without one. */

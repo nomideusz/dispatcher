@@ -9,6 +9,7 @@ import { behindTemplateCount } from "~/components/upgrade-queue";
 import { AutoWithdraw } from "~/components/auto-withdraw-dialog";
 import { Forecast } from "~/components/forecast";
 import { PayoutHistory } from "~/components/payout-history";
+import { Strategy } from "~/components/strategy";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -70,10 +71,12 @@ export default function Money() {
           <Docket data={data} />
           <Held data={data} payouts={payouts.data} />
 
+          {payouts.data && <Strategy payers={payouts.data.payers} />}
+
           <Section
             id="earnings"
             title="Earnings"
-            text="Kickback over time, how much of the catalog is in use, and what each day earned. Point at or tap a day to see which templates earned."
+            text="What each day earned in the range above. Point at or tap a day to see which templates earned."
           >
             <Card>
               <CardContent>

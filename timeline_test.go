@@ -163,3 +163,55 @@ func TestTimelinePreviousMatchesElapsed(t *testing.T) {
 		t.Errorf("window = %d¢, previous = %d¢; want 70¢ and 100¢", got.Window.EarnedCents, got.Window.PreviousEarnedCents)
 	}
 }
+
+// Edge is reported apart from the running total, and as zero before it existed
+// rather than unknown.
+func TestTimelineReportsEdgeRunningApart(t *testing.T) {
+	db := openDB(filepath.Join(t.TempDir(), "timeline.duckdb"))
+	now := time.Now().UTC()
+	today := now.Truncate(24 * time.Hour)
+	before := today.AddDate(0, 0, -2).Add(10 * time.Hour)
+	after := today.AddDate(0, 0, -1).Add(10 * time.Hour)
+	published := today.AddDate(0, 0, -10)
+	snap := func(at time.Time, id string, running int64) TemplateSnapshot {
+		return TemplateSnapshot{
+			SampledAt: at, TemplateID: id, Name: id, Status: "PUBLISHED", PublishedAt: &published,
+			Services: 1, Projects: running, ActiveProjects: running, ActiveDeployments: pointerTo(running),
+		}
+	}
+	rows := []TemplateSnapshot{
+		snap(before, "a", 3),
+		snap(after, "a", 4),
+		snap(after, microsoftEdgeTemplate, 50),
+	}
+	if err := db.Create(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	handleTimeline(db)(rec, httptest.NewRequest("GET", "/api/analytics/timeline?days=30", nil))
+	if rec.Code != 200 {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+	var got timelineResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][2]int64{
+		before.Format(dayKeyLayout): {3, 0},
+		after.Format(dayKeyLayout):  {54, 50},
+	}
+	for _, p := range got.Points {
+		w, ok := want[p.Date]
+		if !ok {
+			continue
+		}
+		if p.Running == nil || p.EdgeRunning == nil || *p.Running != w[0] || *p.EdgeRunning != w[1] {
+			t.Errorf("%s running %v edge %v, want %v", p.Date, p.Running, p.EdgeRunning, w)
+		}
+		delete(want, p.Date)
+	}
+	if len(want) != 0 {
+		t.Errorf("no point for %v", want)
+	}
+}

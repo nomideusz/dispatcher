@@ -23,6 +23,11 @@ type timelineEvent struct {
 	Ledger      bool
 }
 
+// microsoftEdgeTemplate went from nothing to 551 running instances in about ten
+// days of October 2026 and has never earned. Points report it apart so a chart
+// can leave it out of use without hiding it from the totals.
+const microsoftEdgeTemplate = "a4109b00-ce9d-47ee-be2b-b15f5d5ec5de"
+
 // usageSample is the workspace's project counts at one collector sample,
 // and how many published templates had projects at all (Deployed), live
 // projects (Active) and kickback in Railway's trailing 30 days (Earning).
@@ -34,6 +39,7 @@ type usageSample struct {
 	Projects          int64
 	ActiveProjects    int64
 	Running           *int64
+	EdgeRunning       int64
 	DeployedTemplates int64
 	ActiveTemplates   int64
 	EarningTemplates  *int64
@@ -51,6 +57,7 @@ type timelinePoint struct {
 	Projects          *int64 `json:"projects"`
 	ActiveProjects    *int64 `json:"activeProjects"`
 	Running           *int64 `json:"running"`
+	EdgeRunning       *int64 `json:"edgeRunning"`
 	DeployedTemplates *int64 `json:"deployedTemplates"`
 	ActiveTemplates   *int64 `json:"activeTemplates"`
 	EarningTemplates  *int64 `json:"earningTemplates"`
@@ -209,6 +216,7 @@ func handleTimeline(db *gorm.DB) http.HandlerFunc {
 			       CAST(SUM(projects) AS BIGINT) AS projects,
 			       CAST(SUM(active_projects) AS BIGINT) AS active_projects,
 			       CAST(SUM(active_deployments) AS BIGINT) AS running,
+			       CAST(COALESCE(SUM(active_deployments) FILTER (WHERE template_id = ?), 0) AS BIGINT) AS edge_running,
 			       COUNT(*) FILTER (WHERE projects > 0) AS deployed_templates,
 			       -- Running instances where the sample has them: a project can stay
 			       -- "active" with every service down, and a live service earns.
@@ -218,7 +226,7 @@ func handleTimeline(db *gorm.DB) http.HandlerFunc {
 			       CAST(ROUND(SUM(total_payout) * 100) AS BIGINT) AS lifetime_cents
 			FROM template_snapshots
 			WHERE status = 'PUBLISHED' AND sampled_at >= ?
-			GROUP BY sampled_at ORDER BY sampled_at`, timelineStart(now, days).AddDate(0, 0, -days)).Scan(&samples).Error
+			GROUP BY sampled_at ORDER BY sampled_at`, microsoftEdgeTemplate, timelineStart(now, days).AddDate(0, 0, -days)).Scan(&samples).Error
 		if err != nil {
 			fail(err)
 			return
@@ -383,7 +391,7 @@ func buildTimeline(days int, now, trackedSince time.Time, events []timelineEvent
 			p.EarnedCents, p.NewProjects = sums.EarnedCents, sums.NewProjects
 		}
 		if s, ok := lastOfDay[key]; ok {
-			p.Projects, p.ActiveProjects, p.Running = &s.Projects, &s.ActiveProjects, s.Running
+			p.Projects, p.ActiveProjects, p.Running, p.EdgeRunning = &s.Projects, &s.ActiveProjects, s.Running, &s.EdgeRunning
 			p.DeployedTemplates, p.ActiveTemplates, p.EarningTemplates = &s.DeployedTemplates, &s.ActiveTemplates, s.EarningTemplates
 			p.LifetimeCents = &s.LifetimeCents
 		}

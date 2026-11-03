@@ -61,6 +61,41 @@ func TestNewestTags(t *testing.T) {
 	}
 }
 
+func TestNewestTagsHashBuilds(t *testing.T) {
+	tags := []string{"latest", "version-1aca5d17", "1aca5d17-ls61", "2dba585f-ls60", "arm64v8-1aca5d17-ls61",
+		"ubuntu-mate-d03f9fc4-ls285", "ubuntu-mate-0a1b2c3d-ls286", "ubuntu-xfce-99999999-ls300"}
+	cases := []struct{ pinned, latest, behind string }{
+		{"2dba585f-ls60", "1aca5d17-ls61", "minor"},
+		{"1aca5d17-ls61", "1aca5d17-ls61", ""},
+		// A flavour only moves within itself.
+		{"ubuntu-mate-d03f9fc4-ls285", "ubuntu-mate-0a1b2c3d-ls286", "minor"},
+	}
+	for _, c := range cases {
+		latest, behind, major := newestTags(c.pinned, tags)
+		if latest != c.latest || behind != c.behind || major != "" {
+			t.Errorf("newestTags(%q) = %q, %q, %q; want %q, %q, \"\"", c.pinned, latest, behind, major, c.latest, c.behind)
+		}
+	}
+}
+
+func TestImageTags(t *testing.T) {
+	tags := []string{"137.0.6036.63-ls295", "137.0.6036.70-ls296", "139.0.6053.22-ls300", "17.9-slim", "18.1-slim"}
+	cases := []struct{ image, pinned, latest, behind, major string }{
+		// A browser's next major is its next release.
+		{"linuxserver/opera", "137.0.6036.63-ls295", "139.0.6053.22-ls300", "minor", ""},
+		{"linuxserver/opera", "139.0.6053.22-ls300", "139.0.6053.22-ls300", "", ""},
+		// Anything else keeps its major apart, held back or not.
+		{"linuxserver/blender", "137.0.6036.63-ls295", "137.0.6036.70-ls296", "patch", "139.0.6053.22-ls300"},
+		{"postgres", "17.9-slim", "17.9-slim", "", "18.1-slim"},
+	}
+	for _, c := range cases {
+		latest, behind, major := imageTags(c.image, c.pinned, tags)
+		if latest != c.latest || behind != c.behind || major != c.major {
+			t.Errorf("imageTags(%q, %q) = %q, %q, %q; want %q, %q, %q", c.image, c.pinned, latest, behind, major, c.latest, c.behind, c.major)
+		}
+	}
+}
+
 func TestHABlock(t *testing.T) {
 	redis := []int{7, 8}
 	cases := []struct {

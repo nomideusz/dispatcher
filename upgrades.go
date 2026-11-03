@@ -45,10 +45,11 @@ type ServiceImage struct {
 	// Dockerfile ARG.
 	Image string `json:"image"`
 	Tag   string `json:"tag"`
-	// Latest is the newest tag shaped like Tag on the same major version.
+	// Latest is the newest tag shaped like Tag on the same major version, or
+	// on any version for a browser (see imageTags).
 	Latest string `json:"latest"`
-	// Behind is minor or patch; empty when Tag is the newest on its major
-	// line; "floating" for tags like latest or a digest; "unknown" when the
+	// Behind is minor or patch, or minor for a browser's next major; empty
+	// when Tag is the newest on its major line; "floating" for tags like latest or a digest; "unknown" when the
 	// registry could not be read (see Error). "unchecked" only in
 	// /api/upgrades, for a template with nothing to compare.
 	Behind string `json:"behind"`
@@ -162,6 +163,11 @@ func registryRepo(image string) (host, repo string) {
 var tagShapeRe = regexp.MustCompile(`^(\D*?)(\d+(?:\.\d+)*)(.*)$`)
 var digitsRe = regexp.MustCompile(`\d+`)
 
+// hashBuildRe matches a LinuxServer tag named after a package hash, optionally
+// after a flavour (2dba585f-ls60, ubuntu-mate-d03f9fc4-ls285). The hash is a
+// different string in every release, so only the build number orders them.
+var hashBuildRe = regexp.MustCompile(`^(.*-)?[0-9a-f]{8}-ls(\d+)$`)
+
 // pgSuffixRe matches a Postgres major in a suffix (pgvector's 0.8.7-pg17),
 // which is part of the shape: pg17 → pg18 is a database major, not a patch.
 var pgSuffixRe = regexp.MustCompile(`pg\d+`)
@@ -171,6 +177,14 @@ var pgSuffixRe = regexp.MustCompile(`pg\d+`)
 // suffix, which stays in the shape. ok is false for
 // tags with no version (latest, main).
 func tagVersion(tag string) (shape string, nums []int, ok bool) {
+	if m := hashBuildRe.FindStringSubmatch(tag); m != nil {
+		build, err := strconv.Atoi(m[2])
+		if err != nil {
+			return "", nil, false
+		}
+		// The 0 keeps every build on one major line.
+		return "hash|" + m[1], []int{0, build}, true
+	}
 	m := tagShapeRe.FindStringSubmatch(tag)
 	if m == nil || strings.HasPrefix(tag, "@") {
 		return "", nil, false
@@ -240,6 +254,31 @@ func newestTags(pinned string, tags []string) (latest, behind, major string) {
 		behind = "minor"
 	default:
 		behind = "patch"
+	}
+	return latest, behind, major
+}
+
+// browserImages ship a new major every few weeks, and that major is where the
+// security fixes land: nothing is held back on purpose, as it is for a database.
+var browserImages = map[string]bool{
+	"linuxserver/brave":              true,
+	"linuxserver/chrome":             true,
+	"linuxserver/chromium":           true,
+	"linuxserver/firefox":            true,
+	"linuxserver/librewolf":          true,
+	"linuxserver/msedge":             true,
+	"linuxserver/mullvad-browser":    true,
+	"linuxserver/opera":              true,
+	"linuxserver/ungoogled-chromium": true,
+	"linuxserver/vivaldi":            true,
+}
+
+// imageTags is newestTags for a given image. On a browser a later major is the
+// next release, so it counts as behind rather than as a major to weigh.
+func imageTags(image, pinned string, tags []string) (latest, behind, major string) {
+	latest, behind, major = newestTags(pinned, tags)
+	if major != "" && browserImages[image] {
+		return major, "minor", ""
 	}
 	return latest, behind, major
 }
@@ -678,7 +717,7 @@ func checkTemplateUpgrades(db *gorm.DB) error {
 			} else if res.err != nil {
 				row.Behind, row.Error = "unknown", res.err.Error()
 			} else {
-				row.Latest, row.Behind, row.Major = newestTags(ref.Tag, res.tags)
+				row.Latest, row.Behind, row.Major = imageTags(ref.Image, ref.Tag, res.tags)
 			}
 			if ref.HA != "" {
 				row.HABlock = haBlock(ref.Tag, row.Major, haSupported[ref.HA])

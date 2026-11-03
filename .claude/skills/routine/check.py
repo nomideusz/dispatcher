@@ -3,6 +3,7 @@
 
 Prints one report and saves the figures to last.json beside this file, so the
 next run (days or weeks later) can say what moved. --dry-run skips the save.
+--only SECTION prints one section in more detail and never saves.
 """
 import json
 import os
@@ -15,6 +16,9 @@ LAST = os.path.join(HERE, "last.json")
 CTL = os.environ.get("DISPATCHERCTL") or os.path.expanduser("~/go/bin/dispatcherctl")
 HEALTH_FLOOR = 70  # the checklist's "under 70%" line
 FIX_FIRST = 10  # earning templates under the floor before publishing pauses
+PLUMBING = {"Storage", "Starters", "Queues"}  # databases, boilerplates and queues: not apps we build
+SECTIONS = ("health", "catalog", "upgrades", "search", "candidates", "verdict", "payouts")
+VOID = {"FAILED", "CANCELLED", "CANCELED", "REJECTED"}  # withdrawals where no money moved
 
 
 def get(*args):
@@ -89,14 +93,12 @@ def delta(now, before, key):
     return f" ({'+' if d > 0 else ''}{d})" if d else " (=)"
 
 
-def report(f, last):
-    print(f"Routine check {f['at']}" + (f", last check {last['at']}" if last else ", first check"))
-    print()
+def show_health(f, last, detail=False):
     print(f"HEALTH: {len(f['low'])} live templates under {HEALTH_FLOOR}%, {f['lowEarning']} of them earning" + delta(
         {"n": f["lowEarning"]}, last and {"n": last["lowEarning"]}, "n"))
     if f["lowEarning"] > FIX_FIRST:
         print(f"  over {FIX_FIRST} earning: fix before you publish")
-    for t in f["low"][:10]:
+    for t in f["low"] if detail else f["low"][:10]:
         up = f"  upgrades pending: {', '.join(t['upgrades'])}" if t["upgrades"] else ""
         fixed = f"  fix pushed {t['fixedOn']}" if t.get("fixedOn") else ""
         print(f"  {t['health']:>3}%  ${t['earnedCents'] / 100:>7.2f}/30d  {t['name']}{fixed}{up}")
@@ -108,7 +110,9 @@ def report(f, last):
             print(f"  recovered since last: {', '.join(fixed)}")
         if new:
             print(f"  new since last: {', '.join(new)}")
-    print()
+
+
+def show_catalog(f, last):
     added = len(set(f["ids"]) - set(last["ids"])) if last else None
     print(f"CATALOG: {f['templates']} live" + (f", {added} new since last" if added is not None else "")
           + f"; earned 30d ${f['earned30dCents'] / 100:,.2f}" + delta(
@@ -117,17 +121,23 @@ def report(f, last):
         print(f"  no kind: {', '.join(f['noKind'])}")
     if f["noOrigin"]:
         print(f"  no origin ({len(f['noOrigin'])}): {', '.join(f['noOrigin'][:12])}{' …' if len(f['noOrigin']) > 12 else ''}")
-    print()
+
+
+def show_upgrades(f):
     b = f["behind"]
     print(f"UPGRADES: {b['patch']} patch, {b['minor']} minor, {b['floating']} floating, {f['majors']} with a newer major")
-    print()
+
+
+def show_search(f, last):
     print(f"SEARCH: #1 on {f['ownTop']} of {f['ownKeywords']} own keywords" + delta(f, last, "ownTop")
           + f"; {f['gaps']} gaps; shortlist {f['shortlist']}")
     if f["ownDropped"]:
         print(f"  dropped this week: {', '.join(f['ownDropped'])}")
     if f["ownMissing"]:
         print(f"  missing: {', '.join(f['ownMissing'])}")
-    print()
+
+
+def show_verdict(f):
     v = f["verdict"]
     cp = v["checkpoint"]
     print("VERDICT: " + (f"checkpoint day {cp['horizon']}: P1 {cp['p1']}, P2 {cp['p2']}" if cp else "no checkpoint yet")
@@ -136,29 +146,162 @@ def report(f, last):
         print("  a predictor passed: T4 (Verdict column) is unblocked")
 
 
+def show_proposals():
+    # The owner's proposals inbox; live only, nothing to compare with last time.
+    out = subprocess.run([CTL, "--compact", "proposals"], capture_output=True, text=True, timeout=120)
+    if out.returncode == 0:
+        new = [p for p in json.loads(out.stdout)["proposals"] if not p["status"]]
+        print(f"PROPOSALS: {len(new)} waiting for an answer")
+        for p in new:
+            print(f"  {p['url']}" + (f"  ({p['note']})" if p["note"] else ""))
+
+
+def upgrade_queue(upgrades, n=15):
+    """The queue per template, in the server's order: urgent, then behind by earnings."""
+    by = {}
+    for u in upgrades:
+        if u.get("urgent") or u.get("behind") in ("patch", "minor", "floating") or u.get("major"):
+            by.setdefault(u["templateId"], []).append(u)
+    # Same as the page: what earned nothing waits behind one line, unless urgent.
+    lead = [g for g in by.values() if g[0].get("urgent") or (g[0].get("earningsLast30Days") or 0) > 0]
+    print(f"  queue: {len(lead)} templates to work, {len(by) - len(lead)} more earned nothing")
+    for g in lead[:n]:
+        u = g[0]
+        print(f"  {u['name']}  ${u.get('earningsLast30Days') or 0:.2f}/30d  {u.get('runningInstances') or 0} running"
+              + (f"  URGENT: {u['urgent']}" if u.get("urgent") else ""))
+        for x in g:
+            to = x.get("latest") or "?"
+            print(f"    {x['service']}: {x['image']}:{x['tag']} -> {to} ({x.get('behind') or 'current'})"
+                  + (f", major {x['major']}" if x.get("major") else ""))
+    if len(lead) > n:
+        print(f"  … {len(lead) - n} more")
+
+
+def search_detail(search, n=10):
+    added = [k for k in search["keywords"] if k["source"] == "manual"]
+    fell = [
+        f"{k['query']} #{k['prevBest'] or '-'}→#{k['best'] or 'out'}"
+        for k in added
+        if k["searchedBefore"] and (k["best"] or 21) > (k["prevBest"] or 21)
+    ]
+    print(f"  added by hand: {len(added)}, {sum(1 for k in added if k['best'] == 1)} at #1")
+    if fell:
+        print(f"  added by hand, dropped this week: {', '.join(fell)}")
+    gaps = sorted(
+        (k for k in search["keywords"] if k["demand"] > 0 and (k["best"] is None or k["best"] > 3) and k["category"] not in PLUMBING),
+        key=lambda k: -k["demand"],
+    )
+    print("  biggest gaps (not top 3, no databases or starters; demand counts big templates more than once):")
+    for k in gaps[:n]:
+        first = k["top"][0]["name"] if k["top"] else "-"
+        print(f"    {k['query']}  demand {k['demand']:,}  we rank {'#' + str(k['best']) if k['best'] else 'none'}  first: {first}")
+
+
+def candidates_detail(candidates, n=15):
+    groups = candidates["groups"]
+    short = [g for g in groups if g.get("status") == "shortlist"]
+    print(f"CANDIDATES: {len(short)} on the shortlist, market read {candidates['fetchedAt'][:10]}")
+    for g in short:
+        print(f"  shortlist: {g['key']}  {g['recent']:,} in 90d" + (f"  ({g['note']})" if g.get("note") else ""))
+    # Same as the page's Market view with its default filters on.
+    market = sorted(
+        (g for g in groups if not g.get("status") and g["category"] not in PLUMBING and not g["ours"] and not g.get("similar")),
+        key=lambda g: -g["recent"],
+    )
+    print("  most deployed that we don't publish:")
+    for g in market[:n]:
+        l = g.get("leader") or {}
+        print(f"    {g['key']}  {g['category']}  {g['recent']:,} in 90d  {g['rivals']} rivals"
+              f"  leader {l.get('name', '-')} by {l.get('creator') or 'unknown'}, health {l.get('health', '-')}")
+    behind = sorted(
+        (g for g in groups if g["ours"] and g["ourRecent"] * 2 < g["recent"] + g["similarRecent"]),
+        key=lambda g: -(g["recent"] + g["similarRecent"]),
+    )
+    print("  ours, but others take most of the deploys (a listing to fix is cheaper than a build):")
+    for g in behind[:5]:
+        print(f"    {g['key']}  we get {g['ourRecent']:,} of {g['recent'] + g['similarRecent']:,} in 90d")
+
+
+def show_payouts(days=14):
+    """Real transfers only: the history's accruals are kickbacks reaching the balance."""
+    settings = get("withdraw-settings")
+    accounts = get("withdraw-accounts")
+    hist = get("get", f"/api/payouts?days={days}")
+    rows = [p for p in hist["payouts"] if p["kind"] != "accrual"]
+    print(f"PAYOUTS: auto-withdraw {'on, ' + settings['schedule'] if settings['enabled'] else 'OFF'}"
+          f"; balance ${accounts['availableBalance'] / 100:,.2f}, minimum ${accounts['minimumBalance'] / 100:,.2f}")
+    t = hist["totals"]
+    print(f"  last payout {(t.get('lastPayoutAt') or 'never')[:10]}; pending ${t['pendingCents'] / 100:,.2f} in {t['pendingCount']}")
+    print(f"  transfers in {days} days: {len(rows)}")
+    for p in rows:
+        flag = "  FAILED, no money moved" if p["status"] in VOID else ""
+        print(f"    {p['createdAt'][:10]}  ${p['amountCents'] / 100:,.2f}  {p['kind']}  {p['status']}  {p.get('destination') or ''}{flag}")
+
+
+def only(section, f, last, data):
+    if section == "health":
+        show_health(f, last, detail=True)
+    elif section == "catalog":
+        show_catalog(f, last)
+    elif section == "upgrades":
+        show_upgrades(f)
+        upgrade_queue(data["upgrades"])
+    elif section == "search":
+        show_search(f, last)
+        search_detail(data["search"])
+    elif section == "candidates":
+        candidates_detail(data["candidates"])
+        print()
+        show_proposals()
+    elif section == "verdict":
+        show_verdict(f)
+    elif section == "payouts":
+        show_payouts()
+
+
+def report(f, last):
+    print(f"Routine check {f['at']}" + (f", last check {last['at']}" if last else ", first check"))
+    print()
+    show_health(f, last)
+    print()
+    show_catalog(f, last)
+    print()
+    show_upgrades(f)
+    print()
+    show_search(f, last)
+    print()
+    show_verdict(f)
+    print()
+    show_proposals()
+
+
 def main():
+    section = None
+    if "--only" in sys.argv:
+        at = sys.argv.index("--only") + 1
+        section = sys.argv[at] if at < len(sys.argv) else ""
+        if section not in SECTIONS:
+            sys.exit(f"--only takes one of: {', '.join(SECTIONS)}")
     last = None
     try:
         with open(LAST) as fh:
             last = json.load(fh)
     except (OSError, ValueError):
         pass
-    f = figures(
-        get("get", "/api/analytics/timeline"),
-        get("upgrades"),
-        get("get", "/api/search"),
-        get("get", "/api/candidates"),
-        get("get", "/api/analytics/verdicts"),
-    )
+    data = {
+        "timeline": get("get", "/api/analytics/timeline"),
+        "upgrades": get("upgrades"),
+        "search": get("get", "/api/search"),
+        "candidates": get("get", "/api/candidates"),
+        "verdicts": get("get", "/api/analytics/verdicts"),
+    }
+    f = figures(data["timeline"], data["upgrades"], data["search"], data["candidates"], data["verdicts"])
+    if section:
+        # One section compares with the last full check and leaves it in place,
+        # so the next routine still reports everything that moved since then.
+        only(section, f, last, data)
+        return
     report(f, last)
-    # The owner's proposals inbox; live only, nothing to compare with last time.
-    out = subprocess.run([CTL, "--compact", "proposals"], capture_output=True, text=True, timeout=120)
-    if out.returncode == 0:
-        new = [p for p in json.loads(out.stdout)["proposals"] if not p["status"]]
-        print()
-        print(f"PROPOSALS: {len(new)} waiting for an answer")
-        for p in new:
-            print(f"  {p['url']}" + (f"  ({p['note']})" if p["note"] else ""))
     if "--dry-run" not in sys.argv:
         with open(LAST, "w") as fh:
             json.dump(f, fh)

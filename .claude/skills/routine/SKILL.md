@@ -7,10 +7,12 @@ description: Check the Dispatcher operating routine against live data. Use when 
 
 The routine is the checklist at https://claude.ai/artifact/2vHDWt6gxBdmWuGYEyEqMo (source: `page.html` here). Health first, because health holds search position and position drives deploys. Then publish. Upgrades, search, the verdict and payouts are weekly.
 
+This is the overview, and its bullets below hold the rules. To work one area, the owner uses `/health`, `/upgrades`, `/search`, `/candidates`, `/verdict`, `/payouts` or `/catalog`, which follow the same rules and don't reset what this check compares against.
+
 ## Steps
 
 1. Run `python3 -I .claude/skills/routine/check.py`. It reads live figures with `~/go/bin/dispatcherctl` (logged in to dispatcher.zaur.app), prints a report, and saves them to `last.json` so the next check can say what moved. If dispatcherctl says the session expired, ask the owner to run `! ~/go/bin/dispatcherctl login`.
-2. Run `~/go/bin/dispatcherctl payouts --days 14` and look only for a failed or missing transfer.
+2. Run `python3 -I .claude/skills/routine/check.py --only payouts` and look only for a failed or missing transfer.
 3. Answer in this order, short, with one recommendation per section:
    - **Proposals:** the owner adds links on the Candidates page. Evaluate each waiting one the way a pasted link is evaluated here (what it is, whether it runs as a Railway service, the market for it), then answer it with `dispatcherctl proposal URL STATUS "REPLY"`: `skipped` with the reason, or `building` when you start it and `published` with the template code once it's live. Keep a reply to one or two sentences; the owner reads it in Dispatcher. Ask before building if more than one is worth it.
    - **Health:** name the earning template to fix first, skipping any marked `fix pushed`: health scores the deploys already running, so it lags a fix until deployers take the update or new deploys land. Whenever a health fix is pushed, record it with `dispatcherctl fixed ID YYYY-MM-DD`; if a fixed template is still low a few weeks on with new deploys since the fix, the fix didn't hold. If it has pending upgrades, a patch or minor goes into the same push as the fix. A major goes into a separate push after the fix, so a later drop points at one change. More than 10 earning templates under 70% means fix before publishing.

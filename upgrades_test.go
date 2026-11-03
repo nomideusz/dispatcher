@@ -61,19 +61,30 @@ func TestNewestTags(t *testing.T) {
 	}
 }
 
-func TestNewestTagsHashBuilds(t *testing.T) {
-	tags := []string{"latest", "version-1aca5d17", "1aca5d17-ls61", "2dba585f-ls60", "arm64v8-1aca5d17-ls61",
-		"ubuntu-mate-d03f9fc4-ls285", "ubuntu-mate-0a1b2c3d-ls286", "ubuntu-xfce-99999999-ls300"}
+func TestHashTagLatest(t *testing.T) {
+	newest := map[string]string{"": "1aca5d17-ls61", "ubuntu-mate-": "ubuntu-mate-7cf71062-ls292"}
 	cases := []struct{ pinned, latest, behind string }{
-		{"2dba585f-ls60", "1aca5d17-ls61", "minor"},
+		// Build numbers restart: an old ls133 is still behind ls61.
+		{"29463a90-ls133", "1aca5d17-ls61", "patch"},
+		{"2dba585f-ls60", "1aca5d17-ls61", "patch"},
 		{"1aca5d17-ls61", "1aca5d17-ls61", ""},
 		// A flavour only moves within itself.
-		{"ubuntu-mate-d03f9fc4-ls285", "ubuntu-mate-0a1b2c3d-ls286", "minor"},
+		{"ubuntu-mate-d03f9fc4-ls285", "ubuntu-mate-7cf71062-ls292", "patch"},
+		{"ubuntu-i3-85811fa7-ls293", "ubuntu-i3-85811fa7-ls293", ""},
 	}
 	for _, c := range cases {
-		latest, behind, major := newestTags(c.pinned, tags)
-		if latest != c.latest || behind != c.behind || major != "" {
-			t.Errorf("newestTags(%q) = %q, %q, %q; want %q, %q, \"\"", c.pinned, latest, behind, major, c.latest, c.behind)
+		if !hashTagRe.MatchString(c.pinned) {
+			t.Errorf("hashTagRe does not match %q", c.pinned)
+			continue
+		}
+		latest, behind := hashTagLatest(c.pinned, newest)
+		if latest != c.latest || behind != c.behind {
+			t.Errorf("hashTagLatest(%q) = %q, %q; want %q, %q", c.pinned, latest, behind, c.latest, c.behind)
+		}
+	}
+	for _, tag := range []string{"137.0.6036.63-ls295", "v1.14.5-ls150", "arch-xfce-2025-07-12-ls254", "latest", "version-1aca5d17"} {
+		if hashTagRe.MatchString(tag) {
+			t.Errorf("hashTagRe matches %q", tag)
 		}
 	}
 }

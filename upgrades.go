@@ -163,10 +163,11 @@ func registryRepo(image string) (host, repo string) {
 var tagShapeRe = regexp.MustCompile(`^(\D*?)(\d+(?:\.\d+)*)(.*)$`)
 var digitsRe = regexp.MustCompile(`\d+`)
 
-// hashBuildRe matches a LinuxServer tag named after a package hash, optionally
-// after a flavour (2dba585f-ls60, ubuntu-mate-d03f9fc4-ls285). The hash is a
-// different string in every release, so only the build number orders them.
-var hashBuildRe = regexp.MustCompile(`^(.*-)?[0-9a-f]{8}-ls(\d+)$`)
+// hashTagRe matches a LinuxServer tag named after a package hash, optionally
+// after a flavour (2dba585f-ls60, ubuntu-mate-d03f9fc4-ls285). Nothing in the
+// tag orders them: the hash is arbitrary and the build number restarts
+// (chromium's ls133 is from 2025, its ls61 from this week).
+var hashTagRe = regexp.MustCompile(`^(.*-)?[0-9a-f]{8}-ls\d+$`)
 
 // pgSuffixRe matches a Postgres major in a suffix (pgvector's 0.8.7-pg17),
 // which is part of the shape: pg17 → pg18 is a database major, not a patch.
@@ -177,14 +178,6 @@ var pgSuffixRe = regexp.MustCompile(`pg\d+`)
 // suffix, which stays in the shape. ok is false for
 // tags with no version (latest, main).
 func tagVersion(tag string) (shape string, nums []int, ok bool) {
-	if m := hashBuildRe.FindStringSubmatch(tag); m != nil {
-		build, err := strconv.Atoi(m[2])
-		if err != nil {
-			return "", nil, false
-		}
-		// The 0 keeps every build on one major line.
-		return "hash|" + m[1], []int{0, build}, true
-	}
 	m := tagShapeRe.FindStringSubmatch(tag)
 	if m == nil || strings.HasPrefix(tag, "@") {
 		return "", nil, false
@@ -281,6 +274,44 @@ func imageTags(image, pinned string, tags []string) (latest, behind, major strin
 		return major, "minor", ""
 	}
 	return latest, behind, major
+}
+
+// hubHashTags reads a Docker Hub repository's most recently pushed tags and
+// returns the newest hash-named tag of each flavour. The registry API has no
+// dates, so this needs Hub's own. Elsewhere it returns nil: such pins read as
+// current.
+func hubHashTags(ctx context.Context, image string) (map[string]string, error) {
+	host, repo := registryRepo(image)
+	if host != "registry-1.docker.io" {
+		return nil, nil
+	}
+	var page struct {
+		Results []struct {
+			Name string `json:"name"`
+		} `json:"results"`
+	}
+	if err := getJSON(ctx, "https://hub.docker.com/v2/repositories/"+repo+"/tags?page_size=100&ordering=last_updated", &page); err != nil {
+		return nil, err
+	}
+	newest := map[string]string{}
+	for _, tag := range page.Results {
+		if m := hashTagRe.FindStringSubmatch(tag.Name); m != nil && newest[m[1]] == "" {
+			newest[m[1]] = tag.Name
+		}
+	}
+	return newest, nil
+}
+
+// hashTagLatest places a hash-named pin against hubHashTags. These tags are
+// LinuxServer's weekly rebuilds, so a newer one counts as a patch, as ls151
+// after ls150 does on a versioned tag. A flavour missing from the page reads as
+// current.
+func hashTagLatest(pinned string, newest map[string]string) (latest, behind string) {
+	latest = newest[hashTagRe.FindStringSubmatch(pinned)[1]]
+	if latest == "" || latest == pinned {
+		return pinned, ""
+	}
+	return latest, "patch"
 }
 
 // haMajors reads the image majors an HA companion template converts:
@@ -673,8 +704,10 @@ func checkTemplateUpgrades(db *gorm.DB) error {
 	g.Wait()
 
 	type tagResult struct {
-		tags []string
-		err  error
+		tags     []string
+		hashed   bool // a pin of this image is hash-named
+		hashTags map[string]string
+		err      error
 	}
 	cache := map[string]*tagResult{}
 	for _, tRefs := range refs {
@@ -682,11 +715,17 @@ func checkTemplateUpgrades(db *gorm.DB) error {
 			if _, _, ok := tagVersion(ref.Tag); ok && cache[ref.Image] == nil {
 				cache[ref.Image] = &tagResult{}
 			}
+			if res := cache[ref.Image]; res != nil && hashTagRe.MatchString(ref.Tag) {
+				res.hashed = true
+			}
 		}
 	}
 	for image, res := range cache {
 		g.Go(func() error {
 			res.tags, res.err = listTags(ctx, image)
+			if res.err == nil && res.hashed {
+				res.hashTags, res.err = hubHashTags(ctx, image)
+			}
 			return nil
 		})
 	}
@@ -716,6 +755,8 @@ func checkTemplateUpgrades(db *gorm.DB) error {
 				row.Behind = "floating"
 			} else if res.err != nil {
 				row.Behind, row.Error = "unknown", res.err.Error()
+			} else if hashTagRe.MatchString(ref.Tag) {
+				row.Latest, row.Behind = hashTagLatest(ref.Tag, res.hashTags)
 			} else {
 				row.Latest, row.Behind, row.Major = imageTags(ref.Image, ref.Tag, res.tags)
 			}

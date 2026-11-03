@@ -71,8 +71,6 @@ export default function Money() {
           <Docket data={data} />
           <Held data={data} payouts={payouts.data} />
 
-          {payouts.data && <Strategy payers={payouts.data.payers} />}
-
           <Section
             id="earnings"
             title="Earnings"
@@ -106,6 +104,9 @@ export default function Money() {
           >
             <PayoutHistory days={days} />
           </Section>
+
+          {/* Whole-life, so it sits apart from the sections the range drives. */}
+          {payouts.data && <Strategy payers={payouts.data.payers} />}
         </>
       )}
     </main>

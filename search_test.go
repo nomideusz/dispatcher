@@ -1,6 +1,15 @@
 package main
 
-import "testing"
+import (
+	"context"
+	"path/filepath"
+	"reflect"
+	"testing"
+	"time"
+
+	duckdb "github.com/vogo/duckdb/v2"
+	"gorm.io/gorm"
+)
 
 func TestBuildSearch(t *testing.T) {
 	market := []MarketTemplate{
@@ -70,5 +79,34 @@ func TestBrandAfterBar(t *testing.T) {
 		if got := brandAfterBar(name); got != want {
 			t.Errorf("brandAfterBar(%q) = %q, want %q", name, got, want)
 		}
+	}
+}
+
+// A keyword that is both a template's name and added by hand counts as the
+// template's: it is searched either way, so there's nothing to stop tracking.
+func TestSearchKeywordsTemplateNameBeatsManual(t *testing.T) {
+	db, err := gorm.Open(duckdb.Open(filepath.Join(t.TempDir(), "s.duckdb")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&TemplateSnapshot{}, &SearchKeyword{}, &MarketTemplate{}, &CandidateMark{}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := db.Create(&TemplateSnapshot{SampledAt: now, TemplateID: "o", Name: "Claude Mem", Code: "claude-mem", Status: "PUBLISHED"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{"claude mem", "tmux"} {
+		if err := db.Create(&SearchKeyword{Query: q, CreatedAt: now}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := searchKeywords(context.Background(), db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"claude mem": "ours", "tmux": "manual"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
 	}
 }

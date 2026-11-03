@@ -13,7 +13,7 @@ import { type PositionShare, type SearchKeyword, searchQuery, useAddKeyword, use
  * build; same set as Candidates. */
 const PLUMBING = new Set(["Storage", "Starters", "Queues"]);
 
-type View = "ours" | "gaps" | "all";
+type View = "names" | "added" | "gaps" | "all";
 type SortKey = "query" | "best" | "demand" | "worth" | "first";
 type Value = (k: SearchKeyword, key: SortKey) => string | number | null;
 
@@ -44,7 +44,8 @@ function compare(a: SearchKeyword, b: SearchKeyword, key: SortKey, desc: boolean
 }
 
 const inView = (k: SearchKeyword, v: View, hidePlumbing: boolean) => {
-  if (v === "ours") return k.source !== "market";
+  if (v === "names") return k.source === "ours";
+  if (v === "added") return k.source === "manual";
   if (hidePlumbing && PLUMBING.has(k.category)) return false;
   // A gap: people deploy what this finds, and we aren't in the top three.
   if (v === "gaps") return k.demand > 0 && (k.best == null || k.best > 3);
@@ -55,7 +56,7 @@ const inView = (k: SearchKeyword, v: View, hidePlumbing: boolean) => {
  * keywords carry demand we don't reach, and how much a position is worth. */
 export function MarketSearch() {
   const q = useQuery(searchQuery);
-  const [view, setView] = useState<View>("ours");
+  const [view, setView] = useState<View>("names");
   const [needle, setNeedle] = useState("");
   const [hidePlumbing, setHidePlumbing] = useState(true);
   const [open, setOpen] = useState<string | null>(null);
@@ -81,12 +82,14 @@ export function MarketSearch() {
   const worth = worthOf(q.data.curve);
   const value: Value = (k, key) => (key === "worth" ? worth(k) : key === "first" ? (k.top[0]?.recent ?? null) : k[key]);
   const own = all.filter((k) => k.source === "ours");
-  const n = needle.trim().toLowerCase();
+  const n = needle.trim().toLowerCase().replace(/\s+/g, " ");
   const rows = all
     .filter((k) => inView(k, view, hidePlumbing) && (!n || k.query.includes(n)))
     .sort((a, b) => compare(a, b, sort.key, sort.desc, value) || b.demand - a.demand);
   const maxDemand = Math.max(1, ...rows.map((k) => k.demand));
   const count = (v: View) => all.filter((k) => inView(k, v, hidePlumbing)).length;
+  // The tabs split what used to sit together, so a miss here may be a hit next door.
+  const elsewhere = n.length > 0 && view !== "all" && all.some((k) => inView(k, "all", hidePlumbing) && k.query.includes(n));
   // A rank or a name reads best from the top; counts from the biggest.
   const header = (key: SortKey, label: string, hint?: string, numeric = true, className?: string) => {
     const on = sort.key === key;
@@ -106,11 +109,11 @@ export function MarketSearch() {
   return (
     <>
       <div className={cn(DOCKET, "grid-cols-2 lg:grid-cols-4")}>
-        <DocketCell label="Our keywords at #1" value={`${fmtNum(own.filter((k) => k.best === 1).length)} of ${fmtNum(own.length)}`}>
+        <DocketCell label="Template names at #1" value={`${fmtNum(own.filter((k) => k.best === 1).length)} of ${fmtNum(own.length)}`}>
           names and codes of our templates
         </DocketCell>
         <DocketCell label="In the top 3" value={fmtNum(own.filter((k) => k.best != null && k.best <= 3).length)} />
-        <DocketCell label="Missing from our own" value={fmtNum(own.filter((k) => k.best == null).length)}>
+        <DocketCell label="Missing under own name" value={fmtNum(own.filter((k) => k.best == null).length)}>
           {own
             .filter((k) => k.best == null)
             .slice(0, 4)
@@ -131,7 +134,8 @@ export function MarketSearch() {
           <div role="group" aria-label="Keywords view" className="flex gap-1">
             {(
               [
-                ["ours", "Ours"],
+                ["names", "Template names"],
+                ["added", "Added by hand"],
                 ["gaps", "Gaps"],
                 ["all", "All"],
               ] as const
@@ -143,11 +147,20 @@ export function MarketSearch() {
             ))}
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
-            {view !== "ours" && (
+            {(view === "gaps" || view === "all") && (
               <label className="flex items-center gap-1.5">
                 <input type="checkbox" checked={hidePlumbing} onChange={(e) => setHidePlumbing(e.target.checked)} />
                 Hide databases and starters
               </label>
+            )}
+            {/* Not tracked as typed, even if longer keywords contain it ("claude" beside "claude mem"). */}
+            {n.length >= 2 && !all.some((k) => k.query === n) && (
+              <span className="flex items-center gap-2">
+                {add.isError && add.variables === n && <span role="alert" className="text-(--viz-critical)">Not added</span>}
+                <Button size="xs" variant="secondary" disabled={add.isPending} onClick={() => add.mutate(n, { onSuccess: () => setView("added") })}>
+                  {add.isPending ? "Searching…" : `Track “${n}”`}
+                </Button>
+              </span>
             )}
             <input
               type="search"
@@ -186,14 +199,12 @@ export function MarketSearch() {
               <TableRow>
                 <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
                   No keywords match.
-                  {/* Not tracked under any view: offer it as typed, so it needn't be retyped. */}
-                  {n.length >= 2 && !all.some((k) => k.query === n) && (
+                  {elsewhere && (
                     <>
                       {" "}
-                      <Button size="xs" variant="secondary" disabled={add.isPending} onClick={() => add.mutate(n, { onSuccess: () => setView("ours") })}>
-                        {add.isPending ? "Searching…" : `Track \u201c${n}\u201d`}
+                      <Button size="xs" variant="secondary" onClick={() => setView("all")}>
+                        Look in All
                       </Button>
-                      {add.isError && <span role="alert" className="ml-2 text-(--viz-critical)">Not added</span>}
                     </>
                   )}
                 </TableCell>
@@ -229,7 +240,7 @@ function KeywordRow({
           {k.query}
         </button>
         <div className="truncate text-xs text-muted-foreground">
-          {k.source === "ours" ? "our template" : k.source === "market" ? "market app" : "added by hand"}
+          {k.source === "ours" ? "template name" : k.source === "market" ? "market app" : "added by hand"}
           {k.category && k.category !== "Other" ? ` · ${k.category}` : ""}
         </div>
       </TableRowHead>

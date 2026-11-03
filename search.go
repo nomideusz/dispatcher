@@ -78,9 +78,6 @@ func normalizeKeyword(q string) string {
 	return strings.Join(strings.Fields(q), " ")
 }
 
-// searchKeywords lists what to search, each with the first source that
-// asked for it: manual, then our templates (name and code), then the most
-// deployed apps on the market that aren't skipped.
 // brandAfterBar reads the brand of a "Generic | Brand, description" name
 // ("Analytics | Rybbit, Privacy-Friendly…" gives "rybbit"), which neither
 // the name's head nor its code carries. Only a lone word before a comma
@@ -94,19 +91,17 @@ func brandAfterBar(name string) string {
 	return strings.TrimSpace(head)
 }
 
+// searchKeywords lists what to search, each with the first source that
+// asked for it: our templates (name, code, brand), then manual, then the
+// most deployed apps on the market that aren't skipped. A template's own name
+// is searched anyway, so one also added by hand counts as ours and has
+// nothing to stop tracking.
 func searchKeywords(ctx context.Context, db *gorm.DB) (map[string]string, error) {
 	out := map[string]string{}
 	add := func(q, source string) {
 		if q = normalizeKeyword(q); len(q) >= 2 && out[q] == "" {
 			out[q] = source
 		}
-	}
-	var manual []SearchKeyword
-	if err := db.WithContext(ctx).Find(&manual).Error; err != nil {
-		return nil, err
-	}
-	for _, k := range manual {
-		add(k.Query, "manual")
 	}
 	var ours []struct{ Name, Code string }
 	if err := db.WithContext(ctx).Raw(`SELECT name, code FROM template_snapshots
@@ -117,6 +112,13 @@ func searchKeywords(ctx context.Context, db *gorm.DB) (map[string]string, error)
 		add(marketKey(t.Name), "ours")
 		add(strings.ReplaceAll(t.Code, "-", " "), "ours")
 		add(brandAfterBar(t.Name), "ours")
+	}
+	var manual []SearchKeyword
+	if err := db.WithContext(ctx).Find(&manual).Error; err != nil {
+		return nil, err
+	}
+	for _, k := range manual {
+		add(k.Query, "manual")
 	}
 	var rows []MarketTemplate
 	if err := db.WithContext(ctx).Find(&rows).Error; err != nil {

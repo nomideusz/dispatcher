@@ -16,8 +16,8 @@ const DAY = 86_400_000;
 const SEPARATE_MONTHS = 3;
 /** Skips the running green: beside teal it fails the validator's normal-vision floor. */
 const COLORS = ["var(--chart-1)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
-/** A first invoice comes about a month after a deploy, so by this age a
- * template has had a fair chance to show use. */
+/** A first invoice can take a month to arrive, so by this age a template has
+ * had a fair chance to show use. */
 const FAIR_CHANCE_DAYS = 45;
 const HEALTH_FLOOR = 70;
 /** The age chart stops here: past it only the oldest batch has a line. */
@@ -174,7 +174,7 @@ function tiersOf(templates: TimelineTemplate[], nowMs: number) {
   const defs: { label: string; hint: string; has: (t: TimelineTemplate) => boolean }[] = [
     { label: "Earning $5+", hint: "in the last 30 days", has: (t) => earned(t) >= 5 },
     { label: "Earning under $5", hint: "in the last 30 days", has: (t) => earned(t) > 0 && earned(t) < 5 },
-    { label: "In use, not paying", hint: "services running, nothing earned", has: (t) => earned(t) === 0 && running(t) > 0 },
+    { label: "In use, not paying", hint: "services running, nothing earned in 30 days", has: (t) => earned(t) === 0 && running(t) > 0 },
     {
       label: "Too young to call",
       hint: `under ${FAIR_CHANCE_DAYS} days old, nothing running`,
@@ -250,7 +250,7 @@ function Loaded({ data, model }: { data: TimelineResponse; model: ReturnType<typ
     <Section
       id="strategy"
       title="Is it working?"
-      text="What publishing has added, from the start of tracking to now: the catalog, who uses it, who pays, and what each publishing month brings. These charts ignore the range above."
+      text="What publishing has added since tracking began: the catalog, who uses it, who pays, and what each publishing month brings. The range at the top doesn't change any of this. Its 30-day figures count as Railway does, which can take in a day more than “Last 30 days” at the top."
     >
       <div className={cn(DOCKET, "grid-cols-2 lg:grid-cols-4")}>
         <DocketCell label="Growth in monthly kickback" value={signedUsd(growth)} small>
@@ -383,6 +383,8 @@ function Loaded({ data, model }: { data: TimelineResponse; model: ReturnType<typ
 
       <p className="text-xs text-muted-foreground">
         Deploys count whole weeks, so the current one is left out until it ends, and the key shows the last whole week.
+        “That have paid” means at any time so far, so a template that paid late counts in its earlier weeks too.
+        {edge && ` Deploys still include ${name(edge.name)}, which is most of the mid-October spike.`}
         {longGaps.map((g) => (
           <span key={g.from}>
             {" "}
@@ -461,7 +463,7 @@ function Loaded({ data, model }: { data: TimelineResponse; model: ReturnType<typ
         </ChartContainer>
         <p className="text-xs text-muted-foreground">
           Leaves out each batch&apos;s biggest earner, so one hit doesn&apos;t set its line. A line stops while too few of its templates
-          have reached that age. A first invoice comes about a month after a deploy, so a young line says little yet.
+          have reached that age. Kickback comes with a monthly invoice, so a template can take a month to show its first money and a young line says little yet.
           {tooYoung.length > 0 && ` ${tooYoung.join(" and ")} ${tooYoung.length > 1 ? "are" : "is"} too young to draw.`}
         </p>
       </section>

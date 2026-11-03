@@ -61,14 +61,14 @@ export default function Templates() {
             <TemplatesTable templates={data.templates} byTemplate={byTemplate} dates={data.points.map((p) => p.date)} trackedSince={data.trackedSince} />
           </Section>
 
-          <Section id="reach" title="Use and pay" text="Which templates people use, and which of those pay.">
+          <Section id="reach" title="Use and pay" text="Which templates people use, and which of those pay: today's counts and the last 30 days, so the range above doesn't change them.">
             <div className="grid gap-x-8 lg:grid-cols-12">
               <Card className="lg:col-span-7">
                 <CardHeader>
                   <CardTitle>Reach vs money</CardTitle>
                   <CardDescription>
-                    Live projects against kickback in the last 30 days. Dots above a diagonal earn
-                    more per project than its label. Far right and low: popular but unpaid.
+                    Running instances against kickback in the last 30 days. Dots above a diagonal earn
+                    more per running instance than its label. Far right and low: popular but unpaid.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>

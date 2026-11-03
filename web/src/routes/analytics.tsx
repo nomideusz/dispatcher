@@ -74,7 +74,7 @@ export default function Money() {
           <Section
             id="earnings"
             title="Earnings"
-            text="What each day earned in the range above. Point at or tap a day to see which templates earned."
+            text="What each day earned in the range above, by template size. Point at or tap a day to see which templates earned."
           >
             <Card>
               <CardContent>
@@ -87,7 +87,7 @@ export default function Money() {
             <Section
               id="forecast"
               title="Forecast"
-              text="Kickback the next 30 days should bring: payers due again, new payers on templates that already pay, and templates yet to pay, by size. A rough guide built from the last 30 days."
+              text="Kickback the next 30 days should bring: payers due again, new payers on templates that already pay, and templates yet to pay, by size. A rough guide built from the last 30 days, so the range above doesn't change it."
             >
               <Card>
                 <CardContent>
@@ -100,7 +100,7 @@ export default function Money() {
           <Section
             id="payouts"
             title="Payouts"
-            text="Kickback withdrawn as cash or credits, and the deployers who pay it. What is not yet withdrawn is the balance on the docket above."
+            text="Kickback withdrawn as cash or credits, and the deployers who pay it. The range above sets the withdrawn figure, the chart and the ledger; Payers always lists everyone. What is not yet withdrawn is the balance at the top of the page."
           >
             <PayoutHistory days={days} />
           </Section>
@@ -254,11 +254,12 @@ function Docket({ data }: { data: TimelineResponse }) {
           <span className="max-sm:hidden">
             <Fig>{fmtNum(activeNow)}</Fig> active projects ·{" "}
           </span>
-          <Fig>{fmtNum(earning)}</Fig> earned in {w.days} days
+          <Fig>{fmtNum(earning)}</Fig> earned
           <span className="max-sm:hidden">
             {" "}
             · <Fig>{fmtNum(added)}</Fig> added
-          </span>
+          </span>{" "}
+          in {w.days} days
         </p>
       </DocketCell>
     </section>

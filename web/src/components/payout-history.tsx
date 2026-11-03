@@ -183,7 +183,7 @@ export function PayoutHistory({ days }: { days: number }) {
                     </span>
                   ))}
                   <span className="inline-block">
-                    One row per deployer; Railway doesn&apos;t say who. Returning: paid again on their billing date.
+                    One row per deployer, pieced together from invoices since Railway doesn&apos;t say who. Every payer so far, whatever the range. Returning: paid again on their billing date.
                     Lapsed: missed a due invoice.
                   </span>
                 </p>

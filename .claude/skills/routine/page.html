@@ -106,16 +106,16 @@ footer code { font-family: var(--mono); font-size: 12.5px; background: var(--car
 
 <main>
   <header>
-    <span class="eyebrow">Dispatcher · two workspaces · 151 templates live</span>
+    <span class="eyebrow">Dispatcher · two workspaces · 182 templates live</span>
     <h1>Dispatch Routine</h1>
-    <p class="lede">Health first, because health holds search position and position drives deploys. Then publish. Upgrades, search and the verdict are weekly. Figures as of <span class="mono">30 Oct 2026</span>; open Dispatcher for today&rsquo;s.</p>
+    <p class="lede">Health first, because health holds search position and position drives deploys. Then publish. Upgrades, search and the verdict are weekly. Figures as of <span class="mono">5 Nov 2026</span>; open Dispatcher for today&rsquo;s.</p>
   </header>
 
-  <div class="figures" aria-label="Snapshot, 30 Oct 2026">
-    <div class="held"><b>13</b><span>under 70% health, with live deploys</span></div>
-    <div><b>214</b><span>image lines a patch or minor behind</span></div>
-    <div><b>141<small class="mono" style="font-size:.9rem;font-weight:400"> / 233</small></b><span>own keywords at #1</span></div>
-    <div><b>~3</b><span>publishes a day (47 in 15 days)</span></div>
+  <div class="figures" aria-label="Snapshot, 5 Nov 2026">
+    <div class="held"><b>11</b><span>under 70% health, with live deploys (7 earning)</span></div>
+    <div><b>232</b><span>image lines a patch or minor behind</span></div>
+    <div><b>173<small class="mono" style="font-size:.9rem;font-weight:400"> / 289</small></b><span>own keywords at #1</span></div>
+    <div><b>~4</b><span>publishes a day (57 in 15 days)</span></div>
   </div>
 
   <section aria-labelledby="daily-h">
@@ -128,7 +128,7 @@ footer code { font-family: var(--mono); font-size: 12.5px; background: var(--car
         <span class="no">1</span><input type="checkbox" id="d-health">
         <div class="step">
           <label for="d-health">Fix the worst health on an earning template</label>
-          <p>On <a href="https://dispatcher.zaur.app/templates" target="_blank" rel="noreferrer">Templates</a>, sort by health and take the lowest one that earns. Today: <span class="mono">Pixelfed 0%, Ubuntu desktop 33%, AzuraCast 38%, Firefox 44%</span>.</p>
+          <p>On <a href="https://dispatcher.zaur.app/templates" target="_blank" rel="noreferrer">Templates</a>, sort by health and take the lowest one that earns. Skip any with a fix already pushed. Today that&rsquo;s all 7 earning ones under 70%, waiting for deployers to update: <span class="mono">Pixelfed 0%, Ubuntu KDE 33%, AzuraCast 38%, Claude Code 50%</span> and three more.</p>
           <ol class="sub">
             <li data-n="a"><span><em>Check its upgrades first.</em> Open <a href="https://dispatcher.zaur.app/upgrades" target="_blank" rel="noreferrer">Upgrades</a> and find the template. If it&rsquo;s behind, read the changelog for your symptom: an upstream fix may already exist.</span></li>
             <li data-n="b"><span><em>Find the root cause.</em> Logs and memory on a fresh deploy. Railway can show SUCCESS while the app is dead inside the container (AzuraCast&rsquo;s OOM loop).</span></li>
@@ -141,20 +141,20 @@ footer code { font-family: var(--mono); font-size: 12.5px; background: var(--car
         <span class="no">2</span><input type="checkbox" id="d-pick">
         <div class="step">
           <label for="d-pick">Pick what to publish next</label>
-          <p>From the <a href="https://dispatcher.zaur.app/candidates" target="_blank" rel="noreferrer">Candidates</a> shortlist (5 now) or <a href="https://dispatcher.zaur.app/search" target="_blank" rel="noreferrer">Search</a> gaps (175, many of them noise). Judge an original on its own terms, not on kickback math.</p>
+          <p>From the <a href="https://dispatcher.zaur.app/candidates" target="_blank" rel="noreferrer">Candidates</a> shortlist (2 now) or <a href="https://dispatcher.zaur.app/search" target="_blank" rel="noreferrer">Search</a> gaps (373, many of them noise). Judge an original on its own terms, not on kickback math.</p>
         </div>
       </li>
       <li>
         <span class="no">3</span><input type="checkbox" id="d-mark">
         <div class="step">
           <label for="d-mark">Set kind and origin on anything you published</label>
-          <p>Origin feeds the verdict&rsquo;s originals-vs-competitive split. From a terminal: <span class="mono">dispatcherctl origin ID original</span>. 9 templates have no kind yet.</p>
+          <p>Origin feeds the verdict&rsquo;s originals-vs-competitive split. From a terminal: <span class="mono">dispatcherctl origin ID original</span>. Every template has both today.</p>
         </div>
       </li>
     </ol>
     <div class="rule">
       <b>Fix before you publish</b>
-      <p>When more than about 10 earning templates sit under 70%, skip step 2 that day. Every new template adds to the health and upgrade load for good.</p>
+      <p>When more than about 10 earning templates sit under 70%, skip step 2 that day. It&rsquo;s 7 now, so publishing is open. Every new template adds to the health and upgrade load for good.</p>
     </div>
   </section>
 
@@ -168,14 +168,14 @@ footer code { font-family: var(--mono); font-size: 12.5px; background: var(--car
         <span class="no">4</span><input type="checkbox" id="w-upgrades">
         <div class="step">
           <label for="w-upgrades">Work the top of the upgrade queue</label>
-          <p>It&rsquo;s already sorted behind-first, then by earnings. Put every line of one template into one push, so its deployers get one notice. Templates that don&rsquo;t earn get upgrades for security fixes or a broken version only. <span class="mono">103 patch · 111 minor · 11 floating</span></p>
+          <p>It&rsquo;s already sorted behind-first, then by earnings. Put every line of one template into one push, so its deployers get one notice. Templates that don&rsquo;t earn get upgrades for security fixes or a broken version only. <span class="mono">117 patch · 115 minor · 11 floating · last push 5 Nov, next due 12 Nov</span></p>
         </div>
       </li>
       <li>
         <span class="no">5</span><input type="checkbox" id="w-search">
         <div class="step">
           <label for="w-search">Read Search for drops</label>
-          <p>A keyword of ours that fell usually means health fell: go back to step 1 for that template. Track any keyword you&rsquo;re thinking of building for, before you build it. <span class="mono">0 dropped this week · 1 missing</span></p>
+          <p>A keyword of ours that fell usually means health fell: go back to step 1 for that template. Track any keyword you&rsquo;re thinking of building for, before you build it. <span class="mono">18 dropped this week · 2 missing</span></p>
         </div>
       </li>
       <li>

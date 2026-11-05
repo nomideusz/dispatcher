@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -294,8 +296,68 @@ func verdictStates(subjects []verdictSubject, trackedSince, now time.Time, check
 	return out
 }
 
-// handleVerdicts serves the backtest and each template's verdict, judging
-// and storing a horizon's checkpoint the first time its backtest is decisive. Responds null until the first snapshot.
+// judgeVerdictCheckpoints stores a horizon's checkpoint the first time its
+// backtest is decisive. It runs after every hourly snapshot, so the result
+// comes from the first decisive hour. Judged on a read, the day someone looked
+// would pick the result: a predictor near its bar flips as templates arrive.
+func judgeVerdictCheckpoints(db *gorm.DB) error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	db = db.WithContext(ctx)
+	trackedSince, err := scanTime(ctx, db, "SELECT MIN(sampled_at) FROM template_snapshots")
+	if err != nil || trackedSince == nil {
+		return err
+	}
+	judged, err := loadVerdictCheckpoints(db)
+	if err != nil {
+		return err
+	}
+	subjects, err := loadVerdictSubjects(db)
+	if err != nil {
+		return err
+	}
+	// DuckDB keeps microseconds; a checkpoint judged now must read back equal.
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	for _, h := range verdictHorizons {
+		if _, ok := judged[h]; ok {
+			continue
+		}
+		b := backtestAt(subjects, *trackedSince, now, h)
+		if !b.decisive() {
+			continue
+		}
+		result, err := json.Marshal(b)
+		if err != nil {
+			return err
+		}
+		// ON CONFLICT DO NOTHING: two runs racing to judge keep the first.
+		if err := db.Exec("INSERT INTO verdict_checkpoints (horizon, judged_at, result) VALUES (?, ?, ?) ON CONFLICT DO NOTHING", h, now, string(result)).Error; err != nil {
+			return err
+		}
+		log.Printf("verdict: day %d judged: P1 %s, P2 %s (n = %d)", h, b.P1.Result, b.P2.Result, b.N)
+	}
+	return nil
+}
+
+func loadVerdictCheckpoints(db *gorm.DB) (map[int]judgedCheckpoint, error) {
+	var stored []VerdictCheckpoint
+	if err := db.Find(&stored).Error; err != nil {
+		return nil, err
+	}
+	judged := map[int]judgedCheckpoint{}
+	for _, c := range stored {
+		var b verdictBacktest
+		if err := json.Unmarshal([]byte(c.Result), &b); err != nil {
+			return nil, err
+		}
+		judged[c.Horizon] = judgedCheckpoint{JudgedAt: c.JudgedAt, verdictBacktest: b}
+	}
+	return judged, nil
+}
+
+// handleVerdicts serves the backtest and each template's verdict. It only
+// reads: judgeVerdictCheckpoints stores the checkpoints. Responds null until
+// the first snapshot.
 func handleVerdicts(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		fail := func(err error) {
@@ -316,40 +378,16 @@ func handleVerdicts(db *gorm.DB) http.HandlerFunc {
 			fail(err)
 			return
 		}
-		// DuckDB keeps microseconds; a checkpoint judged now must read back equal.
-		now := time.Now().UTC().Truncate(time.Microsecond)
-
-		var stored []VerdictCheckpoint
-		if err := db.WithContext(ctx).Order("horizon").Find(&stored).Error; err != nil {
+		judged, err := loadVerdictCheckpoints(db.WithContext(ctx))
+		if err != nil {
 			fail(err)
 			return
 		}
-		judged := map[int]judgedCheckpoint{}
-		for _, c := range stored {
-			var b verdictBacktest
-			if err := json.Unmarshal([]byte(c.Result), &b); err != nil {
-				fail(err)
-				return
-			}
-			judged[c.Horizon] = judgedCheckpoint{JudgedAt: c.JudgedAt, verdictBacktest: b}
-		}
+		now := time.Now().UTC()
 		resp := verdictsResponse{TrackedSince: *trackedSince, MinOutcomeRise: minOutcomeRise}
-		for _, h := range verdictHorizons {
-			b := backtestAt(subjects, *trackedSince, now, h)
-			resp.Provisional = append(resp.Provisional, b)
-			if _, ok := judged[h]; ok || !b.decisive() {
-				continue
-			}
-			result, _ := json.Marshal(b)
-			// ON CONFLICT DO NOTHING: two requests racing to judge keep the first.
-			if err := db.WithContext(ctx).Exec("INSERT INTO verdict_checkpoints (horizon, judged_at, result) VALUES (?, ?, ?) ON CONFLICT DO NOTHING", h, now, string(result)).Error; err != nil {
-				fail(err)
-				return
-			}
-			judged[h] = judgedCheckpoint{JudgedAt: now, verdictBacktest: b}
-		}
 		var latest *verdictBacktest
 		for _, h := range verdictHorizons {
+			resp.Provisional = append(resp.Provisional, backtestAt(subjects, *trackedSince, now, h))
 			if c, ok := judged[h]; ok {
 				resp.Checkpoint = &c
 				latest = &c.verdictBacktest

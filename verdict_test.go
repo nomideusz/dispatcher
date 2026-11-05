@@ -158,6 +158,13 @@ func getVerdicts(t *testing.T, db *gorm.DB) verdictsResponse {
 	return resp
 }
 
+func judgeVerdicts(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := judgeVerdictCheckpoints(db); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // The SQL side: day 0 is the first PUBLISHED sample, rows where the metrics
 // fetch failed (total_earnings backfilled from payout) are never read, and
 // a horizon is judged once and then kept.
@@ -200,6 +207,12 @@ func TestHandleVerdictsReadsRealRowsAndKeepsCheckpoints(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Reading never judges: the same decisive numbers, nothing stored.
+	if resp := getVerdicts(t, db); resp.Checkpoint != nil || resp.Provisional[0].P1.Result != "pass" {
+		t.Fatalf("checkpoint = %+v, provisional P1 = %q; want none stored by a read, P1 passing live", resp.Checkpoint, resp.Provisional[0].P1.Result)
+	}
+
+	judgeVerdicts(t, db)
 	resp := getVerdicts(t, db)
 	states := map[string]templateVerdict{}
 	for _, v := range resp.Templates {
@@ -224,6 +237,7 @@ func TestHandleVerdictsReadsRealRowsAndKeepsCheckpoints(t *testing.T) {
 	if err := db.Exec("UPDATE template_snapshots SET total_earnings = 0 WHERE template_id LIKE 't%'").Error; err != nil {
 		t.Fatal(err)
 	}
+	judgeVerdicts(t, db)
 	again := getVerdicts(t, db)
 	if !again.Checkpoint.JudgedAt.Equal(judgedAt) || again.Checkpoint.P1.Result != "pass" {
 		t.Errorf("checkpoint changed: %+v", again.Checkpoint)
@@ -238,7 +252,7 @@ func TestHandleVerdictsReadsRealRowsAndKeepsCheckpoints(t *testing.T) {
 	}
 }
 
-func TestHandleVerdictsWaitsForADecisiveBacktest(t *testing.T) {
+func TestJudgeVerdictsWaitsForADecisiveBacktest(t *testing.T) {
 	db := verdictDB(t)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	d0 := now.Add(-days(50))
@@ -259,6 +273,7 @@ func TestHandleVerdictsWaitsForADecisiveBacktest(t *testing.T) {
 	if err := db.Create(&snaps).Error; err != nil {
 		t.Fatal(err)
 	}
+	judgeVerdicts(t, db)
 	if resp := getVerdicts(t, db); resp.Checkpoint != nil || resp.Provisional[0].N != 20 || resp.Provisional[0].Positives != 4 {
 		t.Fatalf("checkpoint = %+v, provisional = %+v; want none stored while no predictor is judged", resp.Checkpoint, resp.Provisional[0])
 	}
@@ -266,6 +281,7 @@ func TestHandleVerdictsWaitsForADecisiveBacktest(t *testing.T) {
 	if err := db.Exec("UPDATE template_snapshots SET total_earnings = CASE total_earnings WHEN 0 THEN 2 ELSE 3 END WHERE template_id IN ('fb', 'fc') AND total_earnings IS NOT NULL").Error; err != nil {
 		t.Fatal(err)
 	}
+	judgeVerdicts(t, db)
 	if resp := getVerdicts(t, db); resp.Checkpoint == nil || resp.Checkpoint.P1.Result != "pass" || resp.Checkpoint.P2.Result != "not enough data" {
 		t.Fatalf("checkpoint = %+v, want day 45 judged with P1 passing", resp.Checkpoint)
 	}

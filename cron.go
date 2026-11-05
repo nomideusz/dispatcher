@@ -122,6 +122,9 @@ func runTemplateSnapshots(db *gorm.DB) {
 	}
 	runPayoutSync(db)
 	runAttribution(db)
+	if err := judgeVerdictCheckpoints(db); err != nil {
+		log.Printf("verdict checkpoints: %v", err)
+	}
 }
 
 // runPayoutSync mirrors Railway's payout history into DuckDB. It rides the

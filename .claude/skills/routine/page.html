@@ -182,7 +182,7 @@ footer code { font-family: var(--mono); font-size: 12.5px; background: var(--car
         <span class="no">6</span><input type="checkbox" id="w-verdict">
         <div class="step">
           <label for="w-verdict">Check the verdict</label>
-          <p><span class="mono">dispatcherctl get /api/analytics/verdicts</span>. Look at <span class="mono">checkpoint</span>: it stays empty until a predictor passes or fails. Don&rsquo;t drop a template for slow early earnings in the meantime: pay rates keep climbing to day 180.</p>
+          <p><span class="mono">dispatcherctl get /api/analytics/verdicts</span>. Look at <span class="mono">checkpoint</span>: it stays empty until a predictor passes or fails, and the hourly run fills it. Don&rsquo;t drop a template for slow early earnings in the meantime: pay rates keep climbing to day 180.</p>
         </div>
       </li>
       <li>
@@ -202,21 +202,15 @@ footer code { font-family: var(--mono); font-size: 12.5px; background: var(--car
         <thead><tr><th>When</th><th>What happens</th><th style="text-align:right">In</th></tr></thead>
         <tbody>
           <tr>
-            <td class="when">9–12 Nov</td>
-            <td><span class="stamp caution">Watch</span>Day-45 group reaches 4 templates that earned more
-              <p>P1 is still true for only 2–3, so nothing is stored yet. That&rsquo;s expected.</p></td>
+            <td class="when">9 Nov</td>
+            <td><span class="stamp held">Gate</span>P1 can be judged at day 45
+              <p>At 07:00 UTC P1 reaches 5 templates. The hourly run stores the result by itself, and reading it changes nothing. If it passes, the Verdict column (T4) gets built. If it fails, record it in the design doc and build nothing. P2 will still be short, so it waits for day 90.</p></td>
             <td class="left" data-date="2026-11-09"></td>
           </tr>
           <tr>
-            <td class="when">~30 Nov</td>
-            <td><span class="stamp held">Gate</span>P1 can be judged at day 45
-              <p>If it passes, the Verdict column (T4) gets built. If it fails, record it in the design doc and build nothing.</p></td>
-            <td class="left" data-date="2026-11-30"></td>
-          </tr>
-          <tr>
-            <td class="when">December</td>
+            <td class="when">7–24 Dec</td>
             <td>Day-90 group forms
-              <p>The second checkpoint. P2 gets another chance if day 45 didn&rsquo;t judge it.</p></td>
+              <p>The second checkpoint. It reaches 20 templates around 9 Dec, and P1 gets its 5 on 24 Dec. A pass here reopens T4, and P2 gets another chance.</p></td>
             <td class="left" data-date="2026-12-07"></td>
           </tr>
         </tbody>

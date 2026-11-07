@@ -6,7 +6,7 @@ import {
 import { api } from "~/lib/api";
 
 /** One pinned image or marked Dockerfile version (image "github:owner/repo",
- * "npm:package" or "pypi:package") of a template service as of the last
+ * "npm:package", "pypi:package" or "bugstage:host/project/repo") of a template service as of the last
  * daily check. latest is the newest tag of the same shape on the pinned major line; major is the
  * newest tag of a later major, reported apart since templates often hold
  * databases back on purpose. */

@@ -360,7 +360,7 @@ func haBlock(tag, major string, supported []int) string {
 	return ""
 }
 
-var upgradeMarkerRe = regexp.MustCompile(`^#\s*upgrade:\s*(?:(skip)\b|(github|npm|pypi)\s+(\S+))`)
+var upgradeMarkerRe = regexp.MustCompile(`^#\s*upgrade:\s*(?:(skip)\b|(github|npm|pypi|bugstage)\s+(\S+))`)
 
 // dockerfilePins reads the upstream pins of a Dockerfile: every FROM image
 // that is not an earlier stage, with ARG defaults substituted, and every ARG
@@ -369,9 +369,10 @@ var upgradeMarkerRe = regexp.MustCompile(`^#\s*upgrade:\s*(?:(skip)\b|(github|np
 //	# upgrade: github pingdotgg/t3code
 //	ARG T3_VERSION=0.1.0
 //
-// (or "# upgrade: npm @anthropic-ai/claude-code", "# upgrade: pypi laya"),
-// returned with Image "github:pingdotgg/t3code", "npm:@anthropic-ai/claude-code"
-// or "pypi:laya". A FROM under such a marker takes its versions from there
+// (or "# upgrade: npm @anthropic-ai/claude-code", "# upgrade: pypi laya",
+// "# upgrade: bugstage ganigeorgiev.com/pocketbase/pocketbase"), returned with
+// Image "github:pingdotgg/t3code", "npm:@anthropic-ai/claude-code", "pypi:laya"
+// or "bugstage:ganigeorgiev.com/pocketbase/pocketbase". A FROM under such a marker takes its versions from there
 // instead of the image's registry tags (n8nio/n8n tags betas; npm's latest
 // does not), and a FROM under "# upgrade: skip" is left out: a base held
 // back on purpose.
@@ -498,6 +499,13 @@ func listTags(ctx context.Context, image string) ([]string, error) {
 		}
 		return []string{project.Info.Version}, nil
 	}
+	if ref, ok := strings.CutPrefix(image, "bugstage:"); ok {
+		tag, err := latestBugstageRelease(ctx, ref)
+		if err != nil {
+			return nil, err
+		}
+		return []string{tag, strings.TrimPrefix(tag, "v")}, nil
+	}
 	tags, err := listRegistryTags(ctx, image)
 	if image == "ubuntu" {
 		// Interim releases (24.10) are not upgrades from an LTS (24.04).
@@ -507,6 +515,38 @@ func listTags(ctx context.Context, image string) ([]string, error) {
 }
 
 var ubuntuLTSRe = regexp.MustCompile(`^\d*[02468]\.04`)
+
+// latestBugstageRelease reads the newest stable release of a repo on a
+// Bugstage forge (ref "host/project/repo"), where PocketBase moved from GitHub
+// in October 2026 (pocketbase/pocketbase#7872). The forge is itself a
+// PocketBase app: releases belong to a channel of a repository of a project,
+// and the "default" channel is the main release line (PocketBase also has
+// v0.22.x and experimental). semver is a zero-padded sort key.
+func latestBugstageRelease(ctx context.Context, ref string) (string, error) {
+	host, rest, _ := strings.Cut(ref, "/")
+	project, repo, ok := strings.Cut(rest, "/")
+	if host == "" || project == "" || repo == "" || !ok {
+		return "", fmt.Errorf("bugstage ref %q: want host/project/repo", ref)
+	}
+	q := url.Values{
+		"filter":  {fmt.Sprintf("draft=false && tag!~'-' && channel.name='default' && channel.repository.name=%q && channel.repository.project.name=%q", repo, project)},
+		"sort":    {"-semver"},
+		"perPage": {"1"},
+		"fields":  {"tag"},
+	}
+	var page struct {
+		Items []struct {
+			Tag string `json:"tag"`
+		} `json:"items"`
+	}
+	if err := getJSON(ctx, "https://"+host+"/api/collections/releases/records?"+q.Encode(), &page); err != nil {
+		return "", err
+	}
+	if len(page.Items) == 0 {
+		return "", fmt.Errorf("bugstage %s: no stable release", ref)
+	}
+	return page.Items[0].Tag, nil
+}
 
 func getJSON(ctx context.Context, rawURL string, v any) error {
 	resp, err := registryGet(ctx, rawURL, "")

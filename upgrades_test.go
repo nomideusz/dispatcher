@@ -200,6 +200,8 @@ FROM python:3.12-slim
 FROM node:22-slim
 # upgrade: npm n8n
 FROM n8nio/n8n:2.45.4
+# upgrade: bugstage ganigeorgiev.com/pocketbase/pocketbase
+ARG PB_VERSION=0.41.1
 `
 	got := fmt.Sprint(dockerfilePins("svc", dockerfile))
 	want := fmt.Sprint([]serviceImageRef{
@@ -210,6 +212,7 @@ FROM n8nio/n8n:2.45.4
 		{Service: "svc", Image: "ubuntu", Tag: "24.04"},
 		{Service: "svc", Image: "node", Tag: "22-slim"},
 		{Service: "svc", Image: "npm:n8n", Tag: "2.45.4"},
+		{Service: "svc", Image: "bugstage:ganigeorgiev.com/pocketbase/pocketbase", Tag: "0.41.1"},
 	})
 	if got != want {
 		t.Errorf("dockerfilePins =\n%s\nwant\n%s", got, want)

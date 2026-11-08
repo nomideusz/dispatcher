@@ -4,11 +4,8 @@ import {
   CircleCheck,
   Clock,
 } from "lucide-react";
-import { useState } from "react";
 import { Delta } from "~/components/delta";
 import { DOCKET, DocketCell, Fig } from "~/components/page";
-import { PayoutHistoryChart } from "~/components/payout-history-chart";
-import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHead, useSort } from "~/components/ui/table";
@@ -76,31 +73,18 @@ const payerValue = (c: PayerChain, key: PayerKey) =>
     total: c.totalCents,
   })[key];
 
-type LedgerKey = "date" | "template" | "destination" | "status" | "amount";
-const ledgerValue = (p: Payout, key: LedgerKey) =>
-  ({
-    date: p.createdAt,
-    template: p.templateName || null,
-    destination: p.destination || null,
-    status: p.status,
-    amount: p.amountCents,
-  })[key];
-
-type PayoutView = "payers" | "ledger";
-/** Money out of Railway, who is paying, and the raw ledger, for the range
- * the dashboard header picks, in one card: the figures and the cumulative
- * line on top, then payers or the ledger. Per-template totals live in the
- * templates table. */
+/** Money out of Railway and who is paying it, in one card: the withdrawn
+ * figures for the range the dashboard header picks, the range's withdrawals, then every payer, latest invoice first. Payers replace the raw
+ * ledger: its kickback rows are their invoices, so only withdrawals to a bank
+ * or card are listed apart. Per-template totals live in the templates table. */
 export function PayoutHistory({ days }: { days: number }) {
-  const [view, setView] = useState<PayoutView>("payers");
   const history = useQuery(payoutHistoryQuery(days));
   const data = history.data;
   const statusCount = (s: PayerChain["status"]) =>
     data?.payers.filter((c) => c.status === s).length ?? 0;
   const hasPayers = (data?.payers.length ?? 0) > 0;
-  const current: PayoutView = hasPayers ? view : "ledger";
-  const payers = useSort(data?.payers ?? [], payerValue, "total", ["rank", "template", "status", "due"]);
-  const ledger = useSort(data?.payouts ?? [], ledgerValue, "date", ["template", "destination", "status"]);
+  const payers = useSort(data?.payers ?? [], payerValue, "last", ["rank", "template", "status", "due"]);
+  const withdrawals = data?.payouts.filter((p) => p.kind === "cash") ?? [];
 
   const short = shortNames(data?.payers.map((p) => p.templateName) ?? []);
 
@@ -132,7 +116,7 @@ export function PayoutHistory({ days }: { days: number }) {
 
       {data && data.totalRows > 0 && (
         <>
-          <CardContent className="space-y-4">
+          <CardContent>
             {/* An odd last cell spans the phone's two columns instead of leaving a hole. */}
             <div className={cn(DOCKET, "grid-cols-2 max-lg:[&>:last-child:nth-child(odd)]:col-span-2 lg:auto-cols-fr lg:grid-flow-col")}>
               <WindowFigure days={data.window.days} data={data} />
@@ -145,56 +129,35 @@ export function PayoutHistory({ days }: { days: number }) {
                 </DocketCell>
               )}
             </div>
-            {data.window.count > 0 && <PayoutHistoryChart points={data.points} />}
           </CardContent>
 
           <CardContent className="space-y-3 border-t pt-4">
-            {data.totalRows > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {hasPayers && (
-                  <Button
-                    size="xs"
-                    aria-pressed={current === "payers"}
-                    variant={current === "payers" ? "secondary" : "ghost"}
-                    onClick={() => setView("payers")}
-                  >
-                    Payers
-                    <span className="tabular-nums text-muted-foreground">{fmtNum(data.payers.length)}</span>
-                  </Button>
-                )}
-                <Button
-                  size="xs"
-                  aria-pressed={current === "ledger"}
-                  variant={current === "ledger" ? "secondary" : "ghost"}
-                  onClick={() => setView("ledger")}
-                >
-                  Ledger
-                  <span className="tabular-nums text-muted-foreground">{fmtNum(data.payouts.length)}</span>
-                </Button>
-              </div>
-            )}
-            {current === "payers" ? (
+            <Withdrawals rows={withdrawals} days={data.window.days} />
+            {hasPayers && (
               <>
                 <p className="text-xs text-muted-foreground">
-                  {(["returning", "new", "lapsed"] as const).map((st, i) => (
+                  <span className="mr-3 whitespace-nowrap">
+                    <Fig>{fmtNum(data.payers.length)}</Fig> payers
+                  </span>
+                  {(["returning", "new", "lapsed"] as const).map((st) => (
                     <span key={st} className="mr-3 inline-flex items-center gap-1.5 whitespace-nowrap">
                       <Mark status={st} kind={st === "lapsed" ? "missed" : "paid"} />
                       <Fig>{fmtNum(statusCount(st))}</Fig> {st}
                     </span>
                   ))}
                   <span className="inline-block">
-                    One row per deployer, pieced together from invoices since Railway doesn&apos;t say who. Every payer so far, whatever the range. Returning: paid again on their billing date.
+                    One row per deployer, pieced together from invoices since Railway doesn&apos;t say who. Every payer so far, whatever the range, latest invoice first. Returning: paid again on their billing date.
                     Lapsed: missed a due invoice.
                   </span>
                 </p>
                 <Table rows={data.payers.length} limit={50}>
                   <TableHeader>
                     <TableRow>
-                      {payers.head("rank", "#", { numeric: true, className: "max-sm:hidden" })}
+                      {payers.head("rank", "#", { hint: "By total, 1 = biggest", numeric: true, className: "max-sm:hidden" })}
                       {payers.head("template", "Template", { className: "max-sm:pl-0" })}
                       {payers.head("status", "Status", { hint: "Returning, then new, then lapsed", className: "max-sm:hidden" })}
                       {payers.head("first", "First", { className: "max-sm:hidden" })}
-                      {payers.head("last", "Last", { className: "max-sm:hidden" })}
+                      {payers.head("last", "Last", { hint: "Latest invoice", className: "max-sm:hidden" })}
                       {payers.head("due", "Next due", { hint: "Soonest first; lapsed payers last", className: "max-sm:hidden" })}
                       {payers.head("invoices", "Invoices", { hint: "One square per invoice paid; outlined is the next one due, dashed one that was missed", numeric: true, className: "max-sm:hidden" })}
                       {payers.head("lastAmount", "Last amount", { numeric: true, className: "max-sm:hidden" })}
@@ -204,32 +167,6 @@ export function PayoutHistory({ days }: { days: number }) {
                   <TableBody>
                     {payers.rows.map((c) => (
                       <PayerRow key={`${c.templateId}-${c.firstAt}`} chain={c} short={short} />
-                    ))}
-                  </TableBody>
-                </Table>
-              </>
-            ) : (
-              <>
-                <p className="text-xs text-muted-foreground">
-                  <Fig>{fmtNum(data.payouts.length)}</Fig> payouts and balance accruals in the last <Fig>{data.window.days}</Fig>{" "}
-                  days, newest first
-                  {data.totalRows > data.payouts.length &&
-                    `; ${fmtNum(data.totalRows - data.payouts.length)} more before that`}
-                  .
-                </p>
-                <Table rows={data.payouts.length}>
-                  <TableHeader>
-                    <TableRow>
-                      {ledger.head("date", "Date")}
-                      {ledger.head("template", "Template")}
-                      {ledger.head("destination", "Destination", { className: "max-sm:hidden" })}
-                      {ledger.head("status", "Status")}
-                      {ledger.head("amount", "Amount", { numeric: true })}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {ledger.rows.map((p) => (
-                      <PayoutRow key={p.id} payout={p} />
                     ))}
                   </TableBody>
                 </Table>
@@ -332,9 +269,9 @@ function PayerRow({ chain, short }: { chain: PayerChain; short: (name: string) =
         <div className={cn("truncate", !lapsed && "font-medium", PSEUDO_TEMPLATE_IDS.has(chain.templateId) && "text-muted-foreground")}>
           {short(chain.templateName)}
         </div>
-        {/* A phone shows only template and total; status and age ride here. */}
+        {/* A phone shows only template and total; status and the latest invoice, which the rows sort by, ride here. */}
         <div className="text-xs text-muted-foreground sm:hidden">
-          <PayerStatus status={chain.status} /> · since {fmtDate(new Date(chain.firstAt))}
+          <PayerStatus status={chain.status} /> · last {fmtDate(new Date(chain.lastAt))}
         </div>
       </TableRowHead>
       <TableCell className="max-sm:hidden">
@@ -357,26 +294,31 @@ function PayerRow({ chain, short }: { chain: PayerChain; short: (name: string) =
   );
 }
 
-function PayoutRow({ payout }: { payout: Payout }) {
+/** The range's withdrawals to a bank or card, the one part of the old
+ * ledger the payers don't carry. Completed ones read as plain text; pending
+ * and failed ones carry their status. */
+function Withdrawals({ rows, days }: { rows: Payout[]; days: number }) {
   return (
-    <TableRow>
-      <DateCell iso={payout.createdAt} />
-      <TableCell className={cn((PSEUDO_TEMPLATE_IDS.has(payout.templateId) || !payout.templateName) && "text-muted-foreground")}>
-        {payout.templateName ||
-          (payout.templateId === "unknown"
-            ? "unknown"
-            : payout.kind === "credits"
-              ? "pending"
-              : "—")}
-      </TableCell>
-      <TableCell className="text-muted-foreground max-sm:hidden">{payout.destination}</TableCell>
-      <TableCell>
-        <PayoutStatus status={payout.status} />
-      </TableCell>
-      <TableCell numeric className="font-medium">
-        {fmtCents(payout.amountCents)}
-      </TableCell>
-    </TableRow>
+    <p className="text-xs text-muted-foreground">
+      {rows.length === 0 ? (
+        <>No withdrawals in the last <Fig>{days}</Fig> days.</>
+      ) : (
+        <>
+          Withdrawn in the last <Fig>{days}</Fig> days:{" "}
+          {rows.map((p, i) => (
+            <span key={p.id} className="inline-flex items-center gap-1 whitespace-nowrap">
+              {i > 0 && <span aria-hidden className="mx-1">·</span>}
+              <span title={`${timeFmt.format(new Date(p.createdAt))} (${utcFmt.format(new Date(p.createdAt))} UTC)`}>
+                {fmtDate(new Date(p.createdAt))}
+              </span>
+              <Fig>{fmtCents(p.amountCents)}</Fig>
+              to {p.destination}
+              {p.status !== "COMPLETED" && <PayoutStatus status={p.status} />}
+            </span>
+          ))}
+        </>
+      )}
+    </p>
   );
 }
 

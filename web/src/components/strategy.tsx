@@ -201,7 +201,7 @@ function tiersOf(templates: TimelineTemplate[], nowMs: number) {
 
 /** Is publishing paying: the catalog, its users and its money week by week,
  * which publishing months the money comes from, and how each batch does at the
- * same age. Whole-life on purpose, so the range above doesn't apply. */
+ * same age. Whole-life on purpose; it lives on Patterns, away from Money's range. */
 export function Strategy({ payers }: { payers: PayerChain[] }) {
   const q = useQuery(timelineQuery(0));
   const data = q.data;
@@ -250,7 +250,7 @@ function Loaded({ data, model }: { data: TimelineResponse; model: ReturnType<typ
     <Section
       id="strategy"
       title="Is it working?"
-      text="What publishing has added since tracking began: the catalog, who uses it, who pays, and what each publishing month brings. The range at the top doesn't change any of this. Its 30-day figures count as Railway does, which can take in a day more than “Last 30 days” at the top."
+      text="What publishing has added since tracking began: the catalog, who uses it, who pays, and what each publishing month brings. Its 30-day figures count as Railway does, which can take in a day more than “Last 30 days” on Money."
     >
       <div className={cn(DOCKET, "grid-cols-2 lg:grid-cols-4")}>
         <DocketCell label="Growth in monthly kickback" value={signedUsd(growth)} small>

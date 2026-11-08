@@ -9,7 +9,6 @@ import { behindTemplateCount } from "~/components/upgrade-queue";
 import { AutoWithdraw } from "~/components/auto-withdraw-dialog";
 import { Forecast } from "~/components/forecast";
 import { PayoutHistory } from "~/components/payout-history";
-import { Strategy } from "~/components/strategy";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -100,13 +99,10 @@ export default function Money() {
           <Section
             id="payouts"
             title="Payouts"
-            text="Kickback withdrawn as cash or credits, and the deployers who pay it. The range above sets the withdrawn figure, the chart and the ledger; Payers always lists everyone. What is not yet withdrawn is the balance at the top of the page."
+            text="Kickback withdrawn as cash or credits, and the deployers who pay it. The range above sets the withdrawn figure and the withdrawals; Payers always lists everyone, latest invoice first. What is not yet withdrawn is the balance at the top of the page."
           >
             <PayoutHistory days={days} />
           </Section>
-
-          {/* Whole-life, so it sits apart from the sections the range drives. */}
-          {payouts.data && <Strategy payers={payouts.data.payers} />}
         </>
       )}
     </main>

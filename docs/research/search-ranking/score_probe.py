@@ -19,6 +19,17 @@ PROBES = {
     "wordpress-pro": ["wordpress", "wordpress pro"],
     "searxng-search": ["searxng", "searxng search"],
     "umami-web-analytics": ["umami"],
+    # From 2026-11-08: the "Linux" server template (railway-templates/linux), slug `linux`.
+    # Baseline runs come before it is published. "linux" tests whether an unscored
+    # exact name+slug outranks our 70-99 "Linux Terminal"/"Linux Desktop" (tier 1).
+    # The other queries match its description ("Linux server: SSH, web terminal, ...").
+    "linux": ["linux", "linux server", "linux terminal", "linux ssh", "web terminal", "server", "ssh", "terminal"],
+    # From 2026-11-08: "Fedora" (slug fedora-linux) against the unhealthy `fedora` (33).
+    "fedora-linux": ["fedora", "fedora linux", "fedora desktop"],
+    # From 2026-11-08: flavour names added to these descriptions; each query had 0 results.
+    "linux-desktop-kde": ["kubuntu"],
+    "linux-desktop": ["xubuntu"],
+    "linux-desktop-lxqt": ["lubuntu"],
 }
 # Search results carry only names and codes; health comes from template(code:).
 Q = """query($q:String!){templateSearch(query:$q){edges{node{code name}}}}"""

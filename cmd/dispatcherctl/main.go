@@ -206,6 +206,16 @@ func parseCommand(args []string, stderr io.Writer) (command, error) {
 			requiresAuth: true,
 			body:         string(body),
 		}, nil
+	case "candidate":
+		if len(args) != 3 && len(args) != 4 {
+			return command{}, fmt.Errorf("candidate requires a group key (as the Candidates page shows it), a status (shortlist, skip, or \"\" to clear) and an optional note")
+		}
+		note := ""
+		if len(args) == 4 {
+			note = args[3]
+		}
+		body, _ := json.Marshal(map[string]string{"status": args[2], "note": note})
+		return command{method: http.MethodPut, path: "/api/candidates/" + url.PathEscape(args[1]), requiresAuth: true, body: string(body)}, nil
 	case "proposal":
 		if len(args) != 3 && len(args) != 4 {
 			return command{}, fmt.Errorf("proposal requires a URL, a status (building, published, skipped, or \"\" for new) and an optional reply")
@@ -313,6 +323,9 @@ Other commands:
   proposal URL STATUS [REPLY]
                            Answer a proposal: building, published or skipped
                            ("" puts it back to new), with a reply the owner reads
+  candidate KEY STATUS [NOTE]
+                           Mark a Candidates group: shortlist or skip ("" clears),
+                           with a one-line note the page shows
   version                  Print the CLI version
   help                     Show this help
 `)

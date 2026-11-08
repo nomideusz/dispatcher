@@ -29,7 +29,8 @@ def tier(query, name, code):
     3 only the slug or description matches."""
     q = query.lower().strip()
     n = (name or "").lower()
-    if n == q or n.split(" | ")[0] == q or (code or "") == q.replace(" ", "-"):
+    # A " | tagline" makes the name longer than the query: tier 1, not 0.
+    if n == q or (code or "") == q.replace(" ", "-"):
         return 0
     if n.startswith(q):
         return 1
@@ -277,7 +278,8 @@ def search_detail(search, n=10):
 def candidates_detail(candidates, n=15):
     groups = candidates["groups"]
     short = [g for g in groups if g.get("status") == "shortlist"]
-    print(f"CANDIDATES: {len(short)} on the shortlist, market read {candidates['fetchedAt'][:10]}")
+    print(f"CANDIDATES: {len(short)} on the shortlist, market read {candidates['fetchedAt'][:10]}"
+          + ("; under 3, so fill it (candidates skill, steps 4-6)" if len(short) < 3 else ""))
     for g in short:
         print(f"  shortlist: {g['key']}  {g['recent']:,} in 90d" + (f"  ({g['note']})" if g.get("note") else ""))
     # Same as the page's Market view with its default filters on.
@@ -347,6 +349,8 @@ def report(f, last):
     show_upgrades(f)
     print()
     show_search(f, last)
+    if f["shortlist"] < 3:
+        print(f"  shortlist has {f['shortlist']}: fill it (candidates skill, steps 4-6)")
     print()
     show_verdict(f)
     print()

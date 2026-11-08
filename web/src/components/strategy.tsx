@@ -431,7 +431,8 @@ export function Trend({ data, model }: { data: TimelineResponse; model: Strategy
       <p className="text-xs text-muted-foreground">
         Deploys count whole weeks, so the current one is left out until it ends, and the key shows the last whole week.
         “Paying” means at any time so far, so a template that paid late counts in its earlier weeks too.
-        {edge && ` Deploys still include ${name(edge.name)}, which is most of the mid-October spike; it earned ${fmtUsd(earned(edge))}.`}
+        {edge &&
+          ` Deploys still include ${name(edge.name)}, which is most of the mid-October spike and is still being deployed; it has earned ${fmtUsd(earned(edge))} so far, which is too early to judge: Linux templates took about 40 days from their first deploys to earn.`}
         {" "}A month per template leaves out each size&apos;s biggest earner; a line falling while the catalog grows means that size&apos;s new templates earn less than its old ones.
         {longGaps.map((g) => (
           <span key={g.from}>
@@ -527,7 +528,8 @@ export function CatalogTiers({ data }: { data: TimelineResponse }) {
       </Table>
       {edge?.running ? (
         <p className="text-xs text-muted-foreground">
-          Running leaves out {name(edge.name)}&apos;s <Fig>{fmtNum(edge.running)}</Fig>, a short surge that never earned.
+          Running leaves out {name(edge.name)}&apos;s <Fig>{fmtNum(edge.running)}</Fig>, mostly from a mid-October surge. It
+          hasn&apos;t earned yet, which is too early to judge: Linux templates took about 40 days to earn.
         </p>
       ) : null}
     </section>

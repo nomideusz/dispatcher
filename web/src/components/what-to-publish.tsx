@@ -8,6 +8,9 @@ import { fmtNum, fmtUsd } from "~/lib/format";
 import { KINDS, ORIGINS, type TimelineResponse, type TimelineTemplate } from "~/queries/analytics";
 
 const DAY = 86_400_000;
+/** A first invoice can take a month to arrive, so by this age a template has
+ * had a fair chance to show use. */
+export const FAIR_CHANCE_DAYS = 45;
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 
 /** Whole days from publishing to the first kickback; null if it never paid. */
@@ -74,11 +77,10 @@ export function segmentsOf(data: TimelineResponse) {
 export const kindLabel = (k: string) => KINDS.find((x) => x.key === k)?.label ?? "Unsorted";
 export const sizeLabel = (k: string) => GROUPS[Number(k)].label;
 
-/** The segment whose typical template pays most, among those with at least
- * three templates; typical leaves out the top earner, so one hit (Twenty)
- * doesn't set the verdict. */
+/** The segment whose typical template pays most in its first 45 days; typical
+ * leaves out the top earner, so one hit (Twenty) doesn't set the verdict. */
 export function best(rows: Segment[], skip?: string) {
-  const fair = rows.filter((r) => r.templates >= 3 && r.key !== skip);
+  const fair = rows.filter((r): r is Segment & { typical: number } => r.typical != null && r.key !== skip);
   return fair.length ? fair.reduce((a, b) => (b.typical > a.typical ? b : a)) : null;
 }
 
@@ -118,14 +120,14 @@ export function PaidBySize({ data }: { data: TimelineResponse }) {
   );
 }
 
-/** What earns: kind, origin and size against the typical template's month. */
+/** What earns: kind, origin and size against the typical template's first 45 days. */
 export function Segments({ data }: { data: TimelineResponse }) {
   const { byKind, bySize, byOrigin } = useWhatToPublish(data);
   return (
     <Section
       id="segments"
       title="What earns"
-      text="Kind, origin and size against what a typical template of each brings in, best-paying first. Point at a column name for what it counts; set kind and origin under a template's name on Templates."
+      text="Kind, origin and size against what a typical template of each brings in over its first 45 days, best-paying first. Point at a column name for what it counts; set kind and origin under a template's name on Templates."
     >
       {/* What a template is on the left, its origin and shape on the right;
           each table under its own heading so short ones don't read as
@@ -164,32 +166,49 @@ export type Segment = {
   earning: number;
   running: number;
   earned: number;
-  /** 30-day kickback per 30 days live, leaving out the top earner. */
-  typical: number;
+  /** Templates at least FAIR_CHANCE_DAYS old, the ones typical averages. */
+  mature: number;
+  /** Mean kickback in a template's first FAIR_CHANCE_DAYS, over the mature
+   * ones less the top earner; null under MIN_MATURE. Every template is read
+   * over the same days of its own life, so an old one's repeat invoices
+   * don't count for it what a young one hasn't had time to collect. */
+  typical: number | null;
   top: { name: string; earned: number } | null;
   /** Share paid within 30 days of publishing, by paidCurve. */
   paid30: number | null;
 };
 
+/** Under this many templates old enough, a row has no typical figure. */
+const MIN_MATURE = 3;
+
+/** Kickback in a template's first FAIR_CHANCE_DAYS, from its daily activity
+ * (which needs the whole-life timeline, days=0). */
+const firstDays = (t: TimelineTemplate) => {
+  const pub = Date.parse(`${t.publishedAt!.slice(0, 10)}T00:00:00Z`);
+  return t.activity.reduce(
+    (n, a) => ((Date.parse(`${a.date}T00:00:00Z`) - pub) / DAY < FAIR_CHANCE_DAYS ? n + a.earnedCents / 100 : n),
+    0,
+  );
+};
+
 function segment(templates: TimelineTemplate[], keyOf: (t: TimelineTemplate) => string, now: number): Segment[] {
-  // Days of the 30-day window each template was live, at least one so a
-  // template's first-day cents don't read as a monthly fortune.
-  const live = (t: TimelineTemplate) =>
-    t.publishedAt ? Math.min(30, Math.max(1, (now - Date.parse(t.publishedAt)) / DAY)) : 30;
+  const mature = (t: TimelineTemplate) => !!t.publishedAt && (now - Date.parse(t.publishedAt)) / DAY >= FAIR_CHANCE_DAYS;
   const by = new Map<string, TimelineTemplate[]>();
   for (const t of templates) by.set(keyOf(t), [...(by.get(keyOf(t)) ?? []), t]);
   return [...by.entries()]
     .map(([key, ts]) => {
       const earned = ts.reduce((s, t) => s + (t.earned30d ?? 0), 0);
       const hit = ts.reduce((a, b) => ((b.earned30d ?? 0) > (a.earned30d ?? 0) ? b : a));
-      const rest = ts.length > 1 ? ts.filter((t) => t !== hit) : ts;
+      const firsts = ts.filter(mature).map(firstDays).sort((a, b) => b - a);
+      const rest = firsts.slice(1);
       return {
         key,
         templates: ts.length,
         earning: ts.filter((t) => (t.earned30d ?? 0) > 0).length,
         running: ts.reduce((s, t) => s + (t.running ?? 0), 0),
         earned,
-        typical: (rest.reduce((s, t) => s + (t.earned30d ?? 0), 0) / rest.reduce((s, t) => s + live(t), 0)) * 30,
+        mature: firsts.length,
+        typical: firsts.length >= MIN_MATURE ? rest.reduce((s, v) => s + v, 0) / rest.length : null,
         top: (hit.earned30d ?? 0) > 0 ? { name: hit.name.split(" | ")[0], earned: hit.earned30d ?? 0 } : null,
         paid30: paidCurve(ts.flatMap((t) => lifeOf(t, now) ?? []), 30)[30].share,
       };
@@ -224,7 +243,7 @@ function SegmentTable({
   /** Months read in order; everything else best-paying first. */
   by?: SegmentKey;
 }) {
-  const best = Math.max(0, ...rows.map((r) => r.typical));
+  const best = Math.max(0, ...rows.map((r) => r.typical ?? 0));
   const order = new Map(rows.map((r, i) => [r.key, i]));
   const { rows: sorted, head } = useSort(
     rows,
@@ -245,7 +264,7 @@ function SegmentTable({
         <TableRow>
           {/* One name width, so stacked tables line their columns up. */}
           {head("key", title, { className: "sm:w-44" })}
-          {head("per", "Per template", { hint: "Typical 30-day kickback per 30 days live, the row's top earner left out" })}
+          {head("per", "First 45d", { hint: "Typical kickback in a template's first 45 days, over templates at least that old, the row's top earner left out; blank under three that old" })}
           {head("paid30", "Paid by 30d", { numeric: true, hint: "Share that earned within 30 days of publishing; blank under five templates that old" })}
           {head("earned", "30d", { numeric: true, hint: "All kickback in the last 30 days", className: "max-sm:hidden" })}
           {head("earning", "Earning", { numeric: true, hint: "Templates that earned in the last 30 days, of all in the row", className: "max-sm:hidden" })}
@@ -266,8 +285,8 @@ function SegmentTable({
               </TableRowHead>
               <TableCell className="w-[40%]">
                 <div className="flex items-center gap-2">
-                  <span className="w-14 text-right tabular-nums">{fmtUsd(r.typical)}</span>
-                  <TableMeter value={best > 0 ? r.typical / best : 0} className="w-auto min-w-10 flex-1" />
+                  <span className="w-14 text-right tabular-nums">{r.typical == null ? "—" : fmtUsd(r.typical)}</span>
+                  <TableMeter value={best > 0 && r.typical != null ? r.typical / best : 0} className="w-auto min-w-10 flex-1" />
                 </div>
               </TableCell>
               <TableCell numeric className="text-muted-foreground">{r.paid30 == null ? "—" : pct(r.paid30)}</TableCell>

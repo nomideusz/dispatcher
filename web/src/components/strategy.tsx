@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import { cursor, GROUPS, groupOf, Key, Tip, tick } from "~/components/chart-kit";
 import { DOCKET, DocketCell, Fig, Section } from "~/components/page";
-import { lifeOf, paidCurve } from "~/components/what-to-publish";
+import { FAIR_CHANCE_DAYS, lifeOf, paidCurve } from "~/components/what-to-publish";
 import { ChartContainer } from "~/components/ui/chart";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead } from "~/components/ui/table";
 import { fmtDay, fmtNum, fmtUsd, fmtUsdTick, shortNames } from "~/lib/format";
@@ -11,18 +11,20 @@ import type { TimelineResponse, TimelineTemplate } from "~/queries/analytics";
 import type { PayerChain } from "~/queries/payouts";
 
 export const DAY = 86_400_000;
+const pct = (v: number) => `${Math.round(v * 100)}%`;
 /** Most recent publishing months shown on their own; older ones share a layer. */
 const SEPARATE_MONTHS = 3;
 /** Skips the running green: beside teal it fails the validator's normal-vision floor. */
 const COLORS = ["var(--chart-1)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
-/** A first invoice can take a month to arrive, so by this age a template has
- * had a fair chance to show use. */
-export const FAIR_CHANCE_DAYS = 45;
 export const HEALTH_FLOOR = 70;
 /** The age chart stops here: past it only the oldest batch has a line. */
 const AGE_DAYS = 60;
 /** Almost nothing is paid in the first two weeks, so a shorter line shows nothing. */
 const MIN_LINE_DAYS = 14;
+/** A batch's line runs to the age this share of its templates has reached. */
+const COHORT_SHARE = 0.8;
+/** Under this many templates one payer swings a line 20+ points. */
+const MIN_COHORT = 5;
 /** Shorter collection gaps don't move a weekly figure. */
 const NOTABLE_GAP = 2 * DAY;
 /** A payer still counts for a day past the estimated next invoice, so an invoice
@@ -80,17 +82,19 @@ export function buildStrategy(data: TimelineResponse, payers: PayerChain[]) {
     );
   };
 
-  /** What one published template of each size earned in the 30 days to
-   * `end`: the size's kickback over its templates published by then. Each
-   * size's biggest lifetime earner is left out, as in the segment tables, so
-   * one hit (Twenty) doesn't make its size's line. */
+  /** What one template of each size earned in the 30 days to `end`, over
+   * its templates already FAIR_CHANCE_DAYS old by then: counting the
+   * just-published, who can't have been paid yet, would make every line sag
+   * while the catalog grows. Each size's biggest lifetime earner is left out,
+   * as in the segment tables, so one hit (Twenty) doesn't make its size's line. */
   const sizeTop = GROUPS.map((_, g) =>
     templates.filter((t) => groupOf(t) === g).reduce<TimelineTemplate | null>((m, t) => (!m || t.lifetimeCents > m.lifetimeCents ? t : m), null),
   );
   const perSizeBy = (end: string) => {
     const from = iso(utc(end) - 30 * DAY);
+    const matureBy = iso(utc(end) - FAIR_CHANCE_DAYS * DAY);
     return GROUPS.map((_, g) => {
-      const ts = templates.filter((t) => groupOf(t) === g && t !== sizeTop[g] && publishedOn(t).slice(0, 10) <= end);
+      const ts = templates.filter((t) => groupOf(t) === g && t !== sizeTop[g] && publishedOn(t).slice(0, 10) <= matureBy);
       const sum = ts.reduce(
         (s, t) => s + t.activity.reduce((n, a) => (a.date >= from && a.date <= end ? n + a.earnedCents / 100 : n), 0),
         0,
@@ -159,31 +163,51 @@ export function buildStrategy(data: TimelineResponse, payers: PayerChain[]) {
   const fromNew = batches.reduce((s, b, i) => (b.key === "before" ? s : s + change[i]), 0);
   const newTemplates = batches.reduce((s, b) => (b.key === "before" ? s : s + b.templates.length), 0);
 
-  // Each batch's kickback by age, per template. The batch's biggest earner is
-  // left out so one hit (Twenty) doesn't set the line, and a line stops once
-  // too few of its templates are that old for the average to be the same group.
+  // Each batch followed as one fixed group, so every point of its line is the
+  // same templates: those that have reached the age 80% of the batch has
+  // reached. Averaging whoever is old enough at each age instead swaps
+  // templates in and out along the line. Ages are each template's own, so a
+  // payer's repeat invoices count the same in every batch: day 45 is 45 days
+  // of a template's life whenever it was published.
   const nowMs = Date.parse(data.sampledAt);
+  const ageOf = (t: TimelineTemplate) => Math.floor((nowMs - Date.parse(publishedOn(t))) / DAY);
+  /** Kickback a template earned by `age` days after publishing. */
+  const earnedByAge = (t: TimelineTemplate, age: number) => {
+    const pub = utc(publishedOn(t).slice(0, 10));
+    return t.activity.reduce((n, a) => ((utc(a.date) - pub) / DAY <= age ? n + a.earnedCents / 100 : n), 0);
+  };
+  const cohorts = batches.map((b) => {
+    const ages = b.templates.map(ageOf).sort((x, y) => y - x);
+    const k = Math.ceil(ages.length * COHORT_SHARE);
+    const end = k >= MIN_COHORT ? Math.min(AGE_DAYS, ages[k - 1]) : 0;
+    if (end <= MIN_LINE_DAYS) return null;
+    return { end, group: b.templates.filter((t) => ageOf(t) >= end) };
+  });
   const ageRows = Array.from({ length: AGE_DAYS + 1 }, (_, age) => {
     const row: Record<string, number | null> = { age };
-    batches.forEach((b, i) => {
-      const top = b.templates.reduce<TimelineTemplate | null>((m, t) => (!m || t.lifetimeCents > m.lifetimeCents ? t : m), null);
-      const rest = b.templates.filter((t) => t !== top);
-      const old = rest.filter((t) => (nowMs - Date.parse(publishedOn(t))) / DAY >= age);
-      if (old.length < 5 || old.length < rest.length * 0.8) {
-        row[`b${i}`] = null;
-        return;
-      }
-      const sum = old.reduce((s, t) => {
-        const pub = utc(publishedOn(t).slice(0, 10));
-        return s + t.activity.reduce((n, a) => ((utc(a.date) - pub) / DAY <= age ? n + a.earnedCents / 100 : n), 0);
-      }, 0);
-      row[`b${i}`] = sum / old.length;
+    cohorts.forEach((c, i) => {
+      row[`b${i}`] = c && age <= c.end ? c.group.filter((t) => earnedByAge(t, age) > 0).length / c.group.length : null;
     });
     return row;
   });
-  const drawn = batches.map((_, i) => ageRows.filter((r) => r[`b${i}`] != null).length > MIN_LINE_DAYS);
+  // One checkpoint every drawn line has reached, so the key compares like
+  // with like. The kickback figure leaves out the group's biggest earner by
+  // then, so one hit (Twenty) doesn't make its batch.
+  const ends = cohorts.flatMap((c) => (c ? [c.end] : []));
+  const checkpoint = ends.length ? Math.min(...ends) : null;
+  const atCheckpoint = cohorts.map((c) => {
+    if (!c || checkpoint == null) return null;
+    const earned = c.group.map((t) => earnedByAge(t, checkpoint)).sort((x, y) => y - x);
+    const rest = earned.slice(1);
+    return {
+      paid: earned.filter((v) => v > 0).length,
+      of: earned.length,
+      each: rest.reduce((s, v) => s + v, 0) / rest.length,
+      top: earned[0],
+    };
+  });
 
-  return { batches, weeks, monthAgo, now, change, growth, fromNew, newTemplates, ageRows, drawn };
+  return { batches, weeks, monthAgo, now, change, growth, fromNew, newTemplates, ageRows, cohorts, checkpoint, atCheckpoint };
 }
 
 /** Where every template stands today. Exactly one row per template. */
@@ -290,12 +314,7 @@ export function Trend({ data, model }: { data: TimelineResponse; model: Strategy
           items={batches.map((b, i) => ({
             label: `${b.label} (${fmtNum(b.templates.length)})`,
             color: b.color,
-            value: (
-              <>
-                {fmtUsd(now[i])}
-                <span className="font-normal text-muted-foreground"> · {fmtUsd(b.templates.length ? now[i] / b.templates.length : 0)} each</span>
-              </>
-            ),
+            value: fmtUsd(now[i]),
           }))}
         />
         <ChartContainer config={{}} className="aspect-auto h-56 w-full lg:h-64">
@@ -433,7 +452,7 @@ export function Trend({ data, model }: { data: TimelineResponse; model: Strategy
         “Paying” means at any time so far, so a template that paid late counts in its earlier weeks too.
         {edge &&
           ` Deploys still include ${name(edge.name)}, which is most of the mid-October spike and is still being deployed; it has earned ${fmtUsd(earned(edge))} so far, which is too early to judge: Linux templates took about 40 days from their first deploys to earn.`}
-        {" "}A month per template leaves out each size&apos;s biggest earner; a line falling while the catalog grows means that size&apos;s new templates earn less than its old ones.
+        {" "}A month per template counts only templates {FAIR_CHANCE_DAYS}+ days old that week and leaves out each size&apos;s biggest earner, so a line falls only when templates that have had their chance earn less, not because new ones joined.
         {longGaps.map((g) => (
           <span key={g.from}>
             {" "}
@@ -445,36 +464,54 @@ export function Trend({ data, model }: { data: TimelineResponse; model: Strategy
   );
 }
 
-/** Each publishing month's kickback per template by age, so batches compare
- * at the same age instead of the newest looking worst for being young. */
+/** Each publishing month followed as one fixed group: the share of it paid by
+ * each day of its templates' own lives, so batches compare at the same age
+ * instead of the newest looking worst for being young. */
 export function Cohorts({ model }: { model: StrategyModel }) {
-  const { batches, ageRows, drawn } = model;
-  const tooYoung = batches.filter((_, i) => !drawn[i]).map((b) => b.label);
-  const day30 = ageRows[30];
+  const { batches, ageRows, cohorts, checkpoint, atCheckpoint } = model;
+  const tooYoung = batches.filter((_, i) => !cohorts[i]).map((b) => b.label);
   return (
     <section className="min-w-0 space-y-2">
       <h3 className="text-base font-semibold">Do newer batches do better?</h3>
       <Key
         items={batches.flatMap((b, i) => {
-          if (!drawn[i]) return [];
-          const at30 = day30?.[`b${i}`];
-          return [{ label: b.label, color: b.color, line: true, value: at30 != null ? `${fmtUsd(at30)} at day 30` : undefined }];
+          const c = cohorts[i];
+          const at = atCheckpoint[i];
+          if (!c || !at) return [];
+          return [{
+            label: `${b.label} (${fmtNum(at.of)})`,
+            color: b.color,
+            line: true,
+            value: (
+              <>
+                {pct(at.paid / at.of)} paid
+                <span className="font-normal text-muted-foreground"> · {fmtUsd(at.each)} each</span>
+              </>
+            ),
+          }];
         })}
       />
       <ChartContainer config={{}} className="aspect-auto h-56 w-full lg:h-64">
-        <LineChart data={ageRows} margin={{ top: 6, right: 4, left: 0, bottom: 0 }} aria-label="Cumulative kickback per template by days since publishing, per publishing month">
+        <LineChart data={ageRows} margin={{ top: 6, right: 4, left: 0, bottom: 0 }} aria-label="Share of each publishing month's templates paid, by days since publishing">
           <CartesianGrid vertical={false} />
           <XAxis dataKey="age" {...tick} tickMargin={6} type="number" domain={[0, AGE_DAYS]} ticks={[0, 15, 30, 45, 60]} tickFormatter={(d: number) => `Day ${d}`} />
-          <YAxis width={44} {...tick} tickCount={4} tickFormatter={(v: number) => fmtUsd(v)} />
-          <Tooltip isAnimationActive={false} cursor={cursor} content={(p) => <Tip {...p} title={(l) => `Day ${l} after publishing`} format={fmtUsd} />} />
-          {batches.map((b, i) => !drawn[i] ? null : (
-            <Line key={b.key} name={b.label} dataKey={`b${i}`} stroke={b.color} strokeWidth={2} dot={false} isAnimationActive={false} />
+          <YAxis width={44} {...tick} tickCount={4} domain={[0, (max: number) => Math.max(0.2, Math.ceil(max * 10) / 10)]} tickFormatter={pct} />
+          <Tooltip isAnimationActive={false} cursor={cursor} content={(p) => <Tip {...p} title={(l) => `Day ${l} after publishing`} format={pct} />} />
+          {checkpoint != null && <ReferenceLine x={checkpoint} stroke="var(--border)" strokeDasharray="3 3" />}
+          {batches.map((b, i) => !cohorts[i] ? null : (
+            <Line key={b.key} name={b.label} type="stepAfter" dataKey={`b${i}`} stroke={b.color} strokeWidth={2} dot={false} isAnimationActive={false} />
           ))}
         </LineChart>
       </ChartContainer>
       <p className="text-xs text-muted-foreground">
-        Kickback per template so far, by days since publishing, each batch&apos;s biggest earner left out so one hit doesn&apos;t set its line.
-        A line stops while too few of its templates have reached that age, and money comes with a monthly invoice, so a young line says little yet.
+        Share of each publishing month&apos;s templates that had earned any kickback by each day after publishing.
+        A line runs as far as 80% of its month has reached, and every point is that same group, counted by their own age, so repeat invoices from older payers count the same in each.
+        {checkpoint != null && (
+          <>
+            {" "}The key reads day <Fig>{checkpoint}</Fig>, the furthest every line reaches: the share paid, then kickback per template by then, leaving out each group&apos;s biggest earner.
+          </>
+        )}
+        {" "}A first invoice can take a month to arrive, so almost nothing shows before day 15.
         {tooYoung.length > 0 && ` ${tooYoung.join(" and ")} ${tooYoung.length > 1 ? "are" : "is"} too young to draw.`}
       </p>
     </section>

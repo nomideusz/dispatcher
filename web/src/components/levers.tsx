@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { Fig, Section } from "~/components/page";
 import { DAY, EDGE_CODE, HEALTH_FLOOR, publishedOn, tiersOf } from "~/components/strategy";
-import { best, kindLabel, segmentsOf, sizeLabel } from "~/components/what-to-publish";
+import { best, FAIR_CHANCE_DAYS, kindLabel, segmentsOf, sizeLabel } from "~/components/what-to-publish";
 import { fmtNum, fmtUsd, shortName, shortNames } from "~/lib/format";
 import type { TimelineResponse, TimelineTemplate } from "~/queries/analytics";
 import type { Candidates } from "~/queries/candidates";
@@ -195,7 +195,7 @@ export function Levers({
             <>
               {" "}
               Best-paying: {kindLabel(topKind.key)} <Fig>{fmtUsd(topKind.typical)}</Fig>, {sizeLabel(topSize.key)}{" "}
-              <Fig>{fmtUsd(topSize.typical)}</Fig> a typical template.
+              <Fig>{fmtUsd(topSize.typical)}</Fig> a typical template in its first {FAIR_CHANCE_DAYS} days.
             </>
           )}{" "}
           {shortlist.length

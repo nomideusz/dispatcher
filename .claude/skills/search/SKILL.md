@@ -14,4 +14,4 @@ description: Check where Dispatcher templates rank in Railway's marketplace sear
    - **Same tier and band:** running deploys decide. Doubling them is worth about one position.
    For one keyword's full results, read `~/go/bin/dispatcherctl get /api/search`.
 4. Then the gaps worth acting on. Demand counts deploys of the templates a keyword returns, not searches, and keywords returning the same templates share one figure. Before calling a gap an opening, count the tier-0 listings (exact name or slug) at 100 health: each one with more running deploys than we could reach sits above us for good.
-5. End with one recommendation. Adding a keyword or changing a listing is the owner's call: ask first. Track a keyword with `POST /api/search/keywords`, or from the Search page.
+5. End with one recommendation. Adding a keyword or changing a listing is the owner's call: ask first. Track a keyword with `~/go/bin/dispatcherctl track "KEYWORD"` (`untrack` stops it), or from the Search page.

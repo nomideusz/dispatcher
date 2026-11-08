@@ -206,6 +206,15 @@ func parseCommand(args []string, stderr io.Writer) (command, error) {
 			requiresAuth: true,
 			body:         string(body),
 		}, nil
+	case "track", "untrack":
+		if len(args) != 2 {
+			return command{}, fmt.Errorf("%s requires one search keyword", args[0])
+		}
+		if args[0] == "untrack" {
+			return command{method: http.MethodDelete, path: "/api/search/keywords/" + url.PathEscape(args[1]), requiresAuth: true}, nil
+		}
+		body, _ := json.Marshal(map[string]string{"query": args[1]})
+		return command{method: http.MethodPost, path: "/api/search/keywords", requiresAuth: true, body: string(body)}, nil
 	case "candidate":
 		if len(args) != 3 && len(args) != 4 {
 			return command{}, fmt.Errorf("candidate requires a group key (as the Candidates page shows it), a status (shortlist, skip, or \"\" to clear) and an optional note")
@@ -323,6 +332,8 @@ Other commands:
   proposal URL STATUS [REPLY]
                            Answer a proposal: building, published or skipped
                            ("" puts it back to new), with a reply the owner reads
+  track KEYWORD            Track a search keyword (its rank is read daily)
+  untrack KEYWORD          Stop tracking a keyword added by hand
   candidate KEY STATUS [NOTE]
                            Mark a Candidates group: shortlist or skip ("" clears),
                            with a one-line note the page shows

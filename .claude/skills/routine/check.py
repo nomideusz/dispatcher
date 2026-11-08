@@ -60,6 +60,18 @@ def get(*args):
     return json.loads(out.stdout)
 
 
+def behind_templates(upgrades):
+    """Templates behind, each counted once at its furthest level."""
+    worst = {}
+    for u in upgrades:
+        b = u.get("behind")
+        if b in ("patch", "minor", "floating"):
+            rank = {"floating": 0, "patch": 1, "minor": 2}
+            if rank[b] > rank.get(worst.get(u["templateId"]), -1):
+                worst[u["templateId"]] = b
+    return {b: sum(1 for w in worst.values() if w == b) for b in ("patch", "minor", "floating")}
+
+
 def figures(timeline, upgrades, search, candidates, verdicts):
     ts = timeline["templates"]
     by_template = {}
@@ -92,8 +104,10 @@ def figures(timeline, upgrades, search, candidates, verdicts):
             for t in low
         ],
         "lowEarning": sum(1 for t in low if (t.get("earnedCents") or 0) > 0),
-        "behind": {b: sum(1 for u in upgrades if u.get("behind") == b) for b in ("patch", "minor", "floating")},
-        "majors": sum(1 for u in upgrades if u.get("major")),
+        # Per template, not per service image: a template counts once, at the
+        # furthest it is behind (minor over patch over a floating tag).
+        "behind": behind_templates(upgrades),
+        "majors": len({u["templateId"] for u in upgrades if u.get("major")}),
         "lastUpgradeOn": upgraded[0] if upgraded else "",
         "upgradedLastOn": sum(1 for d in upgraded if upgraded and d == upgraded[0] and d),
         "upgradedWeek": sum(1 for d in upgraded if d and d >= week_ago),
@@ -139,6 +153,8 @@ def show_health(f, last, detail=False):
         up = f"  upgrades pending: {', '.join(t['upgrades'])}" if t["upgrades"] else ""
         fixed = f"  fix pushed {t['fixedOn']}" if t.get("fixedOn") else ""
         print(f"  {t['health']:>3}%  ${t['earnedCents'] / 100:>7.2f}/30d  {t['name']}{fixed}{up}")
+    if not detail and len(f["low"]) > 10:
+        print(f"  … {len(f['low']) - 10} more (--only health lists all)")
     if last:
         was = {t["name"] for t in last["low"]}
         fixed = sorted(was - {t["name"] for t in f["low"]})
@@ -162,7 +178,8 @@ def show_catalog(f, last):
 
 def show_upgrades(f):
     b = f["behind"]
-    print(f"UPGRADES: {b['patch']} patch, {b['minor']} minor, {b['floating']} floating, {f['majors']} with a newer major")
+    print(f"UPGRADES: {b['minor'] + b['patch'] + b['floating']} templates behind ({b['minor']} minor, {b['patch']} patch,"
+          f" {b['floating']} floating tag only); {f['majors']} have a newer major")
     last = f.get("lastUpgradeOn")
     if not last:
         print("  no upgrade recorded: due (record pushes with dispatcherctl upgraded ID YYYY-MM-DD)")
@@ -251,8 +268,9 @@ def search_why(search, timeline, n=12):
     if len(rows) > n:
         print(f"    … {len(rows) - n} more")
     unscored = [t for t in timeline["templates"] if not t.get("activeProjects") or t.get("health") is None]
-    print(f"  {len(unscored)} of our {len(timeline['templates'])} templates are unscored (no active projects):"
-          " they sort under every 70+ listing in their tier")
+    waiting = sum(1 for t in unscored if t.get("activeProjects"))
+    print(f"  {len(unscored)} of our {len(timeline['templates'])} templates are unscored: they sort under every 70+ listing"
+          f" in their tier. A score needs an active project; {waiting} have one and no score yet")
 
 
 def search_detail(search, n=10):

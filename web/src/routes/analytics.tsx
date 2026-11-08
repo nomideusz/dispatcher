@@ -9,6 +9,7 @@ import { behindTemplateCount } from "~/components/upgrade-queue";
 import { AutoWithdraw } from "~/components/auto-withdraw-dialog";
 import { Forecast } from "~/components/forecast";
 import { PayoutHistory } from "~/components/payout-history";
+import { ReferralEarnings } from "~/components/referrals";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -95,6 +96,14 @@ export default function Money() {
               </Card>
             </Section>
           )}
+
+          <Section
+            id="referrals"
+            title="Referrals"
+            text="What Railway pays for users who signed up with our referral link. A referred user stays pending until Railway credits the referral. Read hourly; the range above doesn't change it."
+          >
+            <ReferralEarnings />
+          </Section>
 
           <Section
             id="payouts"

@@ -53,6 +53,7 @@ func main() {
 	mux.Handle("POST /api/search/keywords", auth(handleAddSearchKeyword(db)))
 	mux.Handle("DELETE /api/search/keywords/{query}", auth(handleRemoveSearchKeyword(db)))
 	mux.Handle("GET /api/payouts", auth(handlePayoutHistory(db)))
+	mux.Handle("GET /api/referrals", auth(handleReferrals(db)))
 	mux.Handle("GET /api/withdraw/settings", auth(handleWithdrawSettings(db)))
 	mux.Handle("POST /api/withdraw/settings", auth(handleUpdateWithdrawSettings(db)))
 	mux.Handle("GET /api/withdraw/accounts", auth(handleWithdrawAccounts(db)))

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"log"
 	"net/http"
 	"sort"
 	"strconv"
@@ -472,6 +473,9 @@ func handleRefreshAnalytics(db *gorm.DB) http.HandlerFunc {
 		if _, _, err := syncPayouts(r.Context(), db); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
+		}
+		if err := collectEarnings(r.Context(), db); err != nil {
+			log.Printf("earnings snapshot: %v", err)
 		}
 		if _, err := attributePayouts(r.Context(), db); err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})

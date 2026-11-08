@@ -1,9 +1,10 @@
 import { Pause, Play, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { GROUPS, groupOf } from "~/components/chart-kit";
 import { Button } from "~/components/ui/button";
 import { fmtCents, fmtNum, shortNames } from "~/lib/format";
 import { cn } from "~/lib/utils";
-import { KINDS, type TimelineResponse, type TimelineTemplate } from "~/queries/analytics";
+import { KINDS, ORIGINS, type TimelineResponse, type TimelineTemplate } from "~/queries/analytics";
 
 /** The board: kickback or new projects, day by day, run as a race between
  * templates or their groups. A Dispatcher reads like a departures board, so
@@ -11,7 +12,10 @@ import { KINDS, type TimelineResponse, type TimelineTemplate } from "~/queries/a
  * place and a stamp lands on a first kickback or a change of leader. */
 
 type Measure = "kickback" | "projects";
-type Field = "templates" | "launch" | "kinds" | "weeks";
+type Field = "templates" | "kinds" | "sizes" | "origins" | "months" | "weeks";
+type Clock = "calendar" | "launch";
+type Count = "total" | "per";
+type Biggest = "kept" | "out";
 
 const MEASURES: { key: Measure; label: string; board: string }[] = [
   { key: "kickback", label: "Kickback", board: "Kickback earned" },
@@ -19,10 +23,28 @@ const MEASURES: { key: Measure; label: string; board: string }[] = [
 ];
 const FIELDS: { key: Field; label: string }[] = [
   { key: "templates", label: "Templates" },
-  { key: "launch", label: "Templates from launch" },
   { key: "kinds", label: "Kinds" },
+  { key: "sizes", label: "Sizes" },
+  { key: "origins", label: "Origins" },
+  { key: "months", label: "Publish months" },
   { key: "weeks", label: "Publish weeks" },
 ];
+const CLOCKS: { key: Clock; label: string }[] = [
+  { key: "calendar", label: "Calendar" },
+  { key: "launch", label: "From launch" },
+];
+const COUNTS: { key: Count; label: string }[] = [
+  { key: "total", label: "Total" },
+  { key: "per", label: "Per template" },
+];
+const BIGGEST: { key: Biggest; label: string }[] = [
+  { key: "kept", label: "Kept" },
+  { key: "out", label: "Left out" },
+];
+/** Per template: under this many templates a group sits out, and from
+ * launch its bar stops at the age fewer than this have reached, since past
+ * that one payer makes the line. */
+const MIN_GROUP = 5;
 const SPEEDS = [0.5, 1, 2, 4] as const;
 type Pace = "real" | "eventful";
 type Start = "full" | "first";
@@ -31,8 +53,8 @@ const STARTS: { key: Start; label: string }[] = [
   { key: "first", label: "First day" },
 ];
 const PACES: { key: Pace; label: string }[] = [
-  { key: "real", label: "Real time" },
   { key: "eventful", label: "Eventful" },
+  { key: "real", label: "Real time" },
 ];
 /** Eventful: a race lasts this long at 1×, whatever the span of days. */
 const SECONDS = 60;
@@ -50,6 +72,7 @@ const LINGER = 3;
 const KIND_COLORS = ["var(--chart-3)", "var(--chart-5)", "var(--chart-4)", "var(--chart-2)", "var(--chart-1)", "var(--chart-other)"];
 /** Publish weeks take their month's colour, cycling. */
 const MONTH_COLORS = ["var(--chart-3)", "var(--chart-5)", "var(--chart-4)", "var(--chart-2)", "var(--chart-1)"];
+const ORIGIN_COLORS = ["var(--chart-3)", "var(--chart-1)"];
 const UNSORTED = "var(--chart-other)";
 const DAY_MS = 86_400_000;
 const monthName = new Intl.DateTimeFormat("en-US", { month: "long", timeZone: "UTC" });
@@ -67,8 +90,8 @@ interface Racer {
   first: number;
   /** From launch: the last day it has lived through so far. */
   age?: number;
-  /** From launch: days since it was published, for the "days old" note. */
-  old?: number;
+  /** From launch: shown once the race passes its last day. */
+  note?: string;
 }
 
 /** A colour of its own per template, given by where it finishes: the top
@@ -87,8 +110,20 @@ function racerOf(
 ): Pick<Racer, "id" | "label" | "color"> {
   switch (field) {
     case "templates":
-    case "launch":
       return { id: t.templateId, label: name(t.name), color: UNSORTED };
+    case "sizes": {
+      const g = groupOf(t);
+      return g < 0 ? { id: "unsorted", label: "Unsorted", color: UNSORTED } : { id: `s${g}`, label: GROUPS[g].label, color: GROUPS[g].color };
+    }
+    case "origins": {
+      const i = ORIGINS.findIndex((o) => o.key === t.origin);
+      return i < 0 ? { id: "unsorted", label: "Unsorted", color: UNSORTED } : { id: ORIGINS[i].key, label: ORIGINS[i].label, color: ORIGIN_COLORS[i] };
+    }
+    case "months": {
+      if (!t.publishedAt) return { id: "unknown", label: "Date unknown", color: UNSORTED };
+      const d = new Date(`${t.publishedAt.slice(0, 7)}-01T00:00:00Z`);
+      return { id: t.publishedAt.slice(0, 7), label: monthName.format(d), color: UNSORTED };
+    }
     case "kinds": {
       const i = KINDS.findIndex((k) => k.key === t.kind);
       return i < 0 ? { id: "unsorted", label: "Unsorted", color: UNSORTED } : { id: KINDS[i].key, label: KINDS[i].label, color: KIND_COLORS[i] };
@@ -104,8 +139,8 @@ function racerOf(
 
 function legendOf(field: Field, racers: Racer[]) {
   // A template's colour is only its own; there is nothing to key.
-  if (field === "templates" || field === "launch") return [];
-  if (field === "kinds") return racers.map((r) => ({ label: r.label, color: r.color }));
+  if (field === "templates") return [];
+  if (field !== "weeks") return [...racers].sort((a, b) => a.id.localeCompare(b.id)).map((r) => ({ label: r.label, color: r.color }));
   const months = new Map<string, { label: string; color: string }>();
   for (const r of [...racers].sort((a, b) => a.id.localeCompare(b.id))) {
     const d = new Date(`${r.id}T00:00:00Z`);
@@ -117,48 +152,121 @@ function legendOf(field: Field, racers: Racer[]) {
 
 /** Days from the one before anything scored to the last sample, and each
  * racer's running total over them. From launch, the days are each
- * template's own, counted from the day it was published. */
-function build(data: TimelineResponse, measure: Measure, field: Field, from: Start) {
+ * template's own, counted from the day it was published. Per template
+ * divides a group's total by its templates; leaving out the biggest drops
+ * each group's top template (for templates, the top one overall). */
+function build(data: TimelineResponse, measure: Measure, field: Field, timeline: Clock, count: Count, biggest: Biggest, from: Start) {
   const score = (a: { earnedCents: number; newProjects: number }) => (measure === "kickback" ? a.earnedCents : a.newProjects);
   const dates = data.templates.flatMap((t) => t.activity.filter((a) => score(a) > 0).map((a) => a.date));
   const end = data.sampledAt.slice(0, 10);
   const start = dates.length ? dates.reduce((a, b) => (a < b ? a : b)) : end;
-  const launch = field === "launch";
+  const launch = timeline === "launch";
+  const perTemplate = count === "per" && field !== "templates";
   const since = (from: string, to: string) => Math.round((Date.parse(to) - Date.parse(from)) / DAY_MS);
+  const pub = (t: TimelineTemplate) => (t.publishedAt ?? t.firstSeenAt).slice(0, 10);
 
   // From launch, only templates published after collection began, so none
   // is missing its first days.
   const entrants = launch ? data.templates.filter((t) => t.publishedAt && t.publishedAt.slice(0, 10) >= start) : data.templates;
   const days: string[] = [];
   if (launch) {
-    const oldest = Math.max(1, ...entrants.map((t) => since(t.publishedAt!.slice(0, 10), end)));
+    const oldest = Math.max(1, ...entrants.map((t) => since(pub(t), end)));
     for (let i = 0; i <= oldest + 1; i++) days.push(`Day ${Math.max(0, i - 1)}`);
   } else {
     for (let d = Date.parse(start) - DAY_MS; d <= Date.parse(end); d += DAY_MS) days.push(new Date(d).toISOString().slice(0, 10));
   }
+  const last = days.length - 1;
   const at = new Map(days.map((d, i) => [d, i]));
   const indexOf = (t: TimelineTemplate, date: string) =>
-    launch ? Math.min(days.length - 1, 1 + Math.max(0, since(t.publishedAt!.slice(0, 10), date))) : at.get(date);
+    launch ? Math.min(last, 1 + Math.max(0, since(pub(t), date))) : at.get(date);
 
-  const name = shortNames(data.templates.map((t) => t.name));
-  const racers = new Map<string, Racer>();
+  // The last day each template has lived through: from launch its own age,
+  // on the calendar the end; and the first, the day it was published.
+  const lastDay = (t: TimelineTemplate) => (launch ? indexOf(t, end)! : last);
+  const firstDay = (t: TimelineTemplate) => (launch ? 0 : (at.get(pub(t)) ?? 0));
+  // Each template's running total, its payouts spread as they are shown but
+  // never past its own last day.
+  const cumOf = new Map<TimelineTemplate, number[]>();
   for (const t of entrants) {
-    const base = racerOf(t, field, name);
-    const r: Racer = racers.get(base.id) ?? { ...base, cum: new Array(days.length).fill(0), tan: [], first: Infinity };
-    if (launch) {
-      r.age = indexOf(t, end);
-      r.old = since(t.publishedAt!.slice(0, 10), end);
-    }
-    racers.set(base.id, r);
+    const daily = new Array<number>(days.length).fill(0);
     for (const a of t.activity) {
       const i = indexOf(t, a.date);
-      if (i != null) r.cum[i] += score(a);
+      if (i != null) daily[i] += score(a);
+    }
+    const own = spread(daily.slice(0, lastDay(t) + 1), measure === "kickback" ? 7 : 3);
+    const cum = days.map((_, d) => own[Math.min(d, own.length - 1)]);
+    for (let i = 1; i < own.length; i++) cum[i] += cum[i - 1];
+    for (let i = own.length; i < cum.length; i++) cum[i] = cum[own.length - 1];
+    cumOf.set(t, cum);
+  }
+  const final = (t: TimelineTemplate) => cumOf.get(t)![last];
+
+  const name = shortNames(data.templates.map((t) => t.name));
+  const groups = new Map<string, { base: Pick<Racer, "id" | "label" | "color">; members: TimelineTemplate[] }>();
+  for (const t of entrants) {
+    const base = racerOf(t, field, name);
+    const g = groups.get(base.id) ?? { base, members: [] };
+    g.members.push(t);
+    groups.set(base.id, g);
+  }
+  const leftOut: string[] = [];
+  if (biggest === "out") {
+    const topOf = (ts: TimelineTemplate[]) => ts.reduce((m, t) => (final(t) > final(m) ? t : m));
+    if (field === "templates" && entrants.length) {
+      const top = topOf(entrants);
+      if (final(top) > 0) {
+        groups.delete(top.templateId);
+        leftOut.push(name(top.name));
+      }
+    } else {
+      for (const g of groups.values()) {
+        if (g.members.length < 2) continue;
+        const top = topOf(g.members);
+        if (final(top) <= 0) continue;
+        g.members = g.members.filter((t) => t !== top);
+        leftOut.push(name(top.name));
+      }
     }
   }
-  const list = [...racers.values()];
-  for (const r of list) {
-    r.cum = spread(r.cum, measure === "kickback" ? 7 : 3);
-    for (let i = 1; i < r.cum.length; i++) r.cum[i] += r.cum[i - 1];
+
+  /** A group's line: the sum of its templates, or per template the mean
+   * cumulative: each day adds the average its templates earned that day,
+   * over the ones live on it (published by then, or from launch that old).
+   * A young template counts for the days it has had, a new one joining
+   * doesn't drag the bar back, and no template is dropped for its age. */
+  const combine = (members: TimelineTemplate[]): (Pick<Racer, "cum" | "age" | "note"> & { n: number }) | null => {
+    if (!perTemplate) {
+      const cum = days.map((_, d) => members.reduce((s, t) => s + cumOf.get(t)![d], 0));
+      if (!launch) return { cum, n: members.length };
+      const oldest = members.reduce((m, t) => Math.max(m, lastDay(t)), 0);
+      return { cum, age: oldest, note: field === "templates" ? `${oldest - 1} days old` : `to day ${oldest - 1}`, n: members.length };
+    }
+    if (members.length < MIN_GROUP) return null;
+    const cum = new Array<number>(days.length).fill(0);
+    let stop = last;
+    for (let d = 1; d < days.length; d++) {
+      const live = members.filter((t) => firstDay(t) <= d && d <= lastDay(t));
+      if (launch && live.length < MIN_GROUP) {
+        stop = d - 1;
+        break;
+      }
+      const gain = live.reduce((s, t) => s + cumOf.get(t)![d] - cumOf.get(t)![d - 1], 0);
+      cum[d] = cum[d - 1] + (live.length ? gain / live.length : 0);
+    }
+    for (let d = stop + 1; d < days.length; d++) cum[d] = cum[stop];
+    return launch ? { cum, age: stop, note: `to day ${stop - 1}`, n: members.length } : { cum, n: members.length };
+  };
+
+  const list: Racer[] = [];
+  for (const { base, members } of groups.values()) {
+    const line = combine(members);
+    if (!line) continue;
+    list.push({ ...base, label: perTemplate ? `${base.label} (${line.n})` : base.label, cum: line.cum, age: line.age, note: line.note, tan: [], first: -1 });
+  }
+  const everyone = [...groups.values()].flatMap((g) => g.members);
+  const allLine = combine(everyone) ?? { cum: days.map((_, d) => everyone.reduce((s, t) => s + cumOf.get(t)![d], 0)) };
+  const all: Racer = { id: "all", label: "All", color: UNSORTED, cum: allLine.cum, tan: [], first: -1 };
+  for (const r of [...list, all]) {
     r.tan = monotoneSlopes(r.cum);
     r.first = r.cum.findIndex((v) => v > 0);
   }
@@ -173,7 +281,7 @@ function build(data: TimelineResponse, measure: Measure, field: Field, from: Sta
     const cut = Math.max(0, full - 1);
     if (cut > 0) {
       days.splice(0, cut);
-      for (const r of scoring) {
+      for (const r of [...scoring, all]) {
         r.cum = r.cum.slice(cut);
         r.tan = r.tan.slice(cut);
         r.first -= cut;
@@ -181,9 +289,14 @@ function build(data: TimelineResponse, measure: Measure, field: Field, from: Sta
       }
     }
   }
-  if (field === "templates" || field === "launch") {
+  if (field === "templates") {
     const last = days.length - 1;
     [...scoring].sort((a, b) => b.cum[last] - a.cum[last]).forEach((r, i) => (r.color = finishColor(i)));
+  }
+  if (field === "months") {
+    [...scoring].sort((a, b) => a.id.localeCompare(b.id)).forEach((r, i) => {
+      if (/^\d{4}-\d{2}$/.test(r.id)) r.color = MONTH_COLORS[i % MONTH_COLORS.length];
+    });
   }
   if (field === "weeks") {
     // A colour per month in the race, in order, so none repeats.
@@ -232,7 +345,7 @@ function build(data: TimelineResponse, measure: Measure, field: Field, from: Sta
   const inPlay = (d: number) =>
     scoring.filter((r) => (launch ? (r.age ?? 0) >= d + 1 : r.cum[Math.min(d + 1, days.length - 1)] > 0)).length;
   const even = smooth(days.map((_, d) => (inPlay(d) <= 1 ? LONE : 1)));
-  return { days, racers: scoring, ranks, leader, tookLead, weight, clock, even, launch, legend: legendOf(field, scoring) };
+  return { days, racers: scoring, all, ranks, leader, tookLead, weight, clock, even, launch, per: perTemplate, leftOut, legend: legendOf(field, scoring) };
 }
 
 /** Kickback lands in monthly invoice lumps, deploys in bursts: shown as
@@ -288,9 +401,15 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
   const [measure, setMeasure] = useState<Measure>("kickback");
   const [field, setField] = useState<Field>("templates");
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(1);
-  const [pace, setPace] = useState<Pace>("real");
+  const [clock, setClock] = useState<Clock>("calendar");
+  const [count, setCount] = useState<Count>("total");
+  const [biggest, setBiggest] = useState<Biggest>("kept");
+  const [pace, setPace] = useState<Pace>("eventful");
   const [start, setStart] = useState<Start>("full");
-  const race = useMemo(() => build(data, measure, field, start), [data, measure, field, start]);
+  const race = useMemo(
+    () => build(data, measure, field, clock, count, biggest, start),
+    [data, measure, field, clock, count, biggest, start],
+  );
   const span = race.days.length - 1;
 
   const reduced = useRef(false);
@@ -375,8 +494,9 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
   const yOf = (rank: number) =>
     rank < SHOWN ? `var(--row) * ${rank}` : `var(--row) * ${SHOWN} + var(--tail) * ${Math.min(rank, SHOWN + TAIL) - SHOWN}`;
   const top = standing[0]?.v ?? 0;
-  const total = race.racers.reduce((s, r) => s + shown(r), 0);
-  const fmt = (v: number) => (measure === "kickback" ? fmtCents(Math.round(v)) : fmtNum(Math.round(v)));
+  const total = shown(race.all);
+  const fmt = (v: number) =>
+    measure === "kickback" ? fmtCents(Math.round(v)) : race.per ? (Math.round(v * 10) / 10).toFixed(1) : fmtNum(Math.round(v));
 
   const date = new Date(`${race.days[day] ?? race.days[0]}T00:00:00Z`);
   const flapDate = race.launch
@@ -403,6 +523,9 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
         <Choice label="Race" options={MEASURES} value={measure} onChange={setMeasure} />
         <Choice label="Between" options={FIELDS} value={field} onChange={setField} />
+        <Choice label="Clock" options={CLOCKS} value={clock} onChange={setClock} />
+        {field !== "templates" && <Choice label="Count" options={COUNTS} value={count} onChange={setCount} />}
+        <Choice label="Biggest" options={BIGGEST} value={biggest} onChange={setBiggest} />
         <Choice label="Pace" options={PACES} value={pace} onChange={setPace} />
         <Choice label="Start" options={STARTS} value={start} onChange={setStart} />
       </div>
@@ -413,6 +536,7 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
           <div className="space-y-1">
             <div className="text-xs font-semibold tracking-[0.18em] text-muted-foreground uppercase">
               {MEASURES.find((m) => m.key === measure)!.board}
+              {race.per && " per template"}
             </div>
             <div className="text-xs text-muted-foreground">
               {race.launch ? (
@@ -432,7 +556,7 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
             ))}
           </div>
           <div className="sm:text-right">
-            <div className="text-xs text-muted-foreground">All together</div>
+            <div className="text-xs text-muted-foreground">{race.per ? "Every template" : "All together"}</div>
             <Odometer text={fmt(total)} className="text-2xl font-semibold sm:text-3xl" />
           </div>
         </div>
@@ -456,7 +580,7 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
             const stamp =
               lastLead >= 0 && race.leader[lastLead] === r.id && rank === 0
                 ? "New leader"
-                : (field === "templates" || field === "launch") && day - r.first >= 0 && day - r.first < LINGER
+                : field === "templates" && day - r.first >= 0 && day - r.first < LINGER
                   ? measure === "kickback"
                     ? "First kickback"
                     : "First project"
@@ -477,8 +601,8 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
                 <span className={cn("text-right text-muted-foreground tabular-nums", small ? "text-xs" : "text-sm")}>{rank + 1}</span>
                 <span className="flex min-w-0 items-center gap-2">
                   <span className={cn("truncate", small ? "text-xs" : "text-sm", rank === 0 && "font-semibold")}>{r.label}</span>
-                  {r.age != null && day > r.age && (
-                    <span className="shrink-0 text-xs text-muted-foreground">{r.old} days old</span>
+                  {r.age != null && r.note && day > r.age && (
+                    <span className="shrink-0 text-xs text-muted-foreground">{r.note}</span>
                   )}
                   {move !== 0 && (
                     <span className={cn("shrink-0 text-xs", move > 0 ? "text-(--chart-2)" : "text-muted-foreground")}>
@@ -561,13 +685,25 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
           : "Days when places change run slowly, days when nothing moves pass quickly. "}
         {measure === "projects" &&
           "User deploys counts every project other users created from a template (its Total deploys on Railway, the New and Projects columns on Templates), whether or not it is still live. "}
-        {field === "launch"
-          ? "From launch, every template starts on its publish day, so the young ones race the old on equal footing; a bar stops where the template runs out of days."
-          : field === "weeks"
-            ? "Templates grouped by the week they were published, coloured by month."
-            : measure === "kickback"
-              ? "Kickback goes back to the first payout in May."
-              : "The count starts when collection began in August."}
+        {clock === "launch"
+          ? race.per
+            ? "From launch, every template starts on its publish day, and each day a group's bar adds what its templates that old added that day, on average, so young templates count for the days they have had; a bar stops where fewer than five of its templates are that old. "
+            : "From launch, every template starts on its publish day, so the young ones race the old on equal footing; a bar stops where its templates run out of days. "
+          : race.per
+            ? "Per template, each day a group's bar adds what its templates published by then added that day, on average, so a big group doesn't win on numbers; groups of older templates have still had longer to collect, which From launch evens out. "
+            : field === "weeks"
+              ? "Templates grouped by the week they were published, coloured by month. "
+              : measure === "kickback"
+                ? "Kickback goes back to the first payout in May. "
+                : "The count starts when collection began in August. "}
+        {race.per && "Groups under five templates sit out. "}
+        {biggest === "out" &&
+          race.leftOut.length > 0 &&
+          (field === "templates"
+            ? `${race.leftOut[0]} is left out. `
+            : `Each group's biggest is left out (${race.leftOut.join(", ")}). `)}
+        {!(clock === "launch" && (race.per || field === "templates") && biggest === "out") &&
+          "For the fairest race: From launch, Per template, Biggest left out."}
       </p>
     </div>
   );

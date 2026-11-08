@@ -1,16 +1,14 @@
 import { type ReactNode, useMemo } from "react";
 import { CartesianGrid, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
-import { cursor, GROUPS, groupOf, Key, perDay, Tip, tick } from "~/components/chart-kit";
-import { DOCKET, DocketCell, Fig, Section } from "~/components/page";
-import { cn } from "~/lib/utils";
+import { cursor, GROUPS, groupOf, Key, Tip, tick } from "~/components/chart-kit";
+import { Section } from "~/components/page";
 import { ChartContainer } from "~/components/ui/chart";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead, useSort } from "~/components/ui/table";
-import { dayKey, fmtDay, fmtNum, fmtUsd } from "~/lib/format";
+import { fmtNum, fmtUsd } from "~/lib/format";
 import { KINDS, ORIGINS, type TimelineResponse, type TimelineTemplate } from "~/queries/analytics";
 
 const DAY = 86_400_000;
 const pct = (v: number) => `${Math.round(v * 100)}%`;
-const monthFmt = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
 
 /** Whole days from publishing to the first kickback; null if it never paid. */
 export const daysToPay = (t: TimelineTemplate) =>
@@ -38,32 +36,10 @@ export function paidCurve(life: Life[], last: number, min = 5) {
 
 function useWhatToPublish(data: TimelineResponse) {
   return useMemo(() => {
-    const { points, templates } = data;
-    const index = new Map(points.map((p, i) => [p.date, i]));
-    // Per group and day: templates published by then and that day's kickback,
-    // so each line is what one template of that size brings in.
-    const rows = points.map((p) => ({ date: p.date, n: [0, 0, 0], e: [0, 0, 0] }));
-    for (const t of templates) {
-      const g = groupOf(t);
-      const pub = t.publishedAt ? dayKey(t.publishedAt) : null;
-      for (const r of rows) if (pub && r.date >= pub) r.n[g]++;
-      for (const a of t.activity) {
-        const i = index.get(a.date);
-        if (i != null) rows[i].e[g] += a.earnedCents / 100;
-      }
-    }
-    const trend = rows.slice(6).map((r, k) => {
-      const w = rows.slice(k, k + 7);
-      const out: Record<string, number | string | null> = { date: r.date };
-      GROUPS.forEach((_, g) => {
-        out[`p${g}`] = r.n[g] > 0 ? w.reduce((s, x) => s + x.e[g], 0) / 7 / r.n[g] : null;
-      });
-      return out;
-    });
-
-    // Share paid by each day after publishing, over the templates' whole life
-    // (the range picker does not apply). A group's line stops once fewer
-    // than 15 templates are that old: past that one payer moves it 7+ points.
+    const { templates } = data;
+    // Share paid by each day after publishing, over the templates' whole life.
+    // A group's line stops once fewer than 15 templates are that old: past
+    // that one payer moves it 7+ points.
     const now = Date.parse(data.sampledAt);
     const byGroup = GROUPS.map((_, g) =>
       paidCurve(templates.filter((t) => groupOf(t) === g).flatMap((t) => lifeOf(t, now) ?? []), 90, 15),
@@ -78,183 +54,111 @@ function useWhatToPublish(data: TimelineResponse) {
         return row;
       })
       .filter((r) => r.g0 != null || r.g1 != null || r.g2 != null);
-
-    const kindOrder = (k: string) => (k === "" ? KINDS.length : KINDS.findIndex((x) => x.key === k));
-    const seg = (keyOf: (t: TimelineTemplate) => string) => segment(templates, keyOf, now);
-    const byKind = seg((t) => t.kind).sort((a, b) => kindOrder(a.key) - kindOrder(b.key));
-    const bySize = seg((t) => String(groupOf(t)));
-    const byOrigin = seg((t) => t.origin);
-    const byMonth = seg((t) => t.publishedAt?.slice(0, 7) ?? "unknown");
-    const all: Segment | undefined = segment(templates, () => "", now)[0];
-    return { trend, curve, byKind, bySize, byOrigin, byMonth, all };
+    return { curve, ...segmentsOf(data) };
   }, [data]);
 }
+
+/** The catalog cut by kind, size and origin. */
+export function segmentsOf(data: TimelineResponse) {
+  const { templates } = data;
+  const now = Date.parse(data.sampledAt);
+  const kindOrder = (k: string) => (k === "" ? KINDS.length : KINDS.findIndex((x) => x.key === k));
+  const seg = (keyOf: (t: TimelineTemplate) => string) => segment(templates, keyOf, now);
+  return {
+    byKind: seg((t) => t.kind).sort((a, b) => kindOrder(a.key) - kindOrder(b.key)),
+    bySize: seg((t) => String(groupOf(t))),
+    byOrigin: seg((t) => t.origin),
+  };
+}
+
+export const kindLabel = (k: string) => KINDS.find((x) => x.key === k)?.label ?? "Unsorted";
+export const sizeLabel = (k: string) => GROUPS[Number(k)].label;
 
 /** The segment whose typical template pays most, among those with at least
  * three templates; typical leaves out the top earner, so one hit (Twenty)
  * doesn't set the verdict. */
-function best(rows: Segment[], skip?: string) {
+export function best(rows: Segment[], skip?: string) {
   const fair = rows.filter((r) => r.templates >= 3 && r.key !== skip);
   return fair.length ? fair.reduce((a, b) => (b.typical > a.typical ? b : a)) : null;
 }
 
-/** Template size and age against what they earn and how soon: the numbers
- * for deciding what to build next, opened by the decision itself. */
-export function WhatToPublish({ data }: { data: TimelineResponse }) {
-  const { trend, curve, byKind, bySize, byOrigin, byMonth, all } = useWhatToPublish(data);
-  const kindLabel = (k: string) => KINDS.find((x) => x.key === k)?.label ?? "Unsorted";
-  const sizeLabel = (k: string) => GROUPS[Number(k)].label;
-  const per = (r: Segment) => fmtUsd(r.typical);
-  const topKind = best(byKind, "");
-  const topSize = best(bySize);
-  const lowKind = (() => {
-    const fair = byKind.filter((r) => r.templates >= 3 && r.key !== "" && r !== topKind);
-    return fair.length ? fair.reduce((a, b) => (b.typical < a.typical ? b : a)) : null;
-  })();
-  const soonest = bySize.reduce<Segment | null>((a, b) => ((b.paid30 ?? -1) > (a?.paid30 ?? -1) ? b : a), null);
-  const dominant = topKind?.top && topKind.top.earned / topKind.earned >= 0.4 ? topKind.top : null;
-
+/** How soon a new template starts paying, by size. */
+export function PaidBySize({ data }: { data: TimelineResponse }) {
+  const { curve } = useWhatToPublish(data);
   return (
-    <>
-      {/* The answer first: four figures, then the evidence below them. */}
-      <div className={cn(DOCKET, "grid-cols-2 lg:grid-cols-4")}>
-        <DocketCell label="Build" value={<span className="font-sans">{topKind ? kindLabel(topKind.key) : "—"}</span>} small>
-          {topKind && (
-            <>
-              typical <Fig>{per(topKind)}</Fig> per 30 days live
-              {lowKind && (
-                <>
-                  ; {kindLabel(lowKind.key)} <Fig>{per(lowKind)}</Fig>
-                </>
-              )}
-              {dominant && (
-                <span className="block">
-                  {dominant.name} left out ({pct(dominant.earned / topKind!.earned)} of it)
-                </span>
-              )}
-            </>
-          )}
-        </DocketCell>
-        <DocketCell label="Size" value={<span className="font-sans">{topSize ? sizeLabel(topSize.key) : "—"}</span>} small>
-          {topSize && (
-            <>
-              typical <Fig>{per(topSize)}</Fig> per 30 days live
-            </>
-          )}
-        </DocketCell>
-        <DocketCell label="Paid within 30 days" value={all?.paid30 == null ? "—" : pct(all.paid30)} small>
-          of templates
-          {soonest?.paid30 != null && (
-            <>
-              ; {sizeLabel(soonest.key)} <Fig>{pct(soonest.paid30)}</Fig>
-            </>
-          )}
-        </DocketCell>
-        <DocketCell label="Last 30 days" value={fmtUsd(all?.earned ?? 0)} small>
-          <Fig>{fmtNum(all?.earning ?? 0)}</Fig> of <Fig>{fmtNum(all?.templates ?? 0)}</Fig> templates earned
-        </DocketCell>
-      </div>
-
-      <Section id="trend" title="Earning by size" text="What one template of each size brings in, and how soon a new one starts paying.">
-        <Key items={GROUPS.map((g) => ({ label: g.label, color: g.color, line: true }))} />
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Block title="Kickback per published template, 7-day average">
-            <ChartContainer config={{}} className="aspect-auto h-44 w-full">
-              <LineChart aria-label="Kickback per published template by size, 7-day average" data={trend} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey="date" {...tick} tickMargin={8} minTickGap={40} tickFormatter={fmtDay} />
-                <YAxis width={44} {...tick} tickCount={3} tickFormatter={perDay} />
-                <Tooltip
-                  isAnimationActive={false}
-                  cursor={cursor}
-                  content={(p) => <Tip {...p} title={(l) => fmtDay(String(l))} format={(v) => `${perDay(v)} a day`} />}
-                />
-                {GROUPS.map((g, i) => (
-                  <Line key={g.label} name={g.label} dataKey={`p${i}`} stroke={g.color} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
-                ))}
-              </LineChart>
-            </ChartContainer>
-            <p className="text-xs text-muted-foreground">
-              Falling while the catalog grows means new templates of that size earn less than old ones.
-            </p>
-          </Block>
-
-          <Block title="Share paid, by days since publishing">
-            <ChartContainer config={{}} className="aspect-auto h-44 w-full">
-              <LineChart aria-label="Share of templates paid within days of publishing, by size" data={curve} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey="day" {...tick} tickMargin={8} tickFormatter={(d) => `${d}d`} minTickGap={24} />
-                <YAxis width={44} {...tick} tickCount={3} domain={[0, "auto"]} tickFormatter={pct} />
-                <Tooltip
-                  isAnimationActive={false}
-                  cursor={cursor}
-                  content={(p) => (
-                    <Tip
-                      {...p}
-                      title={(l) => `${l} days after publishing`}
-                      format={(v, k) => `${pct(v)} paid · of ${p.payload?.[0]?.payload?.[`n${k.slice(1)}`]}`}
-                    />
-                  )}
-                />
-                {GROUPS.map((g, i) => (
-                  <Line key={g.label} name={g.label} type="stepAfter" dataKey={`g${i}`} stroke={g.color} strokeWidth={2} dot={false} isAnimationActive={false} />
-                ))}
-              </LineChart>
-            </ChartContainer>
-            <p className="text-xs text-muted-foreground">
-              Young templates count for the days they&apos;ve been live; a line stops where fewer than 15 are that old.
-              Where it flattens, waiting longer doesn&apos;t help.
-            </p>
-          </Block>
-        </div>
-      </Section>
-
-      <Section
-        id="segments"
-        title="By kind, size, origin and age"
-        text="Best-paying first. Point at a column name for what it counts; set kind and origin under a template's name on Templates."
-      >
-        {/* What a template is on the left, its shape and age on the right;
-            each table under its own heading so short ones don't read as
-            more rows of the one above. */}
-        <div className="grid gap-x-8 xl:grid-cols-12">
-          <div className="space-y-8 xl:col-span-7">
-            <Block title="What it's for">
-              <SegmentTable title="Kind" rows={byKind} format={kindLabel} />
-            </Block>
-            <Block title="Original or competitive">
-              <SegmentTable title="Origin" rows={byOrigin} format={(k) => ORIGINS.find((x) => x.key === k)?.label ?? "Unsorted"} />
-            </Block>
-          </div>
-          <div className="space-y-8 max-xl:mt-8 max-xl:border-t max-xl:pt-6 xl:col-span-5 xl:border-l xl:pl-8">
-            <Block title="How many services">
-              <SegmentTable
-                title="Services"
-                rows={bySize}
-                format={(k) => (
-                  <span className="flex items-center gap-1.5">
-                    <span className="size-2" style={{ background: GROUPS[Number(k)].color }} />
-                    {sizeLabel(k)}
-                  </span>
-                )}
+    <section className="min-w-0 space-y-2">
+      <h3 className="text-base font-semibold">How soon a new one pays, by size</h3>
+      <Key items={GROUPS.map((g) => ({ label: g.label, color: g.color, line: true }))} />
+      <ChartContainer config={{}} className="aspect-auto h-56 w-full lg:h-64">
+        <LineChart aria-label="Share of templates paid within days of publishing, by size" data={curve} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+          <CartesianGrid vertical={false} />
+          <XAxis dataKey="day" {...tick} tickMargin={8} tickFormatter={(d) => `Day ${d}`} minTickGap={32} />
+          <YAxis width={44} {...tick} tickCount={3} domain={[0, "auto"]} tickFormatter={pct} />
+          <Tooltip
+            isAnimationActive={false}
+            cursor={cursor}
+            content={(p) => (
+              <Tip
+                {...p}
+                title={(l) => `${l} days after publishing`}
+                format={(v, k) => `${pct(v)} paid · of ${p.payload?.[0]?.payload?.[`n${k.slice(1)}`]}`}
               />
-            </Block>
-            <Block title="When it went live">
-              <SegmentTable
-                title="Month"
-                rows={byMonth}
-                by="key"
-                format={(k) => (k === "unknown" ? k : monthFmt.format(new Date(`${k}-01T00:00:00Z`)))}
-              />
-            </Block>
-          </div>
-        </div>
-      </Section>
-    </>
+            )}
+          />
+          {GROUPS.map((g, i) => (
+            <Line key={g.label} name={g.label} type="stepAfter" dataKey={`g${i}`} stroke={g.color} strokeWidth={2} dot={false} isAnimationActive={false} />
+          ))}
+        </LineChart>
+      </ChartContainer>
+      <p className="text-xs text-muted-foreground">
+        Share of templates that have paid anything, by days since publishing. Young templates count for the days they&apos;ve been live;
+        a line stops where fewer than 15 are that old. Where it flattens, waiting longer doesn&apos;t help.
+      </p>
+    </section>
   );
 }
 
-type Segment = {
+/** What earns: kind, origin and size against the typical template's month. */
+export function Segments({ data }: { data: TimelineResponse }) {
+  const { byKind, bySize, byOrigin } = useWhatToPublish(data);
+  return (
+    <Section
+      id="segments"
+      title="What earns"
+      text="Kind, origin and size against what a typical template of each brings in, best-paying first. Point at a column name for what it counts; set kind and origin under a template's name on Templates."
+    >
+      {/* What a template is on the left, its origin and shape on the right;
+          each table under its own heading so short ones don't read as
+          more rows of the one above. */}
+      <div className="grid gap-x-8 xl:grid-cols-12">
+        <div className="xl:col-span-7">
+          <Block title="What it's for">
+            <SegmentTable title="Kind" rows={byKind} format={kindLabel} />
+          </Block>
+        </div>
+        <div className="space-y-8 max-xl:mt-8 max-xl:border-t max-xl:pt-6 xl:col-span-5 xl:border-l xl:pl-8">
+          <Block title="Original or competitive">
+            <SegmentTable title="Origin" rows={byOrigin} format={(k) => ORIGINS.find((x) => x.key === k)?.label ?? "Unsorted"} />
+          </Block>
+          <Block title="How many services">
+            <SegmentTable
+              title="Services"
+              rows={bySize}
+              format={(k) => (
+                <span className="flex items-center gap-1.5">
+                  <span className="size-2" style={{ background: GROUPS[Number(k)].color }} />
+                  {sizeLabel(k)}
+                </span>
+              )}
+            />
+          </Block>
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+export type Segment = {
   key: string;
   templates: number;
   earning: number;

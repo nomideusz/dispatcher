@@ -132,7 +132,7 @@ func openDB(dsn string) *gorm.DB {
 	if err != nil {
 		log.Fatalf("open database %s: %v", dsn, err)
 	}
-	if err := db.AutoMigrate(&RailwayCredentials{}, &TemplateSnapshot{}, &AutoWithdrawSettings{}, &NotificationTarget{}, &Payout{}, &ServiceImage{}, &TemplateKind{}, &TemplateOrigin{}, &TemplateFix{}, &TemplateUrgent{}, &TemplateUpgrade{}, &VerdictCheckpoint{}, &MarketTemplate{}, &CandidateMark{}, &Proposal{}, &SearchRank{}, &SearchKeyword{}); err != nil {
+	if err := db.AutoMigrate(&RailwayCredentials{}, &TemplateSnapshot{}, &AutoWithdrawSettings{}, &NotificationTarget{}, &Payout{}, &ServiceImage{}, &TemplateKind{}, &TemplateOrigin{}, &TemplateFix{}, &TemplateUrgent{}, &TemplateUpgrade{}, &VerdictCheckpoint{}, &MarketTemplate{}, &CandidateMark{}, &Proposal{}, &SearchRank{}, &SearchKeyword{}, &EarningSnapshot{}); err != nil {
 		log.Fatalf("migrate database: %v", err)
 	}
 	// Snapshots taken before templateMetrics was collected recorded the same
@@ -141,6 +141,13 @@ func openDB(dsn string) *gorm.DB {
 	if err := db.Exec(`UPDATE template_snapshots SET total_earnings = total_payout
 		WHERE total_earnings IS NULL AND status = 'PUBLISHED'`).Error; err != nil {
 		log.Fatalf("backfill legacy earnings: %v", err)
+	}
+	// Snapshots before 2026-11-08 took templateMetrics' 100 for templates
+	// nobody ran, which the marketplace leaves unscored. A template with no
+	// active projects has never had a public score, so clear those.
+	if err := db.Exec(`UPDATE template_snapshots SET template_health = NULL, health = NULL
+		WHERE active_projects = 0 AND (template_health IS NOT NULL OR health IS NOT NULL)`).Error; err != nil {
+		log.Fatalf("clear unscored health: %v", err)
 	}
 	// Seed the singleton settings row so later saves are plain updates (GORM's
 	// Save does not insert a missing primary key).

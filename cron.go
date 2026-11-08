@@ -121,6 +121,7 @@ func runTemplateSnapshots(db *gorm.DB) {
 		log.Printf("template snapshots: %v", err)
 	}
 	runPayoutSync(db)
+	runEarningsSnapshot(db)
 	runAttribution(db)
 	if err := judgeVerdictCheckpoints(db); err != nil {
 		log.Printf("verdict checkpoints: %v", err)
@@ -257,7 +258,10 @@ func templateSnapshotAt(sampledAt time.Time, template workspaceTemplate, metrics
 	snapshot.TotalEarnings = pointerTo(metrics.TotalEarnings)
 	snapshot.EarningsLast90Days = pointerTo(metrics.EarningsLast90Days)
 	snapshot.EarningsLast30Days = pointerTo(metrics.EarningsLast30Days)
-	snapshot.TemplateHealth = pointerTo(metrics.TemplateHealth)
+	// Unscored stays unknown: see workspaceTemplate.Health.
+	if template.Health != nil {
+		snapshot.TemplateHealth = pointerTo(metrics.TemplateHealth)
+	}
 	snapshot.SupportHealth = pointerTo(metrics.SupportHealth)
 	snapshot.EligibleForSupportBonus = pointerTo(metrics.EligibleForSupportBonus)
 

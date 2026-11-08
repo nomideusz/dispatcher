@@ -276,6 +276,11 @@ type workspaceTemplate struct {
 	Projects       int64 `json:"projects"`
 	RecentProjects int64 `json:"recentProjects"`
 	ActiveProjects int64 `json:"activeProjects"`
+	// Health is the score the marketplace shows and search sorts by. It is
+	// null until running deploys score the template, while
+	// templateMetrics.templateHealth reports 100 for it: an unscored listing
+	// sorts below every scored one at 70 or more, so the two must not merge.
+	Health *float64 `json:"health"`
 	// SerializedConfig is read for its service count, which is what lets
 	// the two "active" figures be compared (templateMetrics'
 	// activeDeployments looks like it counts running services, the
@@ -301,6 +306,7 @@ const workspaceTemplatesQuery = `query ($workspaceId: String!) {
         projects
         recentProjects
         activeProjects
+        health
         serializedConfig
       }
     }

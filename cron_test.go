@@ -33,7 +33,7 @@ func TestTemplateSnapshotPersistsCompleteMetrics(t *testing.T) {
 	snapshot := templateSnapshotAt(
 		time.Date(2026, time.August, 30, 12, 0, 0, 0, time.UTC),
 		func() workspaceTemplate {
-			w := workspaceTemplate{ID: "template-1", Name: "Template", Code: "template", Status: "PUBLISHED", CreatedAt: time.Date(2025, time.March, 4, 10, 0, 0, 0, time.UTC), TotalPayout: 2411.65, Projects: 120, RecentProjects: 7, ActiveProjects: 30}
+			w := workspaceTemplate{ID: "template-1", Name: "Template", Code: "template", Status: "PUBLISHED", CreatedAt: time.Date(2025, time.March, 4, 10, 0, 0, 0, time.UTC), TotalPayout: 2411.65, Projects: 120, RecentProjects: 7, ActiveProjects: 30, Health: pointerTo(96.0)}
 			w.SerializedConfig.Services = map[string]json.RawMessage{"a": nil, "b": nil, "c": nil}
 			return w
 		}(),
@@ -149,6 +149,17 @@ func TestCatalogAsOfDropsRetiredTemplates(t *testing.T) {
 		if n, _ := catalogAsOf(got, day(c.at)); n != c.want {
 			t.Errorf("catalogAsOf(day %d) = %d, want %d", c.at, n, c.want)
 		}
+	}
+}
+
+func TestTemplateSnapshotLeavesUnscoredHealthUnknown(t *testing.T) {
+	// templateMetrics says 100 for a template nobody runs; the list says null.
+	got := templateSnapshotAt(time.Now(), workspaceTemplate{ID: "idle", Status: "PUBLISHED"}, &templateMetrics{TemplateHealth: 100, SupportHealth: 100})
+	if got.TemplateHealth != nil || got.Health != nil {
+		t.Fatalf("unscored template got health %v", *got.TemplateHealth)
+	}
+	if got.SupportHealth == nil || *got.SupportHealth != 100 {
+		t.Fatalf("support health lost: %+v", got)
 	}
 }
 

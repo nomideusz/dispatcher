@@ -205,7 +205,7 @@ export function TemplatesTable({
               {header(
                 "health",
                 "Health",
-                `Share of recent deploys that came up. A red "support" beside it: support health is under ${SUPPORT_BONUS_THRESHOLD}%, so no +10% kickback bonus`,
+                `Share of recent deploys that came up, as the marketplace shows it. Unscored: no running deploys have scored it yet, and search sorts it below every listing at 70% or more. A red "support" beside it: support health is under ${SUPPORT_BONUS_THRESHOLD}%, so no +10% kickback bonus`,
               )}
               <TableHead className="max-sm:hidden" hint="New projects above the line, kickback below, day by day">
                 Last {dates.length}d
@@ -462,7 +462,9 @@ function DayTime({ iso }: { iso: string }) {
 function Health({ r }: { r: Row }) {
   const bonus = qualifiesForBonus(r);
   const title = [
-    r.health != null ? `Deploy health ${r.health.toFixed(0)}%` : "No deploy health yet",
+    r.health != null
+      ? `Deploy health ${r.health.toFixed(0)}%`
+      : "Unscored: no running deploys have scored it yet, so search sorts it below every listing at 70% or more",
     r.supportHealth != null
       ? `support health ${r.supportHealth.toFixed(0)}%${bonus ? "" : ` — under ${SUPPORT_BONUS_THRESHOLD}%, no +10% bonus`}`
       : "no support threads",
@@ -481,7 +483,11 @@ function Health({ r }: { r: Row }) {
           held · <span className="tabular-nums">{r.health.toFixed(0)}%</span>
         </span>
       ) : (
-        <span className="tabular-nums">{r.health == null ? "—" : `${r.health.toFixed(0)}%`}</span>
+        r.health == null ? (
+          <span className="text-xs text-muted-foreground">unscored</span>
+        ) : (
+          <span className="tabular-nums">{r.health.toFixed(0)}%</span>
+        )
       )}
     </span>
   );

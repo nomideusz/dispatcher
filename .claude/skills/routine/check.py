@@ -42,9 +42,9 @@ def tier(query, name, code):
 
 def band(t):
     """The health band search sorts by within a tier: exactly 100 > 70-99 >
-    unscored > under 70. Railway's public score is empty for a template with
-    no active projects; the timeline keeps the last score it saw, so those
-    count as unscored here whatever it says."""
+    unscored > under 70. Dispatcher stores the marketplace's score, null
+    while unscored (since 2026-11-08; before, it stored 100), and a template
+    with no active projects has never had one."""
     h = t.get("health")
     if not t.get("activeProjects") or h is None:
         return "unscored"

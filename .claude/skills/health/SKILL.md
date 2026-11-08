@@ -5,7 +5,7 @@ description: Work on Dispatcher template health. Use when the owner says "/healt
 
 # Health
 
-Health holds search position, and position drives deploys, so this comes first.
+Health holds search position, and position drives deploys, so this comes first. Search sorts health in bands, not on a slope: exactly 100, then 70–99 as one band, then unscored, then under 70 (`docs/research/railway-search-ranking.md`). So under 70 costs the most, since it sorts below listings with no score at all, and 99 is worth no more than 70 until it reaches 100. The score is over running deploys only, so a template with no active projects has none.
 
 1. Run `python3 -I .claude/skills/routine/check.py --only health`. If dispatcherctl says the session expired, ask the owner to run `! ~/go/bin/dispatcherctl login`.
 2. Follow the **Health** bullet in `.claude/skills/routine/SKILL.md`, which sets the order, the `fix pushed` rule and when a fix didn't hold. Name the earning template to fix first, or work on the one the owner named.

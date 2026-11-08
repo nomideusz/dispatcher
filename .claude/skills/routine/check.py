@@ -9,7 +9,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LAST = os.path.join(HERE, "last.json")
@@ -19,6 +19,37 @@ FIX_FIRST = 10  # earning templates under the floor before publishing pauses
 PLUMBING = {"Storage", "Starters", "Queues"}  # databases, boilerplates and queues: not apps we build
 SECTIONS = ("health", "catalog", "upgrades", "search", "candidates", "verdict", "payouts")
 VOID = {"FAILED", "CANCELLED", "CANCELED", "REJECTED"}  # withdrawals where no money moved
+UPGRADE_EVERY = 7  # days between upgrade pushes before the section is due
+TIERS = ("exact name/slug", "name starts with it", "name has the words", "slug/description only")
+
+
+def tier(query, name, code):
+    """Railway's text tier for one result (docs/research/railway-search-ranking.md):
+    0 name or slug is the query, 1 name starts with it, 2 name has every word,
+    3 only the slug or description matches."""
+    q = query.lower().strip()
+    n = (name or "").lower()
+    if n == q or n.split(" | ")[0] == q or (code or "") == q.replace(" ", "-"):
+        return 0
+    if n.startswith(q):
+        return 1
+    words = n.replace("|", " ").replace("-", " ").split()
+    if all(any(w.startswith(x) for w in words) for x in q.split()):
+        return 2
+    return 3
+
+
+def band(t):
+    """The health band search sorts by within a tier: exactly 100 > 70-99 >
+    unscored > under 70. Railway's public score is empty for a template with
+    no active projects; the timeline keeps the last score it saw, so those
+    count as unscored here whatever it says."""
+    h = t.get("health")
+    if not t.get("activeProjects") or h is None:
+        return "unscored"
+    if h >= 100:
+        return "100"
+    return f"{h:.0f} (70-99 band)" if h >= 70 else f"{h:.0f} (under 70: below unscored)"
 
 
 def get(*args):
@@ -39,6 +70,8 @@ def figures(timeline, upgrades, search, candidates, verdicts):
         key=lambda t: (-(t.get("earnedCents") or 0), t["health"]),
     )
     own = [k for k in search["keywords"] if k["source"] == "ours"]
+    upgraded = sorted({u["templateId"]: u.get("upgradedOn") or "" for u in upgrades}.values(), reverse=True)
+    week_ago = (datetime.now(timezone.utc) - timedelta(days=UPGRADE_EVERY)).date().isoformat()
     d45 = verdicts["provisional"][0]
     d90 = verdicts["provisional"][1] if len(verdicts["provisional"]) > 1 else {"n": 0}
     return {
@@ -60,6 +93,9 @@ def figures(timeline, upgrades, search, candidates, verdicts):
         "lowEarning": sum(1 for t in low if (t.get("earnedCents") or 0) > 0),
         "behind": {b: sum(1 for u in upgrades if u.get("behind") == b) for b in ("patch", "minor", "floating")},
         "majors": sum(1 for u in upgrades if u.get("major")),
+        "lastUpgradeOn": upgraded[0] if upgraded else "",
+        "upgradedLastOn": sum(1 for d in upgraded if upgraded and d == upgraded[0] and d),
+        "upgradedWeek": sum(1 for d in upgraded if d and d >= week_ago),
         "noKind": [t["name"] for t in ts if not t["kind"]],
         "noOrigin": [t["name"] for t in ts if not t.get("origin")],
         "ownKeywords": len(own),
@@ -126,6 +162,13 @@ def show_catalog(f, last):
 def show_upgrades(f):
     b = f["behind"]
     print(f"UPGRADES: {b['patch']} patch, {b['minor']} minor, {b['floating']} floating, {f['majors']} with a newer major")
+    last = f.get("lastUpgradeOn")
+    if not last:
+        print("  no upgrade recorded: due (record pushes with dispatcherctl upgraded ID YYYY-MM-DD)")
+        return
+    age = (datetime.now(timezone.utc).date() - datetime.fromisoformat(last).date()).days
+    print(f"  last upgrade {last} ({age} days ago, {f['upgradedLastOn']} templates); {f['upgradedWeek']} upgraded in {UPGRADE_EVERY} days; "
+          + ("due" if age >= UPGRADE_EVERY else f"next due {(datetime.fromisoformat(last) + timedelta(days=UPGRADE_EVERY)).date()}"))
 
 
 def show_search(f, last):
@@ -175,6 +218,40 @@ def upgrade_queue(upgrades, n=15):
                   + (f", major {x['major']}" if x.get("major") else ""))
     if len(lead) > n:
         print(f"  … {len(lead) - n} more")
+
+
+def search_why(search, timeline, n=12):
+    """For each own keyword where ours isn't #1, why: our tier and health
+    band against the templates above it. Tier beats band, band beats running
+    deploys, so the first line that differs is the reason."""
+    ts = {t["templateId"]: t for t in timeline["templates"]}
+    rows = []
+    for k in search["keywords"]:
+        if k["source"] != "ours" or k["best"] == 1:
+            continue
+        mine = next((r for r in k["top"] if r["ours"]), None)
+        if mine is None:
+            rows.append((k["demand"], f"    {k['query']}: none of ours in the top {k['results']} (check the name and slug match it)"))
+            continue
+        t = ts.get(mine["templateId"], {})
+        ours = tier(k["query"], mine["name"], mine["code"])
+        above = [r for r in k["top"] if r["position"] < mine["position"]]
+        better = [r for r in above if tier(k["query"], r["name"], r["code"]) < ours]
+        if better:
+            why = f"{len(better)} above have a better tier ({TIERS[tier(k['query'], better[0]['name'], better[0]['code'])]}: {better[0]['name']})"
+        else:
+            why = f"same tier as the {len(above)} above: health band, then running deploys"
+        rows.append((k["demand"], f"    {k['query']} #{mine['position']}  demand {k['demand']:,}: ours {TIERS[ours]}, health {band(t)},"
+                     f" {t.get('activeProjects') or 0} active; {why}"))
+    rows.sort(key=lambda r: -r[0])
+    print(f"  own keywords not at #1 ({len(rows)}), biggest first; tier > health band > running deploys:")
+    for _, line in rows[:n]:
+        print(line)
+    if len(rows) > n:
+        print(f"    … {len(rows) - n} more")
+    unscored = [t for t in timeline["templates"] if not t.get("activeProjects") or t.get("health") is None]
+    print(f"  {len(unscored)} of our {len(timeline['templates'])} templates are unscored (no active projects):"
+          " they sort under every 70+ listing in their tier")
 
 
 def search_detail(search, n=10):
@@ -248,6 +325,7 @@ def only(section, f, last, data):
         upgrade_queue(data["upgrades"])
     elif section == "search":
         show_search(f, last)
+        search_why(data["search"], data["timeline"])
         search_detail(data["search"])
     elif section == "candidates":
         candidates_detail(data["candidates"])

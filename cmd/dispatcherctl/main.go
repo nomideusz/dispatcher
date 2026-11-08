@@ -183,10 +183,13 @@ func parseCommand(args []string, stderr io.Writer) (command, error) {
 			path:         "/api/analytics/payout?days=" + strconv.Itoa(*days),
 			requiresAuth: true,
 		}, nil
-	case "kind", "origin", "fixed", "urgent":
+	case "kind", "origin", "fixed", "upgraded", "urgent":
 		if len(args) != 3 {
 			if args[0] == "urgent" {
 				return command{}, fmt.Errorf("urgent requires a template id and why its upgrade is urgent (\"\" to clear)")
+			}
+			if args[0] == "upgraded" {
+				return command{}, fmt.Errorf("upgraded requires a template id and the date an upgrade was pushed (YYYY-MM-DD, or \"\" to clear)")
 			}
 			if args[0] == "fixed" {
 				return command{}, fmt.Errorf("fixed requires a template id and the date a fix was pushed (YYYY-MM-DD, or \"\" to clear)")
@@ -299,6 +302,10 @@ Other commands:
                            ("" leaves it unmarked)
   fixed TEMPLATE_ID DATE   Record the day a health fix was pushed (YYYY-MM-DD,
                            "" clears it)
+  upgraded TEMPLATE_ID DATE
+                           Record the day an upgrade was pushed (YYYY-MM-DD,
+                           "" clears it; the daily check also sets it when a
+                           pinned version changes)
   urgent TEMPLATE_ID REASON
                            Put a template's upgrade first: a security fix or a
                            fix for what we break on ("" clears; the daily

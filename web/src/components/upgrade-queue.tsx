@@ -4,7 +4,7 @@ import { Link } from "react-router";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHead } from "~/components/ui/table";
-import { fmtAgo, fmtNum, fmtUsd, shortNames } from "~/lib/format";
+import { dayKey, fmtAgo, fmtDay, fmtNum, fmtUsd, shortNames } from "~/lib/format";
 import { cn } from "~/lib/utils";
 import { type ServiceUpgrade, upgradesQuery, useRefreshUpgrades } from "~/queries/upgrades";
 
@@ -12,14 +12,20 @@ import { type ServiceUpgrade, upgradesQuery, useRefreshUpgrades } from "~/querie
  * line: the count the Held tray links to the Upgrades page with. */
 export const behindTemplateCount = (rows: ServiceUpgrade[]) => templateCount(rows.filter(MATCHES.behind));
 
+/** How far back "Recent" looks: a week of pushes. */
+const RECENT_DAYS = 7;
+const recentFrom = () => dayKey(new Date(Date.now() - RECENT_DAYS * 86_400_000).toISOString());
+
 /** behind: a newer release on the pinned major line (the queue). majors: a
- * later major exists. all: every template, including those with nothing
- * pinned to check. */
-type UpgradeFilter = "behind" | "majors" | "all";
-const FILTER_LABELS: Record<UpgradeFilter, string> = { behind: "Behind", majors: "Majors", all: "All" };
+ * later major exists. recent: upgraded in the last week, newest first. all:
+ * every template, including those with nothing pinned to check. */
+type UpgradeFilter = "behind" | "majors" | "recent" | "all";
+const FILTERS = ["behind", "majors", "recent", "all"] as const;
+const FILTER_LABELS: Record<UpgradeFilter, string> = { behind: "Behind", majors: "Majors", recent: "Recent", all: "All" };
 const MATCHES: Record<UpgradeFilter, (u: ServiceUpgrade) => boolean> = {
   behind: (u) => u.behind === "minor" || u.behind === "patch",
   majors: (u) => u.major !== "",
+  recent: (u) => u.upgradedOn !== "" && u.upgradedOn >= recentFrom(),
   all: () => true,
 };
 
@@ -44,8 +50,14 @@ export function UpgradeQueue() {
   const names = shortNames(rows.map((u) => u.name ?? u.templateId));
   const shown = rows.filter(MATCHES[filter]);
   const checkedAt = rows.find((u) => u.behind !== "unchecked")?.checkedAt;
+  const recent = filter === "recent";
   const groups = byTemplate(shown);
-  const lead = (g: ServiceUpgrade[]) => !!g[0].urgent || (g[0].earningsLast30Days ?? 0) > 0;
+  if (recent) groups.sort((a, b) => b[0].upgradedOn.localeCompare(a[0].upgradedOn));
+  // The last push and how many templates it moved, whatever the filter.
+  const lastOn = rows.reduce((m, u) => (u.upgradedOn > m ? u.upgradedOn : m), "");
+  const lastCount = templateCount(rows.filter((u) => u.upgradedOn === lastOn));
+  // A week of pushes is short, so Recent shows idle templates too.
+  const lead = (g: ServiceUpgrade[]) => recent || !!g[0].urgent || (g[0].earningsLast30Days ?? 0) > 0;
   const earning = groups.filter(lead);
   const idle = groups.filter((g) => !lead(g));
   const visible = idleOpen ? groups : earning;
@@ -59,7 +71,7 @@ export function UpgradeQueue() {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div role="group" aria-label="Filter upgrades" className="flex flex-wrap gap-1">
-          {(["behind", "majors", "all"] as const).map((f) => (
+          {FILTERS.map((f) => (
             <Button
               key={f}
               size="xs"
@@ -77,6 +89,12 @@ export function UpgradeQueue() {
           ))}
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+          {lastOn && (
+            <span>
+              Last upgrade {fmtDay(lastOn)}, <span className="tabular-nums">{fmtNum(lastCount)}</span>{" "}
+              {lastCount === 1 ? "template" : "templates"}
+            </span>
+          )}
           {checkedAt && (
             <span>
               Checked {fmtAgo(checkedAt, new Date().toISOString())} ago · daily at 06:08 UTC
@@ -97,7 +115,11 @@ export function UpgradeQueue() {
       )}
       {upgrades.isSuccess && shown.length === 0 && (
         <p className="py-6 text-center text-sm text-muted-foreground">
-          {rows.length === 0 ? "No check has run yet." : "Nothing here: every pinned image is current."}
+          {rows.length === 0
+            ? "No check has run yet."
+            : recent
+              ? `Nothing upgraded in the last ${RECENT_DAYS} days.`
+              : "Nothing here: every pinned image is current."}
         </p>
       )}
       {visible.length > 0 && (
@@ -107,7 +129,8 @@ export function UpgradeQueue() {
               {/* The template's money sits beside its name: it is why the row is where it is. */}
               <TableHead className="max-sm:hidden">Template</TableHead>
               <TableHead numeric className="max-sm:hidden">Earned 30d</TableHead>
-              <TableHead numeric className="pr-6 max-sm:hidden">Running</TableHead>
+              <TableHead numeric className="max-sm:hidden">Running</TableHead>
+              <TableHead className="pr-6 max-sm:hidden">Upgraded</TableHead>
               <TableHead className="max-sm:pl-0">Service</TableHead>
               <TableHead className="max-md:hidden">Image</TableHead>
               <TableHead>Pinned → newest on line</TableHead>
@@ -149,8 +172,11 @@ function TemplateGroup({ group, name, majors, first }: { group: ServiceUpgrade[]
       <TableCell numeric rowSpan={Math.max(1, services.length)} className="align-top max-sm:hidden">
         {u.earningsLast30Days == null ? "—" : fmtUsd(u.earningsLast30Days)}
       </TableCell>
-      <TableCell numeric rowSpan={Math.max(1, services.length)} className="pr-6 align-top max-sm:hidden">
+      <TableCell numeric rowSpan={Math.max(1, services.length)} className="align-top max-sm:hidden">
         {u.runningInstances == null ? "—" : fmtNum(u.runningInstances)}
+      </TableCell>
+      <TableCell rowSpan={Math.max(1, services.length)} className="pr-6 align-top whitespace-nowrap text-muted-foreground max-sm:hidden">
+        {u.upgradedOn ? fmtDay(u.upgradedOn) : "—"}
       </TableCell>
     </>
   );
@@ -167,6 +193,9 @@ function TemplateGroup({ group, name, majors, first }: { group: ServiceUpgrade[]
             <span className="font-normal text-muted-foreground">
               {" "}· <span className="tabular-nums">{fmtUsd(u.earningsLast30Days)}</span> in 30d
             </span>
+          )}
+          {u.upgradedOn && (
+            <span className="font-normal text-muted-foreground"> · upgraded {fmtDay(u.upgradedOn)}</span>
           )}
           <UrgentNote u={u} />
         </TableRowHead>

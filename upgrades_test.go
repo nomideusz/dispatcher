@@ -146,7 +146,7 @@ func TestReplaceServiceImages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&ServiceImage{}, &TemplateUrgent{}); err != nil {
+	if err := db.AutoMigrate(&ServiceImage{}, &TemplateUrgent{}, &TemplateUpgrade{}); err != nil {
 		t.Fatal(err)
 	}
 	// A flag outlives a check that finds its template still behind, and no
@@ -172,6 +172,51 @@ func TestReplaceServiceImages(t *testing.T) {
 	db.Model(&TemplateUrgent{}).Pluck("template_id", &flagged)
 	if fmt.Sprint(flagged) != "[t]" {
 		t.Errorf("urgent after check = %v, want [t]", flagged)
+	}
+}
+
+func TestRecordUpgrades(t *testing.T) {
+	db, err := gorm.Open(duckdb.Open(filepath.Join(t.TempDir(), "upgrades.duckdb")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&ServiceImage{}, &TemplateUrgent{}, &TemplateUpgrade{}); err != nil {
+		t.Fatal(err)
+	}
+	day := func(d int) time.Time { return time.Date(2026, 11, d, 6, 8, 0, 0, time.UTC) }
+	check := func(at time.Time, rows ...ServiceImage) {
+		t.Helper()
+		for i := range rows {
+			rows[i].CheckedAt = at
+		}
+		if err := replaceServiceImages(db, rows); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dates := func() string {
+		var ups []TemplateUpgrade
+		db.Order("template_id").Find(&ups)
+		return fmt.Sprint(ups)
+	}
+	pin := func(id, image, tag string) ServiceImage {
+		return ServiceImage{TemplateID: id, Service: "app", Image: image, Tag: tag}
+	}
+	// The first check has nothing to compare with.
+	check(day(5), pin("bumped", "redis", "8.0"), pin("still", "postgres", "17"), pin("unread", "kasm", "1.17"), pin("manual", "n8n", "1.0"))
+	if got := dates(); got != "[]" {
+		t.Fatalf("after first check = %s", got)
+	}
+	// A pushed date set by hand on the 6th outlives the check that sees it.
+	db.Exec("INSERT INTO template_upgrades VALUES ('manual', '2026-11-06')")
+	// Moved, unchanged, unreadable this time, and new.
+	check(day(7), pin("bumped", "redis", "8.2"), pin("still", "postgres", "17"), pin("unread", "kasm", ""), pin("manual", "n8n", "1.1"), pin("new", "valkey", "9"))
+	if got := dates(); got != "[{bumped 2026-11-07} {manual 2026-11-06}]" {
+		t.Fatalf("after second check = %s", got)
+	}
+	// An older manual date gives way to a newer move.
+	check(day(9), pin("bumped", "redis", "8.2"), pin("manual", "n8n", "1.2"))
+	if got := dates(); got != "[{bumped 2026-11-07} {manual 2026-11-09}]" {
+		t.Fatalf("after third check = %s", got)
 	}
 }
 
@@ -253,7 +298,7 @@ func TestUpgradeRows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&ServiceImage{}, &TemplateSnapshot{}, &TemplateUrgent{}); err != nil {
+	if err := db.AutoMigrate(&ServiceImage{}, &TemplateSnapshot{}, &TemplateUrgent{}, &TemplateUpgrade{}); err != nil {
 		t.Fatal(err)
 	}
 	old, now := time.Now().Add(-time.Hour), time.Now()

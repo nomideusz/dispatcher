@@ -820,6 +820,9 @@ func checkTemplateUpgrades(db *gorm.DB) error {
 // without GORM's own nested transaction, whose SAVEPOINT DuckDB rejects.
 func replaceServiceImages(db *gorm.DB, rows []ServiceImage) error {
 	return db.Transaction(func(tx *gorm.DB) error {
+		if err := recordUpgrades(tx, rows); err != nil {
+			return err
+		}
 		if err := tx.Exec("DELETE FROM service_images").Error; err != nil {
 			return err
 		}
@@ -834,6 +837,86 @@ func replaceServiceImages(db *gorm.DB, rows []ServiceImage) error {
 		return tx.Exec(`DELETE FROM template_urgents WHERE template_id NOT IN
 			(SELECT template_id FROM service_images WHERE behind IN ('minor', 'patch'))`).Error
 	})
+}
+
+// TemplateUpgrade is the day a template's pinned versions last moved. The
+// daily check sets it when a pin it read last time reads differently now,
+// and dispatcherctl upgraded sets it by hand on the day of a push: the check
+// only sees a push the morning after, and an image-sourced bump only once
+// publish.py has run.
+type TemplateUpgrade struct {
+	TemplateID string `gorm:"primaryKey" json:"templateId"`
+	UpgradedOn string `json:"upgradedOn"`
+}
+
+// recordUpgrades compares a run's rows with the table they replace: a
+// template whose service pins a different tag of the same image than last
+// time was upgraded since then. Unreadable rows (no tag) compare with
+// nothing, so a failed read never counts as a change. A date set by hand
+// since the last check is the push day and stays.
+func recordUpgrades(tx *gorm.DB, rows []ServiceImage) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	var old []ServiceImage
+	if err := tx.Where("tag <> ''").Find(&old).Error; err != nil {
+		return err
+	}
+	if len(old) == 0 {
+		return nil
+	}
+	type pin struct{ template, service, image string }
+	was := map[pin]string{}
+	var lastCheck time.Time
+	for _, o := range old {
+		was[pin{o.TemplateID, o.Service, o.Image}] = o.Tag
+		if o.CheckedAt.After(lastCheck) {
+			lastCheck = o.CheckedAt
+		}
+	}
+	moved := map[string]bool{}
+	for _, r := range rows {
+		if tag, ok := was[pin{r.TemplateID, r.Service, r.Image}]; ok && r.Tag != "" && tag != r.Tag {
+			moved[r.TemplateID] = true
+		}
+	}
+	on := rows[0].CheckedAt.UTC().Format(time.DateOnly)
+	since := lastCheck.UTC().Format(time.DateOnly)
+	for id := range moved {
+		// Raw SQL: the DuckDB dialect drops GORM's OnConflict clause.
+		if err := tx.Exec(`INSERT INTO template_upgrades (template_id, upgraded_on) VALUES (?, ?)
+			ON CONFLICT (template_id) DO UPDATE SET upgraded_on = excluded.upgraded_on
+			WHERE template_upgrades.upgraded_on < ?`, id, on, since).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func handleSetTemplateUpgraded(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Upgraded string `json:"upgraded"`
+		}
+		err := json.NewDecoder(r.Body).Decode(&body)
+		if err == nil && body.Upgraded != "" {
+			_, err = time.Parse(time.DateOnly, body.Upgraded)
+		}
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "upgraded must be a date (YYYY-MM-DD), or empty"})
+			return
+		}
+		row := TemplateUpgrade{TemplateID: r.PathValue("id"), UpgradedOn: body.Upgraded}
+		err = db.WithContext(r.Context()).Exec("DELETE FROM template_upgrades WHERE template_id = ?", row.TemplateID).Error
+		if err == nil && row.UpgradedOn != "" {
+			err = db.WithContext(r.Context()).Exec("INSERT INTO template_upgrades (template_id, upgraded_on) VALUES (?, ?)", row.TemplateID, row.UpgradedOn).Error
+		}
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, row)
+	}
 }
 
 // TemplateUrgent marks a template whose pending upgrade fixes a security
@@ -883,6 +966,9 @@ type upgradeRow struct {
 	RunningInstances *int64 `json:"runningInstances"`
 	// Urgent is the reason the template's upgrade is urgent, empty if not.
 	Urgent string `json:"urgent"`
+	// UpgradedOn is the day its pins last moved (see TemplateUpgrade),
+	// empty when no move has been seen or recorded.
+	UpgradedOn string `json:"upgradedOn"`
 }
 
 // upgradeRows lists every checked service with its template's latest
@@ -904,10 +990,11 @@ func upgradeRows(db *gorm.DB) ([]upgradeRow, error) {
 		       COALESCE(si.major, '') AS major, COALESCE(si.ha, '') AS ha,
 		       COALESCE(si.ha_block, '') AS ha_block, COALESCE(si.error, '') AS error,
 		       l.name, l.code, l.status, l.earnings_last30_days, l.active_deployments AS running_instances,
-		       COALESCE(u.reason, '') AS urgent
+		       COALESCE(u.reason, '') AS urgent, COALESCE(up.upgraded_on, '') AS upgraded_on
 		FROM service_images si
 		FULL JOIN latest l ON l.template_id = si.template_id
 		LEFT JOIN template_urgents u ON u.template_id = COALESCE(si.template_id, l.template_id)
+		LEFT JOIN template_upgrades up ON up.template_id = COALESCE(si.template_id, l.template_id)
 		WHERE si.template_id IS NOT NULL OR l.sampled_at = (SELECT max(sampled_at) FROM template_snapshots)
 		ORDER BY CASE WHEN u.reason IS NOT NULL THEN 0 WHEN si.behind IN ('minor', 'patch') THEN 1 ELSE 2 END,
 		         CASE WHEN u.reason IS NOT NULL THEN l.active_deployments END DESC NULLS LAST,

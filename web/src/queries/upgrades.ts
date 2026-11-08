@@ -41,6 +41,10 @@ export interface ServiceUpgrade {
    * with dispatcherctl urgent; "" when it isn't. Urgent templates come
    * first, by running instances. */
   urgent: string;
+  /** The day the template's pins last moved (YYYY-MM-DD): seen by the daily
+   * check when a pinned tag changes, or recorded with dispatcherctl
+   * upgraded on the day of a push. "" when neither has happened. */
+  upgradedOn: string;
 }
 
 export const upgradesQuery = queryOptions({

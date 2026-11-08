@@ -421,18 +421,12 @@ export function RaceBoard({ data }: { data: TimelineResponse }) {
   const tRef = useRef(0);
   tRef.current = t;
 
-  // A new race starts from the gate; with reduced motion it opens on the result.
+  // A new race waits at the gate for Play; with reduced motion it opens on
+  // the result. Neither loading the page nor changing a setting starts it.
   useEffect(() => {
     reduced.current = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduced.current) {
-      setT(span);
-      setPlaying(false);
-      return;
-    }
-    setT(0);
+    setT(reduced.current ? span : 0);
     setPlaying(false);
-    const go = window.setTimeout(() => setPlaying(true), 500);
-    return () => window.clearTimeout(go);
   }, [race, span]);
 
   useEffect(() => {

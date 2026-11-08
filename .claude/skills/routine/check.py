@@ -167,7 +167,7 @@ def show_upgrades(f):
         print("  no upgrade recorded: due (record pushes with dispatcherctl upgraded ID YYYY-MM-DD)")
         return
     age = (datetime.now(timezone.utc).date() - datetime.fromisoformat(last).date()).days
-    print(f"  last upgrade {last} ({age} days ago, {f['upgradedLastOn']} templates); {f['upgradedWeek']} upgraded in {UPGRADE_EVERY} days; "
+    print(f"  last upgrade {last} ({age} day{"s" if age != 1 else ""} ago, {f['upgradedLastOn']} templates); {f['upgradedWeek']} upgraded in {UPGRADE_EVERY} days; "
           + ("due" if age >= UPGRADE_EVERY else f"next due {(datetime.fromisoformat(last) + timedelta(days=UPGRADE_EVERY)).date()}"))
 
 

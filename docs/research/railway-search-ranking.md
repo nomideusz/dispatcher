@@ -6,7 +6,7 @@ Research of 8 November 2026. It covers what Railway's marketplace search matches
 
 1. **Search matches three fields: the name, the slug and the description.** It does not match the readme, tags, creator or category. Each query word matches the start of a word, so "supa" finds Supabase and "upabase" finds nothing. There is no stemming, no typo tolerance and no stopword list.
 2. **The order is a near-strict sort: text tier first, then health band, then running deploys.** The text tiers are:
-   1. name or slug *is* the query;
+   1. name *is* the query, or the slug is and the name has the query's words;
    2. name starts with it;
    3. name contains the words;
    4. slug or description only.
@@ -71,7 +71,9 @@ Each result is classed by how its name and slug match the query. Only 8.5% of re
 
 - **"Equals" ignores case and punctuation.** "N8N", "n8n" and "n8n." are all exact for `n8n`.
 - **A tagline is not part of an exact name.** "Ghost | Publishing Platform" is tier 1 for "ghost". Within tier 1 it ranks no better than "Ghost + MySQL" (coefficient −0.02 ± 0.06).
-- **The slug counts like the name.** A template whose slug equals the query, hyphens read as spaces, joins tier 0 whatever its name.
+- **The slug counts like the name, but only when the name has the query's words.** A template whose slug equals the query, hyphens read as spaces, joins tier 0 if its name contains every word of the query. If the name lacks them, the slug is just another slug-only match (tier 3).
+  - **Tested 9 Nov.** We moved LiteLLM to `router` and OpenWorker to `autonomous` with their names unchanged ("LiteLLM | AI Gateway for 100+ LLM APIs", "OpenWorker | Open-Source AI Coworker…"). "router" put LiteLLM at #9 and "autonomous" put OpenWorker at #4, below tier-2 names that contain the word even when unscored or at health 0. After the taglines took the word ("LLM Router and AI Gateway…", "Autonomous AI Coworker…"), both were #1 within two minutes, still unscored.
+  - Every earlier slug win had the word in the name: `edge` is "Microsoft Edge", `mint` is "Linux Mint", `ssh` is "SSH Bastion".
   - Outside the exact-name tier it ranks #1 in 96% of cases for tier-2 names, and it beats 352 of 403 same-tier rivals in tier 1.
   - **It doesn't beat a tier-2 rival at exactly 100.** On 9 Nov our `ubuntu-terminal` (name "Linux Terminal | Ubuntu Web Shell…", health 96, 139 active) fell to #2 for "ubuntu terminal" under onepush's "Ubuntu Web Terminal" (published 29 Oct, tier 2, health 100, 8 active). The same day `linux-desktop-kde` at 50 still held #1 for "linux desktop kde" over two tier-2 rivals at 96. So an exact slug on a non-exact name sits between tier 0 and tier 2: above 70–99 and lower rivals, below a tier-2 listing at 100.
   - Examples:
@@ -186,9 +188,11 @@ This matches the 5 Nov Twenty rename, which was reverted after "twenty crm" fell
 ### Before publishing a new template
 
 1. **Pick the slug first; it's permanent.**
-   - If the app's bare slug is free (`ghost`, `metabase`), take it. That is tier 0 for the app's name forever, whatever we call the template.
+   - If the app's bare slug is free (`ghost`, `metabase`), take it. That is tier 0 for the app's name forever, as long as the name keeps the app's name.
    - Otherwise, use the slug for the highest-demand multi-word query, such as `ubuntu-terminal` or `linux-desktop-kde`. An exact slug ranks #1 for that phrase in almost every case.
    - Never accept `-1`, `-production` or random slugs if a meaningful one is free. Our `n8n-queue`, `postiz-production` and `metabase-production` match no query exactly.
+   - A slug on a generic word needs that word in the name too ("SSH Bastion" on `ssh`), or it ranks as a slug-only match.
+   - A slug can be moved later on the same template, keeping its ID and history: unpublish it, publish it under a temporary name equal to the target word (Railway mints the code again from the name), then rename it back and republish if the image was dropped. `~/dev/railway-templates/reslug.py DIR TEMPNAME` does this. Publishing after an unpublish under the old name collides with the template's own old code and gives `-1` (`terminal` became `terminal-1` on 9 Nov). An unpublished template keeps its code against everyone else.
 2. **Name it exactly the app's name when the app is the search term**: "Ghost", not "Ghost CMS + MySQL". Each extra word drops the app-name keyword from tier 0 to tier 1.
 3. **Add a tagline only to win a bigger generic word.** "| Web Shell + SSH" earns "ssh" (5,277) in tier 2. Check the generic word's demand on Dispatcher's Search page against the app name's before deciding.
 4. **Put second keywords in the description, and keep it short.** It is matched, and short descriptions rank slightly better. Spend no effort on readme keywords; the readme isn't searched.
@@ -213,9 +217,13 @@ We published four templates on free slugs and edited three descriptions to test 
 | "Fedora" (`fedora-linux`), 8 Nov ~15:00 | fedora | #1 while unscored, above the exact-slug `fedora` at 33 | inside tier 0, unscored ranks above under 70 |
 | "Linux Mint" (`linux-mint`), 9 Nov ~02:25 | linux mint, mint desktop | #1 | exact name is tier 0 |
 | | mint | #3, below "thirdweb: NFT Minting Page" (56) and `vusd-mint` | tiers 2–5 are loose (see below) |
-| Same template republished as `mint`, 9 Nov ~02:40 | mint | #1 within minutes, above thirdweb (56) | exact slug is tier 0 whatever the name |
+| Same template republished as `mint`, 9 Nov ~02:40 | mint | #1 within minutes, above thirdweb (56) | exact slug plus the word in the name is tier 0 |
 | "SSH Bastion" (`ssh`), 9 Nov ~03:00, a new key-only jump host | ssh | #1 within minutes while unscored, above `termix-ssh` (100) and others; Linux Terminal had been #10 | exact slug is tier 0 on a 5,328-demand word nobody held |
 | | ssh bastion, bastion, jump host | #1, the only result | |
+| "Terminal" (`terminal`), 9 Nov ~12:10, a browser shell inside a project's private network | terminal | #1, above Linux Terminal (#4 that morning) | exact name is tier 0 |
+| Zero-deploy templates moved in place: Open WebUI → `chat-gpt`, Magento → `magento`, 9 Nov ~13:05 | chat gpt; magento | #1 (rivals were tier 2 at health 0 and tier 3); #2 (was #4), below the exact-name "Magento" at 79 | slug with the word in the name joins tier 0, then the band decides |
+| LiteLLM → `router`, OpenWorker → `autonomous`, names unchanged | router; autonomous | #9; #4, below unscored tier-2 names | slug without the word in the name is only tier 3 |
+| Same two, taglines now "LLM Router and AI Gateway…", "Autonomous AI Coworker…" | router; autonomous | #1 and #1 within two minutes | the name must carry the word |
 | "Kubuntu", "Xubuntu", "Lubuntu" added to the descriptions of `linux-desktop-kde`, `linux-desktop`, `linux-desktop-lxqt` | kubuntu, xubuntu, lubuntu | each the only result for its word | descriptions are searched |
 
 What these add:
@@ -227,11 +235,11 @@ What these add:
 - **We missed the playbook's first step once, then fixed it.** `mint` was free on 9 Nov, but we first published as `linux-mint`. Named "Linux Mint", a `mint` slug is tier 0 for both "mint" and "linux mint", so we republished it as `mint` and deleted `linux-mint` while it had 0 deploys.
 - **Two of ours are under 70.** Linux Desktop (Ubuntu XFCE) is at 54 with 30 running, and Linux Desktop KDE moved from 33 to 50. Neither was on the rescue list above. Fedora KDE was OOM-killed four times while idle at 512 MB during testing, which is the likely cause for KDE.
 
-- **Many generic slugs are free.** A scan of all 728 Dispatcher keywords on 9 Nov found a free exact slug for 76 of the top 221 by demand, including `ssh`, `terminal`, `shell`, `web-terminal`, `desktop`, `vps` and `file-browser`. Demand here is deploys of what a keyword returns, so `cursor` and `router` look big only because of templates further down their results.
+- **Many generic slugs are free.** A scan of all 728 Dispatcher keywords on 9 Nov found a free exact slug for 76 of the top 221 by demand, including `ssh`, `terminal`, `shell`, `web-terminal`, `desktop`, `vps` and `file-browser` (a rescan of the top 300 that afternoon found 104). Claiming one only pays if the template's name can carry the word. Demand here is deploys of what a keyword returns, so `cursor` and `router` look big only because of templates further down their results.
 
 - **Under 70 costs more than the tier.** Our "Claude Code" (exact name and slug `claude-code`, tier 0) sits at health 50 with 5 running. It ranks #22 for "claude code", below tier-1 and tier-2 templates at 80–100 and some unscored ones, and #13 for "claude". Debian at 0 sits at #18 for "linux terminal". The opposite case also holds: `kali-linux-ssh` (25, name has both words) beats our unscored "Linux" (only "ssh" in the description) for "linux ssh". So under 70 is a penalty of a tier or two, not a fixed floor below every healthy template.
 - **An exact slug wins #1 only where the tier is empty or weak.** As of 9 Nov:
-  - `router`, `claude` and `evolution` were free, with no exact-name template, so an unscored newcomer would be #1.
+  - `router`, `claude` and `evolution` were free, with no exact-name template, so an unscored newcomer would be #1. We took `router` for LiteLLM the same day (see the experiments table).
   - `hermes` was taken, and its tier 0 already held three templates: "Hermes" at 100 (16 running), Hermes Agent at 88 (239) and "Hermes" at 76 (1,403).
   - "evolution api", the query people type, has six exact-name templates led by one at 100 with 5,426 running. `evolution` would win only the bare word.
 

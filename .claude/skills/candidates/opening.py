@@ -11,9 +11,10 @@ exactly for the keyword is tier 0. It starts unscored, since nothing runs it,
 and once someone else runs it healthily it is a tier-0 100 with few active
 projects. Our own deploys never give it a score (tested 8-9 Nov 2026).
 
-It also says whether the keyword's exact slug is free. A slug is permanent and
-first-come. An exact slug lifts a template almost to tier 0 whatever it is named,
-but a tier-2 rival at exactly 100 can still beat it ("ubuntu terminal", 9 Nov).
+It also says whether the keyword's exact slug is free. A slug is first-come, and
+an unpublished template keeps its code. An exact slug lifts a template to tier 0
+only if its name has the keyword's words ("router" and "autonomous", 9 Nov), and
+even then a tier-2 rival at exactly 100 can beat it ("ubuntu terminal", 9 Nov).
 """
 import importlib.util
 import json
@@ -48,8 +49,8 @@ def gql(query, variables):
 
 
 def slug_owner(q):
-    """The published template holding the keyword's exact slug, or None when
-    it's free. Railway answers "Template not found" for a free code."""
+    """The template holding the keyword's exact slug (published or not), or None
+    when it's free. Railway answers "Template not found" for a free code."""
     slug = re.sub(r"[^a-z0-9]+", "-", q.lower()).strip("-")
     body = json.dumps({"query": "query($c:String!){template(code:$c){name creator{name}}}", "variables": {"c": slug}}).encode()
     req = urllib.request.Request(G, body, {"content-type": "application/json", "user-agent": "dispatcher-candidates"})

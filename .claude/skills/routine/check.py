@@ -20,22 +20,25 @@ PLUMBING = {"Storage", "Starters", "Queues"}  # databases, boilerplates and queu
 SECTIONS = ("health", "catalog", "upgrades", "search", "candidates", "verdict", "payouts")
 VOID = {"FAILED", "CANCELLED", "CANCELED", "REJECTED"}  # withdrawals where no money moved
 UPGRADE_EVERY = 7  # days between upgrade pushes before the section is due
-TIERS = ("exact name/slug", "name starts with it", "name has the words", "slug/description only")
+TIERS = ("exact name, or slug + words in name", "name starts with it", "name has the words", "slug/description only")
 
 
 def tier(query, name, code):
     """Railway's text tier for one result (docs/research/railway-search-ranking.md):
-    0 name or slug is the query, 1 name starts with it, 2 name has every word,
-    3 only the slug or description matches."""
+    0 name is the query, or the slug is and the name has every word, 1 name
+    starts with it, 2 name has every word, 3 only the slug or description
+    matches. A slug equal to the query under a name without its words is only
+    tier 3 (LiteLLM on `router`, 9 Nov)."""
     q = query.lower().strip()
     n = (name or "").lower()
     # A " | tagline" makes the name longer than the query: tier 1, not 0.
-    if n == q or (code or "") == q.replace(" ", "-"):
+    words = n.replace("|", " ").replace("-", " ").split()
+    has_words = all(any(w.startswith(x) for w in words) for x in q.split())
+    if n == q or ((code or "") == q.replace(" ", "-") and has_words):
         return 0
     if n.startswith(q):
         return 1
-    words = n.replace("|", " ").replace("-", " ").split()
-    if all(any(w.startswith(x) for w in words) for x in q.split()):
+    if has_words:
         return 2
     return 3
 

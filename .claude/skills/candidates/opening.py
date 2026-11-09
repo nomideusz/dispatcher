@@ -12,7 +12,8 @@ and once someone else runs it healthily it is a tier-0 100 with few active
 projects. Our own deploys never give it a score (tested 8-9 Nov 2026).
 
 It also says whether the keyword's exact slug is free. A slug is permanent and
-first-come, and an exact slug is tier 0 whatever the template is named.
+first-come. An exact slug lifts a template almost to tier 0 whatever it is named,
+but a tier-2 rival at exactly 100 can still beat it ("ubuntu terminal", 9 Nov).
 """
 import importlib.util
 import json

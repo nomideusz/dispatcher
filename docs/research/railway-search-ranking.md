@@ -73,6 +73,7 @@ Each result is classed by how its name and slug match the query. Only 8.5% of re
 - **A tagline is not part of an exact name.** "Ghost | Publishing Platform" is tier 1 for "ghost". Within tier 1 it ranks no better than "Ghost + MySQL" (coefficient −0.02 ± 0.06).
 - **The slug counts like the name.** A template whose slug equals the query, hyphens read as spaces, joins tier 0 whatever its name.
   - Outside the exact-name tier it ranks #1 in 96% of cases for tier-2 names, and it beats 352 of 403 same-tier rivals in tier 1.
+  - **It doesn't beat a tier-2 rival at exactly 100.** On 9 Nov our `ubuntu-terminal` (name "Linux Terminal | Ubuntu Web Shell…", health 96, 139 active) fell to #2 for "ubuntu terminal" under onepush's "Ubuntu Web Terminal" (published 29 Oct, tier 2, health 100, 8 active). The same day `linux-desktop-kde` at 50 still held #1 for "linux desktop kde" over two tier-2 rivals at 96. So an exact slug on a non-exact name sits between tier 0 and tier 2: above 70–99 and lower rivals, below a tier-2 listing at 100.
   - Examples:
     - Rakit's `edge` (named "Microsoft Edge") is #1 for "edge".
     - Our `ubuntu-terminal` and `linux-desktop-kde` are #1 for those phrases at 96% and 33% health.

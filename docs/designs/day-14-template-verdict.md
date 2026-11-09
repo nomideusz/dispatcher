@@ -621,10 +621,11 @@ Synthesized from this review's findings. Each task derives from a specific findi
   - Files: origins.go (or kinds.go neighbour), main.go, db.go, web/src/queries/analytics.ts, web/src/components/templates-table.tsx
   - Built: timeline.go gains one `LEFT JOIN template_origins` so the Templates rows carry `origin` beside `kind`; the backtest itself stays out of timeline.go (D3).
   - Verify: `cd web && npm run typecheck`; /qa: set origin, change kind, origin kept
-- [ ] **T4 (P2, gated, human: ~3h / CC: ~15 min)** — web — Verdict column (PR 2, only if a checkpoint passes)
+- [x] **T4 (P2, gated, human: ~3h / CC: ~15 min)** — web — Verdict column (PR 2, only if a checkpoint passes)
   - Surfaced by: Recommended Approach steps 5, 8
   - Files: web/src/components/templates-table.tsx, web/src/queries/analytics.ts
   - Verify: /qa per test plan
+  - Built 2026-11-09 after the day-45 checkpoint passed P1: `verdictsQuery` reads the endpoint, the column sits after Template, sorts keep → watch → no signal → too early → pre-tracking (opens ascending), shows the frozen day-21 reading and P1/P2 on hover, and its header hint names the stored checkpoint's horizon, date, n and both predictors' counts. Checked by headless render against live data: 10 templates show keep.
 
 ### Build gate, first run (2026-10-30, prod DB copy, nothing stored in prod)
 - Tracked since 2026-08-26 09:01 UTC. 152 templates: 30 pre-tracking, 47 too early, 75 no signal.
@@ -639,6 +640,12 @@ Written down before the result, because the judging change above was made knowin
 - Day 45 becomes decisive on **2026-11-09 07:00 UTC**: P1 reaches 5 true (Firefox, Laya, ERPNext, Invoice Ninja, Moodle) and the group reaches 4 that rose. It holds 30 templates by then, P1 true 2 of 5 (40%), P1 false 2 of 25 (8%), so P1 fails on the 50% bar. It passes at 3 of 5 if ERPNext or Invoice Ninja adds $1 by its day 45 (2026-11-07 00:00, 2026-11-08 07:00 UTC). P2 would stay "not enough data" at day 45: true for 1, and not 5 until 2026-11-20.
 - Had a read still judged it, the date would have decided: first read until 2026-11-12 20:35 UTC, fail 2 of 5; until 2026-11-21 17:00, pass 3 of 6 (Plane enters); later, fail 3 of 7, then 4 of 9.
 - Day 90: 20 templates by about 2026-12-09; P1 reaches 5 true on 2026-12-24 07:00 UTC, so not judged before then. A pass there reopens the build gate.
+
+### First checkpoint, day 45 (stored 2026-11-09 07:07 UTC by the hourly run)
+- n = 30, positives = 5; 30 pre-tracking excluded; origins all marked (14 competitive with 3 positives, 16 original with 2).
+- **P1 pass**: true for 5, 3 rose (60%); false for 25, 2 rose (8%). The projection above said 2 of 5 (fail) unless ERPNext or Invoice Ninja added $1 by its day 45; the stored result is 3 of 5, so one more of the P1-true group rose than projected.
+- P2: not enough data (true for 1, 0 rose; false for 29, 5 rose).
+- Gate: T4 (Verdict column) is unblocked. The live provisional day-45 figures at 10:31 UTC (n = 37, P1 true 3 of 5, false 4 of 32) don't change the stored row.
 
 ### Completion summary
 - Step 0: Scope Challenge — scope accepted as-is

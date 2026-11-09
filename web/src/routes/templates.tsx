@@ -8,7 +8,7 @@ import { TemplatesTable } from "~/components/templates-table";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 import { fmtAgo } from "~/lib/format";
-import { timelineQuery } from "~/queries/analytics";
+import { timelineQuery, verdictsQuery } from "~/queries/analytics";
 import { candidatesQuery } from "~/queries/candidates";
 import { payoutHistoryQuery } from "~/queries/payouts";
 import type { Route } from "./+types/templates";
@@ -22,6 +22,7 @@ export default function Templates() {
   const timeline = useQuery(timelineQuery(days));
   const payouts = useQuery(payoutHistoryQuery(days));
   const candidates = useQuery(candidatesQuery);
+  const verdicts = useQuery(verdictsQuery);
   const data = timeline.data;
   const byTemplate = payouts.data?.byTemplate;
   const copies = candidates.data?.copies ?? [];
@@ -58,7 +59,7 @@ export default function Templates() {
             title="Catalog"
             text={`Every template with its numbers${data.window.days === 30 ? ", over the last 30 days" : `. New and Earned cover the last ${data.window.days} days; $/running the last 30`}. Point at or tap a column name for what it counts; open a row for its projects over time.`}
           >
-            <TemplatesTable templates={data.templates} byTemplate={byTemplate} dates={data.points.map((p) => p.date)} trackedSince={data.trackedSince} />
+            <TemplatesTable templates={data.templates} byTemplate={byTemplate} dates={data.points.map((p) => p.date)} trackedSince={data.trackedSince} verdicts={verdicts.data} />
           </Section>
 
           <Section id="reach" title="Use and pay" text="Which templates people use, and which of those pay: today's counts and the last 30 days, so the range above doesn't change them.">

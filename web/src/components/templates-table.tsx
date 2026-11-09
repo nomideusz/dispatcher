@@ -12,17 +12,22 @@ import {
   KINDS,
   type Origin,
   ORIGINS,
+  type PredictorResult,
   qualifiesForBonus,
   SUPPORT_BONUS_THRESHOLD,
+  type TemplateVerdict,
   type TimelineTemplate,
   useSetKind,
   useSetOrigin,
+  VERDICT_STATES,
+  type VerdictsResponse,
 } from "~/queries/analytics";
 import type { PayoutTemplateTotal } from "~/queries/payouts";
 
 type Row = TimelineTemplate & {
   perRunning: number | null;
   payers: PayoutTemplateTotal | undefined;
+  verdict: TemplateVerdict | undefined;
 };
 
 const FILTERS = {
@@ -45,6 +50,7 @@ type Filter = keyof typeof FILTERS;
 
 type SortKey =
   | "name"
+  | "verdict"
   | "newProjects"
   | "projects"
   | "activeProjects"
@@ -59,6 +65,7 @@ type SortKey =
   | "lastPaidAt";
 const SORT_KEYS: SortKey[] = [
   "name",
+  "verdict",
   "newProjects",
   "projects",
   "activeProjects",
@@ -73,8 +80,19 @@ const SORT_KEYS: SortKey[] = [
   "lastPaidAt",
 ];
 
+/** Sorted by state, not alphabet: keep, watch, no signal, too early, pre-tracking. */
 const sortValue = (r: Row, key: SortKey): string | number | null =>
-  key === "payers" ? (r.payers?.payers ?? null) : r[key];
+  key === "payers"
+    ? (r.payers?.payers ?? null)
+    : key === "verdict"
+      ? r.verdict
+        ? VERDICT_STATES.indexOf(r.verdict.state)
+        : null
+      : r[key];
+
+/** Text keys read best A to Z, and the verdict best from keep down; the rest
+ * open biggest first. */
+const ASCENDING_FIRST: SortKey[] = ["name", "verdict"];
 
 function compare(a: Row, b: Row, key: SortKey): number {
   const x = sortValue(a, key);
@@ -92,9 +110,12 @@ export function TemplatesTable({
   byTemplate,
   dates,
   trackedSince,
+  verdicts,
 }: {
   templates: TimelineTemplate[];
   byTemplate: PayoutTemplateTotal[] | undefined;
+  /** The day-21 verdicts; undefined while loading or if the call failed. */
+  verdicts: VerdictsResponse | null | undefined;
   /** The range's days, oldest first; the activity strip's x axis. */
   dates: string[];
   /** The first snapshot: projects are seen arriving only after it. */
@@ -128,11 +149,13 @@ export function TemplatesTable({
   }, [hash]);
 
   const payers = new Map(byTemplate?.map((p) => [p.templateId, p]));
+  const verdictOf = new Map(verdicts?.templates.map((v) => [v.templateId, v]));
   const all: Row[] = templates.map((t) => ({
     ...t,
     // Under three instances, one more or less halves or doubles it: noise.
     perRunning: t.running != null && t.running >= 3 && t.earned30d != null ? t.earned30d / t.running : null,
     payers: payers.get(t.templateId),
+    verdict: verdictOf.get(t.templateId),
   }));
   const short = shortNames(all.map((r) => r.name));
   const needle = search.trim().toLowerCase();
@@ -159,7 +182,7 @@ export function TemplatesTable({
         hint={hint}
         sort={on ? (sort.desc ? "descending" : "ascending") : undefined}
         onSort={() => {
-          const desc = on ? !sort.desc : key !== "name";
+          const desc = on ? !sort.desc : !ASCENDING_FIRST.includes(key);
           setParams({ sort: key === "earnedCents" && desc ? null : `${desc ? "-" : ""}${key}` });
         }}
       >
@@ -202,6 +225,7 @@ export function TemplatesTable({
         <TableHeader>
           <TableRow>
               {header("name", "Template", undefined, false)}
+              {header("verdict", "Verdict", verdictHint(verdicts), false)}
               {header(
                 "health",
                 "Health",
@@ -261,8 +285,45 @@ function newHint(dates: string[], tracked: string, templates: TimelineTemplate[]
     : hint;
 }
 
+/** What the states mean and the checkpoint they follow, with its numbers,
+ * so a column full of "no signal" says why. */
+function verdictHint(v: VerdictsResponse | null | undefined) {
+  const states =
+    "keep: paid by day 21, while P1 passes. watch: 2+ services and 2+ active projects at day 21, while P2 passes. no signal: neither. too early: under 22 days old. pre-tracking: live before tracking began, or no reading at day 21";
+  if (v === undefined) return states;
+  const c = v?.checkpoint;
+  if (!c) return `No checkpoint stored yet, so nothing shows keep or watch. ${states}`;
+  const p = (name: string, r: PredictorResult) =>
+    `${name} ${r.result} (${r.truePositives} of ${r.trueN} rose, against ${r.falsePositives} of ${r.falseN} without it)`;
+  return `Judged at day ${c.horizon} on ${fmtDay(c.judgedAt)}, n = ${c.n}: ${p("P1", c.p1)}; ${p("P2", c.p2)}. ${states}`;
+}
+
+/** The state, with the frozen day-21 reading on hover. */
+function Verdict({ v }: { v: TemplateVerdict | undefined }) {
+  if (!v) return <span className="text-muted-foreground">—</span>;
+  const title = v.reading
+    ? [
+        `Day 21 reading ${fmtDay(v.reading.at)}: ${fmtUsd(v.reading.earnings)} earned, ${v.reading.activeProjects} active`,
+        v.p1 != null ? `P1 ${v.p1 ? "true" : "false"} · P2 ${v.p2 ? "true" : "false"}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : undefined;
+  return (
+    <span
+      title={title}
+      className={cn(
+        "whitespace-nowrap",
+        v.state === "keep" ? "font-medium" : v.state === "watch" ? "" : "text-xs text-muted-foreground",
+      )}
+    >
+      {v.state}
+    </span>
+  );
+}
+
 type Scale = { dates: string[]; maxNew: number; maxEarned: number };
-const COLUMNS = 14;
+const COLUMNS = 15;
 
 function TemplateRow({
   r,
@@ -330,6 +391,9 @@ function TemplateRow({
             </div>
           </div>
         </TableRowHead>
+        <TableCell>
+          <Verdict v={r.verdict} />
+        </TableCell>
         <TableCell numeric>
           <Health r={r} />
         </TableCell>

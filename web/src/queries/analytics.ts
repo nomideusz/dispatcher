@@ -210,3 +210,49 @@ export function useSetKind() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["analytics", "timeline"] }),
   });
 }
+
+/** A template's day-21 verdict state. keep and watch show only while their
+ * predictor passes at the latest stored checkpoint. */
+export const VERDICT_STATES = ["keep", "watch", "no signal", "too early", "pre-tracking"] as const;
+export type VerdictState = (typeof VERDICT_STATES)[number];
+
+export interface PredictorResult {
+  trueN: number;
+  truePositives: number;
+  trueRate: number | null;
+  falseN: number;
+  falsePositives: number;
+  falseRate: number | null;
+  result: "pass" | "fail" | "not enough data";
+}
+
+export interface VerdictBacktest {
+  horizon: number;
+  n: number;
+  positives: number;
+  p1: PredictorResult;
+  p2: PredictorResult;
+}
+
+export interface TemplateVerdict {
+  templateId: string;
+  state: VerdictState;
+  /** The real snapshot closest to the read day; null before it or in a gap. */
+  reading: { at: string; earnings: number; activeProjects: number } | null;
+  /** Frozen at the reading; null when there is none or it is pre-tracking. */
+  p1: boolean | null;
+  p2: boolean | null;
+}
+
+export interface VerdictsResponse {
+  trackedSince: string;
+  minOutcomeRise: number;
+  /** The latest stored checkpoint, judged once by the hourly run. */
+  checkpoint: (VerdictBacktest & { judgedAt: string }) | null;
+  templates: TemplateVerdict[];
+}
+
+export const verdictsQuery = queryOptions({
+  queryKey: ["analytics", "verdicts"],
+  queryFn: ({ signal }) => api.get("analytics/verdicts", { signal }).json<VerdictsResponse | null>(),
+});

@@ -33,6 +33,9 @@ PROBES = {
     # From 2026-11-09: "Linux Mint". First published as `linux-mint` (02:25 UTC, #3 for "mint"),
     # then republished as `mint` (~02:40 UTC, #1 for "mint") so the slug makes it tier 0 for "mint" too.
     "mint": ["linux mint", "mint", "mint desktop"],
+    # From 2026-11-09 ~03:00 UTC: "SSH Bastion" (slug ssh). "ssh" had demand 5,328 and no tier-0
+    # template; Linux Terminal was #10. #1 for "ssh" within minutes while unscored.
+    "ssh": ["ssh", "ssh bastion", "bastion", "jump host", "ssh tunnel"],
 }
 # Search results carry only names and codes; health comes from template(code:).
 Q = """query($q:String!){templateSearch(query:$q){edges{node{code name}}}}"""

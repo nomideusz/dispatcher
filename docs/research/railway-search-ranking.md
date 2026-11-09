@@ -203,7 +203,7 @@ This matches the 5 Nov Twenty rename, which was reverted after "twenty crm" fell
 
 ## Experiments, 8–9 November
 
-We published three templates on free slugs and edited three descriptions to test the rule on live listings. `search-ranking/score_probe.py` re-runs the queries hourly into `probe-log.jsonl` (`python score_probe.py --show` prints them).
+We published four templates on free slugs and edited three descriptions to test the rule on live listings. `search-ranking/score_probe.py` re-runs the queries hourly into `probe-log.jsonl` (`python score_probe.py --show` prints them).
 
 | Change | Query | Result | Rule it tests |
 |---|---|---|---|
@@ -213,6 +213,8 @@ We published three templates on free slugs and edited three descriptions to test
 | "Linux Mint" (`linux-mint`), 9 Nov ~02:25 | linux mint, mint desktop | #1 | exact name is tier 0 |
 | | mint | #3, below "thirdweb: NFT Minting Page" (56) and `vusd-mint` | tiers 2–5 are loose (see below) |
 | Same template republished as `mint`, 9 Nov ~02:40 | mint | #1 within minutes, above thirdweb (56) | exact slug is tier 0 whatever the name |
+| "SSH Bastion" (`ssh`), 9 Nov ~03:00, a new key-only jump host | ssh | #1 within minutes while unscored, above `termix-ssh` (100) and others; Linux Terminal had been #10 | exact slug is tier 0 on a 5,328-demand word nobody held |
+| | ssh bastion, bastion, jump host | #1, the only result | |
 | "Kubuntu", "Xubuntu", "Lubuntu" added to the descriptions of `linux-desktop-kde`, `linux-desktop`, `linux-desktop-lxqt` | kubuntu, xubuntu, lubuntu | each the only result for its word | descriptions are searched |
 
 What these add:
@@ -223,6 +225,8 @@ What these add:
 - **The "mint" result doesn't move the 70 cutoff.** thirdweb's name has "Minting" and its description starts with "Mint", so this is a loose-tier comparison where the band rule explains only 72–78% of pairs.
 - **We missed the playbook's first step once, then fixed it.** `mint` was free on 9 Nov, but we first published as `linux-mint`. Named "Linux Mint", a `mint` slug is tier 0 for both "mint" and "linux mint", so we republished it as `mint` and deleted `linux-mint` while it had 0 deploys.
 - **Two of ours are under 70.** Linux Desktop (Ubuntu XFCE) is at 54 with 30 running, and Linux Desktop KDE moved from 33 to 50. Neither was on the rescue list above. Fedora KDE was OOM-killed four times while idle at 512 MB during testing, which is the likely cause for KDE.
+
+- **Many generic slugs are free.** A scan of all 728 Dispatcher keywords on 9 Nov found a free exact slug for 76 of the top 221 by demand, including `ssh`, `terminal`, `shell`, `web-terminal`, `desktop`, `vps` and `file-browser`. Demand here is deploys of what a keyword returns, so `cursor` and `router` look big only because of templates further down their results.
 
 Still running:
 

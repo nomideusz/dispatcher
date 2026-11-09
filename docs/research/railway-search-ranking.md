@@ -19,7 +19,7 @@ Research of 8 November 2026. It covers what Railway's marketplace search matches
 
    Within the top band, the template with more running deploys ranks first. This rule names the real #1 for 74% of keywords and overlaps the real top four by 80%.
 3. **Exact names win the money.** A name or slug equal to the query holds 55% of the deploy-weighted top-four slots and 53% of all #1 slots.
-4. **Health has a cliff at 100, not a slope.** 99 ranks the same as 70. Below 70, a template falls under the unscored ones. A template with no running deploys has no score at all.
+4. **Health has a cliff at 100, not a slope.** 99 ranks the same as 70. Below 70, a template falls under the unscored ones, and it can fall under scored templates a tier or two lower too: our exact-name "Claude Code" at 50 is #22 for "claude code" (see Experiments). A template with no running deploys has no score at all.
 5. **Reputation and readme quality don't move rank.** Partner status, creator size and public profile show no effect. Readme length, icon and support health don't either. Verified templates sit higher, but only Railway can verify one.
 6. **Most of our gaps are health, not names.** Renaming wins little and often loses keywords that the tagline was earning. The biggest single gains are three moves:
    - getting a score at all: 118 of our 183 listed templates have none;
@@ -197,7 +197,7 @@ This matches the 5 Nov Twenty rename, which was reverted after "twenty crm" fell
 ### For existing templates
 
 1. **Move templates to exactly 100.** Start with the table above: Hermes Agent Dashboard, Evolution API, Postiz and Twenty CRM. 96 and 80 rank the same, so a partial fix earns nothing until it reaches 100.
-2. **Rescue anything under 70 first**: Minecraft Server at 0, Firefox at 38, Chromium at 55. Under 70, a template sits below unscored ones.
+2. **Rescue anything under 70 first**: Minecraft Server at 0, Firefox at 38, Chromium at 55, and since 9 Nov Claude Code at 50, Linux Desktop at 54 and Linux Desktop KDE at 50. Under 70, a template sits below unscored ones, and even an exact name doesn't save it.
 3. **Give unscored templates a score.** 118 of ours rank as unscored. One healthy running deploy appears to be enough: 43% of single-deploy templates sit at 100. *Test before rolling out:* hold one canary on n8n (`n8n-queue`) or WordPress (`wordpress-pro`) and watch "n8n", "wordpress pro" and "wordpress" over the next day. If the owner's own deploy counts, this is the cheapest lever available. Weigh the canary's cost against the table's figures.
 4. **Don't rename for search** unless the simulation for that template, across all its keywords, comes out positive. The slug can't change at all.
 
@@ -227,6 +227,12 @@ What these add:
 - **Two of ours are under 70.** Linux Desktop (Ubuntu XFCE) is at 54 with 30 running, and Linux Desktop KDE moved from 33 to 50. Neither was on the rescue list above. Fedora KDE was OOM-killed four times while idle at 512 MB during testing, which is the likely cause for KDE.
 
 - **Many generic slugs are free.** A scan of all 728 Dispatcher keywords on 9 Nov found a free exact slug for 76 of the top 221 by demand, including `ssh`, `terminal`, `shell`, `web-terminal`, `desktop`, `vps` and `file-browser`. Demand here is deploys of what a keyword returns, so `cursor` and `router` look big only because of templates further down their results.
+
+- **Under 70 costs more than the tier.** Our "Claude Code" (exact name and slug `claude-code`, tier 0) sits at health 50 with 5 running. It ranks #22 for "claude code", below tier-1 and tier-2 templates at 80–100 and some unscored ones, and #13 for "claude". Debian at 0 sits at #18 for "linux terminal". The opposite case also holds: `kali-linux-ssh` (25, name has both words) beats our unscored "Linux" (only "ssh" in the description) for "linux ssh". So under 70 is a penalty of a tier or two, not a fixed floor below every healthy template.
+- **An exact slug wins #1 only where the tier is empty or weak.** As of 9 Nov:
+  - `router`, `claude` and `evolution` were free, with no exact-name template, so an unscored newcomer would be #1.
+  - `hermes` was taken, and its tier 0 already held three templates: "Hermes" at 100 (16 running), Hermes Agent at 88 (239) and "Hermes" at 76 (1,403).
+  - "evolution api", the query people type, has six exact-name templates led by one at 100 with 5,426 running. `evolution` would win only the bare word.
 
 Still running:
 

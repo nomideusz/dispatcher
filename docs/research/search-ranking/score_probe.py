@@ -30,8 +30,9 @@ PROBES = {
     "linux-desktop-kde": ["kubuntu"],
     "linux-desktop": ["xubuntu"],
     "linux-desktop-lxqt": ["lubuntu"],
-    # From 2026-11-09: "Linux Mint" (slug linux-mint); before it, "linux mint" and "mint" had no Mint template.
-    "linux-mint": ["linux mint", "mint", "mint desktop"],
+    # From 2026-11-09: "Linux Mint". First published as `linux-mint` (02:25 UTC, #3 for "mint"),
+    # then republished as `mint` (~02:40 UTC, #1 for "mint") so the slug makes it tier 0 for "mint" too.
+    "mint": ["linux mint", "mint", "mint desktop"],
 }
 # Search results carry only names and codes; health comes from template(code:).
 Q = """query($q:String!){templateSearch(query:$q){edges{node{code name}}}}"""

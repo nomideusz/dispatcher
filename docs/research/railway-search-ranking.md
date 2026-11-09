@@ -201,6 +201,34 @@ This matches the 5 Nov Twenty rename, which was reverted after "twenty crm" fell
 3. **Give unscored templates a score.** 118 of ours rank as unscored. One healthy running deploy appears to be enough: 43% of single-deploy templates sit at 100. *Test before rolling out:* hold one canary on n8n (`n8n-queue`) or WordPress (`wordpress-pro`) and watch "n8n", "wordpress pro" and "wordpress" over the next day. If the owner's own deploy counts, this is the cheapest lever available. Weigh the canary's cost against the table's figures.
 4. **Don't rename for search** unless the simulation for that template, across all its keywords, comes out positive. The slug can't change at all.
 
+## Experiments, 8–9 November
+
+We published three templates on free slugs and edited three descriptions to test the rule on live listings. `search-ranking/score_probe.py` re-runs the queries hourly into `probe-log.jsonl` (`python score_probe.py --show` prints them).
+
+| Change | Query | Result | Rule it tests |
+|---|---|---|---|
+| "Linux" (`linux`), published 8 Nov ~14:05 UTC | linux | #1 while unscored with 0 running, above Linux Terminal and four Linux Desktops at 96 | tier 0 beats tier 1 whatever the health band |
+| | linux ssh | #3, below `kali-linux-ssh` (25) and `arch-linux-ssh` (17) | tier beats health even under 70 |
+| "Fedora" (`fedora-linux`), 8 Nov ~15:00 | fedora | #1 while unscored, above the exact-slug `fedora` at 33 | inside tier 0, unscored ranks above under 70 |
+| "Linux Mint" (`linux-mint`), 9 Nov ~02:25 | linux mint, mint desktop | #1 | exact name is tier 0 |
+| | mint | #3, below "thirdweb: NFT Minting Page" (56) and `vusd-mint` | tiers 2–5 are loose (see below) |
+| Same template republished as `mint`, 9 Nov ~02:40 | mint | #1 within minutes, above thirdweb (56) | exact slug is tier 0 whatever the name |
+| "Kubuntu", "Xubuntu", "Lubuntu" added to the descriptions of `linux-desktop-kde`, `linux-desktop`, `linux-desktop-lxqt` | kubuntu, xubuntu, lubuntu | each the only result for its word | descriptions are searched |
+
+What these add:
+
+- **Indexing takes minutes.** "Linux" ranked within about 5 minutes of publishing, and edited descriptions were searchable by the next hourly probe.
+- **Words of a multi-word query may come from different fields.** "linux server" returns "Linux" as its only result: "linux" is in the name and "server" only in the description.
+- **An unscored template can hold #1 when its tier has no scored rival.** "Linux" and "Fedora" did, at 0 running. Playbook step 6 matters only when a 70–99 rival shares the tier.
+- **The "mint" result doesn't move the 70 cutoff.** thirdweb's name has "Minting" and its description starts with "Mint", so this is a loose-tier comparison where the band rule explains only 72–78% of pairs.
+- **We missed the playbook's first step once, then fixed it.** `mint` was free on 9 Nov, but we first published as `linux-mint`. Named "Linux Mint", a `mint` slug is tier 0 for both "mint" and "linux mint", so we republished it as `mint` and deleted `linux-mint` while it had 0 deploys.
+- **Two of ours are under 70.** Linux Desktop (Ubuntu XFCE) is at 54 with 30 running, and Linux Desktop KDE moved from 33 to 50. Neither was on the rescue list above. Fedora KDE was OOM-killed four times while idle at 512 MB during testing, which is the likely cause for KDE.
+
+Still running:
+
+- **"Linux" stays undeployed until ~10 Nov 14:00 UTC.** Then one owner deploy answers step 3 of "For existing templates": does the owner's own deploy give a template a score?
+- **14 days organic after that.** Compare Linux's deploys with Linux Terminal's previous 14 days to see whether it adds deploys or takes them from Linux Terminal.
+
 ## Limits
 
 - **Ranking order** comes from one day's snapshot, so the rule describes the current ranker. It explains tiers 0–1 almost fully and tiers 2–5 only loosely.

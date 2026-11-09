@@ -198,7 +198,7 @@ This matches the 5 Nov Twenty rename, which was reverted after "twenty crm" fell
 
 1. **Move templates to exactly 100.** Start with the table above: Hermes Agent Dashboard, Evolution API, Postiz and Twenty CRM. 96 and 80 rank the same, so a partial fix earns nothing until it reaches 100.
 2. **Rescue anything under 70 first**: Minecraft Server at 0, Firefox at 38, Chromium at 55, and since 9 Nov Claude Code at 50, Linux Desktop at 54 and Linux Desktop KDE at 50. Under 70, a template sits below unscored ones, and even an exact name doesn't save it.
-3. **Give unscored templates a score.** 118 of ours rank as unscored. One healthy running deploy appears to be enough: 43% of single-deploy templates sit at 100. *Test before rolling out:* hold one canary on n8n (`n8n-queue`) or WordPress (`wordpress-pro`) and watch "n8n", "wordpress pro" and "wordpress" over the next day. If the owner's own deploy counts, this is the cheapest lever available. Weigh the canary's cost against the table's figures.
+3. **Give unscored templates a score, through other people's deploys.** 118 of ours rank as unscored. Our own deploy doesn't count: tested 8–9 Nov (below), three held canaries left their templates unscored with 0 active projects for 29 hours. A score needs at least one active project made by someone else, and even that isn't always enough (7 of ours had 1–3 active and no score). So the lever is getting the first outside deploy (name, slug, description, README), not holding a canary.
 4. **Don't rename for search** unless the simulation for that template, across all its keywords, comes out positive. The slug can't change at all.
 
 ## Experiments, 8–9 November
@@ -234,9 +234,11 @@ What these add:
   - `hermes` was taken, and its tier 0 already held three templates: "Hermes" at 100 (16 running), Hermes Agent at 88 (239) and "Hermes" at 76 (1,403).
   - "evolution api", the query people type, has six exact-name templates led by one at 100 with 5,426 running. `evolution` would win only the bare word.
 
+- **Our own deploy doesn't give a score.** On 8 Nov 06:05–06:07 UTC we deployed `searxng-search`, `umami-web-analytics` and `wordpress-pro` from their published codes and held them, all passing. Through the last probe at 9 Nov 10:44 UTC (21 readings, 29 hours) all three stayed unscored with 0 active projects, and their ranks didn't move ("wordpress" #9, "wordpress pro" #2, "searxng" #2, "searxng search" #3, "umami" #7). Railway's project counts leave out the creator's own deploys, and so does the score. The canaries were deleted on 9 Nov.
+
 Still running:
 
-- **"Linux" stays undeployed until ~10 Nov 14:00 UTC.** Then one owner deploy answers step 3 of "For existing templates": does the owner's own deploy give a template a score?
+- **"Linux" stays undeployed until ~10 Nov 14:00 UTC.** The own-deploy question it was meant to answer is settled above, so no owner deploy is needed.
 - **14 days organic after that.** Compare Linux's deploys with Linux Terminal's previous 14 days to see whether it adds deploys or takes them from Linux Terminal.
 
 ## Limits

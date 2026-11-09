@@ -204,7 +204,9 @@ def show_verdict(f):
     print("VERDICT: " + (f"checkpoint day {cp['horizon']}: P1 {cp['p1']}, P2 {cp['p2']}" if cp else "no checkpoint yet")
           + f"; day 45 n={v['d45n']}, rose={v['d45positives']}, P1 true={v['d45p1True']} (needs 5); day 90 n={v['d90n']}")
     if cp and "pass" in (cp["p1"], cp["p2"]):
-        print("  a predictor passed: T4 (Verdict column) is unblocked")
+        print("  keep/watch follow this checkpoint in the Verdict column on Templates (built 2026-11-09)")
+    if cp and "fail" in (cp["p1"], cp["p2"]):
+        print("  a predictor failed: record it in docs/designs/day-14-template-verdict.md")
 
 
 def show_proposals():
@@ -270,7 +272,7 @@ def search_why(search, timeline, n=12):
     unscored = [t for t in timeline["templates"] if not t.get("activeProjects") or t.get("health") is None]
     waiting = sum(1 for t in unscored if t.get("activeProjects"))
     print(f"  {len(unscored)} of our {len(timeline['templates'])} templates are unscored: they sort under every 70+ listing"
-          f" in their tier. A score needs an active project; {waiting} have one and no score yet")
+          f" in their tier. A score needs an active project made by someone else (ours never count); {waiting} have one and no score yet")
 
 
 def search_detail(search, n=10):

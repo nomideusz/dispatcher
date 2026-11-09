@@ -86,6 +86,7 @@ li.done label { text-decoration: line-through; text-decoration-color: var(--fiel
 .stamp { display: inline-block; font: 700 11px/1 var(--sans); letter-spacing: 0.06em; text-transform: uppercase; border: 1.5px solid currentColor; padding: 3px 5px 2px; margin-right: 6px; vertical-align: 1px; }
 .stamp.held { color: var(--held); }
 .stamp.caution { color: var(--caution); }
+.stamp.ok { color: var(--running); }
 
 .rule { border: 1px solid var(--rule); background: var(--sheet); padding: 12px 14px; display: grid; gap: 4px; }
 .rule b { font-weight: 600; }
@@ -106,16 +107,16 @@ footer code { font-family: var(--mono); font-size: 12.5px; background: var(--car
 
 <main>
   <header>
-    <span class="eyebrow">Dispatcher · two workspaces · 182 templates live</span>
+    <span class="eyebrow">Dispatcher · two workspaces · 189 templates live</span>
     <h1>Dispatch Routine</h1>
-    <p class="lede">Health first, because health holds search position and position drives deploys. Then publish. Upgrades, search and the verdict are weekly. Figures as of <span class="mono">5 Nov 2026</span>; open Dispatcher for today&rsquo;s.</p>
+    <p class="lede">Health first, because health holds search position and position drives deploys. Then publish. Upgrades, search and the verdict are weekly. Figures as of <span class="mono">9 Nov 2026</span>; open Dispatcher for today&rsquo;s.</p>
   </header>
 
-  <div class="figures" aria-label="Snapshot, 5 Nov 2026">
-    <div class="held"><b>11</b><span>under 70% health, with live deploys (7 earning)</span></div>
-    <div><b>232</b><span>image lines a patch or minor behind</span></div>
-    <div><b>173<small class="mono" style="font-size:.9rem;font-weight:400"> / 289</small></b><span>own keywords at #1</span></div>
-    <div><b>~4</b><span>publishes a day (57 in 15 days)</span></div>
+  <div class="figures" aria-label="Snapshot, 9 Nov 2026">
+    <div class="held"><b>13</b><span>under 70% health, with live deploys (8 earning)</span></div>
+    <div><b>103</b><span>templates a patch or minor behind</span></div>
+    <div><b>186<small class="mono" style="font-size:.9rem;font-weight:400"> / 305</small></b><span>own keywords at #1</span></div>
+    <div><b>~2</b><span>publishes a day (7 since 5 Nov)</span></div>
   </div>
 
   <section aria-labelledby="daily-h">
@@ -128,7 +129,7 @@ footer code { font-family: var(--mono); font-size: 12.5px; background: var(--car
         <span class="no">1</span><input type="checkbox" id="d-health">
         <div class="step">
           <label for="d-health">Fix the worst health on an earning template</label>
-          <p>On <a href="https://dispatcher.zaur.app/templates" target="_blank" rel="noreferrer">Templates</a>, sort by health and take the lowest one that earns. Skip any with a fix already pushed. Today that&rsquo;s all 7 earning ones under 70%, waiting for deployers to update: <span class="mono">Pixelfed 0%, Ubuntu KDE 33%, AzuraCast 38%, Claude Code 50%</span> and three more.</p>
+          <p>On <a href="https://dispatcher.zaur.app/templates" target="_blank" rel="noreferrer">Templates</a>, sort by health and take the lowest one that earns. Skip any with a fix already pushed. Today that&rsquo;s all 8 earning ones under 70%, waiting for deployers to update: <span class="mono">Pixelfed 0%, AzuraCast 38%, Claude Code 50%, Ubuntu KDE 50%</span> and four more. Past the under-70 rescues, aim for exactly 100: 70&ndash;99 is one flat band in search.</p>
           <ol class="sub">
             <li data-n="a"><span><em>Check its upgrades first.</em> Open <a href="https://dispatcher.zaur.app/upgrades" target="_blank" rel="noreferrer">Upgrades</a> and find the template. If it&rsquo;s behind, read the changelog for your symptom: an upstream fix may already exist.</span></li>
             <li data-n="b"><span><em>Find the root cause.</em> Logs and memory on a fresh deploy. Railway can show SUCCESS while the app is dead inside the container (AzuraCast&rsquo;s OOM loop).</span></li>
@@ -141,7 +142,7 @@ footer code { font-family: var(--mono); font-size: 12.5px; background: var(--car
         <span class="no">2</span><input type="checkbox" id="d-pick">
         <div class="step">
           <label for="d-pick">Pick what to publish next</label>
-          <p>From the <a href="https://dispatcher.zaur.app/candidates" target="_blank" rel="noreferrer">Candidates</a> shortlist (2 now) or <a href="https://dispatcher.zaur.app/search" target="_blank" rel="noreferrer">Search</a> gaps (373, many of them noise). Judge an original on its own terms, not on kickback math.</p>
+          <p>From the <a href="https://dispatcher.zaur.app/candidates" target="_blank" rel="noreferrer">Candidates</a> shortlist (3 now) or <a href="https://dispatcher.zaur.app/search" target="_blank" rel="noreferrer">Search</a> gaps (368, many of them noise). Claim the exact slug if it&rsquo;s free: it&rsquo;s permanent, and tier 0 whatever the name. Judge an original on its own terms, not on kickback math.</p>
         </div>
       </li>
       <li>
@@ -154,7 +155,7 @@ footer code { font-family: var(--mono); font-size: 12.5px; background: var(--car
     </ol>
     <div class="rule">
       <b>Fix before you publish</b>
-      <p>When more than about 10 earning templates sit under 70%, skip step 2 that day. It&rsquo;s 7 now, so publishing is open. Every new template adds to the health and upgrade load for good.</p>
+      <p>When more than about 10 earning templates sit under 70%, skip step 2 that day. It&rsquo;s 8 now, so publishing is open. Every new template adds to the health and upgrade load for good.</p>
     </div>
   </section>
 
@@ -168,21 +169,21 @@ footer code { font-family: var(--mono); font-size: 12.5px; background: var(--car
         <span class="no">4</span><input type="checkbox" id="w-upgrades">
         <div class="step">
           <label for="w-upgrades">Work the top of the upgrade queue</label>
-          <p>It&rsquo;s already sorted behind-first, then by earnings. Put every line of one template into one push, so its deployers get one notice. Templates that don&rsquo;t earn get upgrades for security fixes or a broken version only. <span class="mono">117 patch · 115 minor · 11 floating · last push 5 Nov, next due 12 Nov</span></p>
+          <p>It&rsquo;s already sorted behind-first, then by earnings. Put every line of one template into one push, so its deployers get one notice. Templates that don&rsquo;t earn get upgrades for security fixes or a broken version only. <span class="mono">48 patch · 50 minor · 5 floating · last push 7 Nov, next due 14 Nov</span></p>
         </div>
       </li>
       <li>
         <span class="no">5</span><input type="checkbox" id="w-search">
         <div class="step">
           <label for="w-search">Read Search for drops</label>
-          <p>A keyword of ours that fell usually means health fell: go back to step 1 for that template. Track any keyword you&rsquo;re thinking of building for, before you build it. <span class="mono">18 dropped this week · 2 missing</span></p>
+          <p>A keyword of ours that fell usually means health fell: go back to step 1 for that template. Unscored means no one else runs it: our own deploys never give a score. Track any keyword you&rsquo;re thinking of building for, before you build it. <span class="mono">20 dropped this week · 2 missing</span></p>
         </div>
       </li>
       <li>
         <span class="no">6</span><input type="checkbox" id="w-verdict">
         <div class="step">
           <label for="w-verdict">Check the verdict</label>
-          <p><span class="mono">dispatcherctl get /api/analytics/verdicts</span>. Look at <span class="mono">checkpoint</span>: it stays empty until a predictor passes or fails, and the hourly run fills it. Don&rsquo;t drop a template for slow early earnings in the meantime: pay rates keep climbing to day 180.</p>
+          <p>P1 passed at day 45, so the Verdict column on <a href="https://dispatcher.zaur.app/templates?sort=verdict" target="_blank" rel="noreferrer">Templates</a> shows <span class="mono">keep</span>: paid by day 21, frozen there, not a health reading. Use it to break ties, never alone to drop a template: pay rates keep climbing to day 180. A new checkpoint shows in <span class="mono">dispatcherctl get /api/analytics/verdicts</span>.</p>
         </div>
       </li>
       <li>
@@ -203,14 +204,14 @@ footer code { font-family: var(--mono); font-size: 12.5px; background: var(--car
         <tbody>
           <tr>
             <td class="when">9 Nov</td>
-            <td><span class="stamp held">Gate</span>P1 can be judged at day 45
-              <p>At 07:00 UTC P1 reaches 5 templates. The hourly run stores the result by itself, and reading it changes nothing. If it passes, the Verdict column (T4) gets built. If it fails, record it in the design doc and build nothing. P2 will still be short, so it waits for day 90.</p></td>
+            <td><span class="stamp ok">Passed</span>P1 judged at day 45
+              <p>Stored at 07:07 UTC: 3 of 5 P1 templates rose, against 2 of 25 without it. The Verdict column (T4) shipped the same day. P2 was still short, so it waits for day 90.</p></td>
             <td class="left" data-date="2026-11-09"></td>
           </tr>
           <tr>
             <td class="when">7–24 Dec</td>
             <td>Day-90 group forms
-              <p>The second checkpoint. It reaches 20 templates around 9 Dec, and P1 gets its 5 on 24 Dec. A pass here reopens T4, and P2 gets another chance.</p></td>
+              <p>The second checkpoint. It reaches 20 templates around 9 Dec, and P1 gets its 5 on 24 Dec. If P1 fails here, every <span class="mono">keep</span> turns into <span class="mono">no signal</span>. P2 gets another chance.</p></td>
             <td class="left" data-date="2026-12-07"></td>
           </tr>
         </tbody>

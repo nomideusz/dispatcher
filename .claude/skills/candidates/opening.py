@@ -8,11 +8,16 @@ active projects, and applies the ranking rule from
 docs/research/railway-search-ranking.md: text tier, then health band (100 >
 70-99 > unscored > under 70), then active projects. A new template named
 exactly for the keyword is tier 0. It starts unscored, since nothing runs it,
-and once someone runs it healthily it is a tier-0 100 with few active projects.
+and once someone else runs it healthily it is a tier-0 100 with few active
+projects. Our own deploys never give it a score (tested 8-9 Nov 2026).
+
+It also says whether the keyword's exact slug is free. A slug is permanent and
+first-come, and an exact slug is tier 0 whatever the template is named.
 """
 import importlib.util
 import json
 import os
+import re
 import sys
 import time
 import urllib.request
@@ -39,6 +44,20 @@ def gql(query, variables):
             if attempt == 3:
                 sys.exit(f"Railway query failed for {variables}: {e}")
             time.sleep(3 * (attempt + 1))
+
+
+def slug_owner(q):
+    """The published template holding the keyword's exact slug, or None when
+    it's free. Railway answers "Template not found" for a free code."""
+    slug = re.sub(r"[^a-z0-9]+", "-", q.lower()).strip("-")
+    body = json.dumps({"query": "query($c:String!){template(code:$c){name creator{name}}}", "variables": {"c": slug}}).encode()
+    req = urllib.request.Request(G, body, {"content-type": "application/json", "user-agent": "dispatcher-candidates"})
+    d = json.load(urllib.request.urlopen(req, timeout=30))
+    if d.get("errors"):
+        if "not found" in d["errors"][0]["message"].lower():
+            return slug, None
+        raise RuntimeError(d["errors"][0]["message"])
+    return slug, d["data"]["template"]
 
 
 def band_rank(h):
@@ -84,8 +103,14 @@ def main():
         print(f"  tier 0: {len(t0)} listings, {len(at100)} at 100"
               + (f" (active {', '.join(str(r.get('activeProjects') or 0) for r in at100)})" if at100 else ""))
         print(f"  a new exact-name template: about #{where(rows, None, 0)} while unscored,"
-              f" #{where(rows, 100, 1)} once one deploy runs it at 100,"
+              f" #{where(rows, 100, 1)} once someone else's deploy runs it at 100,"
               f" #{where(rows, 100, 20)} at 100 with 20 active")
+        try:
+            slug, owner = slug_owner(q)
+            print(f"  slug `{slug}`: " + ("free, claim it" if owner is None
+                  else f"taken by {owner['name'][:40]} ({(owner.get('creator') or {}).get('name') or '?'})"))
+        except Exception as e:  # the slug line is extra; never lose the ranking over it
+            print(f"  slug: couldn't check ({e})")
         time.sleep(1)
 
 

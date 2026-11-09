@@ -166,7 +166,7 @@ We simulated each fix with the rule: tier, then band, then running deploys, agai
 
 Over all keywords, the tier 0–1 health fixes sum to about **1,800 deploys per 90 days**, or about 3,700 with the tier-2 rows. Keywords that share results are counted once per template.
 
-Templates with hundreds of running deploys rarely reach an exact 100. Edge has 566, and one broken user instance keeps it below 100. Small templates get there more easily. For ours with 0 running, the first healthy running deploy is the whole gap.
+Size doesn't stop a template reaching exactly 100. The score covers at most the 25 most recent deploys: over 14 days Edge (578 running) and Linux Terminal (146) only took multiples of 4, while templates with fewer recent deploys take other fractions (Chromium 55, 58, 64). One broken deploy among the latest 25 costs 4 points until 25 newer ones replace it, so a busy template can return to 100 within days and lose it again just as fast (Linux Terminal: 60 for weeks before its 30 Oct switch to a prebuilt image, 100 on 7 Nov, 96 from a deploy burst on 8 Nov). For ours with 0 running, the first healthy running deploy is the whole gap.
 
 ### Renames mostly don't pay
 

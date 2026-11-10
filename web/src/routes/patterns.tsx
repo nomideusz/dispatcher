@@ -2,11 +2,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { Levers } from "~/components/levers";
 import { PageHeader, Section, useHashFollow } from "~/components/page";
-import { buildStrategy, CatalogTiers, Cohorts, StrategyDocket, Trend } from "~/components/strategy";
+import { buildStrategy, CatalogTiers, Cohorts, EarlyRead, NotTakenUp, StrategyDocket, Trend } from "~/components/strategy";
 import { Skeleton } from "~/components/ui/skeleton";
-import { PaidBySize, Segments } from "~/components/what-to-publish";
+import { PaidBySize, Payers, Segments } from "~/components/what-to-publish";
 import { fmtAgo } from "~/lib/format";
-import { timelineQuery } from "~/queries/analytics";
+import { timelineQuery, verdictsQuery } from "~/queries/analytics";
 import { candidatesQuery } from "~/queries/candidates";
 import { payoutHistoryQuery } from "~/queries/payouts";
 import { searchQuery } from "~/queries/search";
@@ -18,8 +18,9 @@ export function meta({}: Route.MetaArgs) {
 }
 
 /** Is the catalog strategy working, and where the next hour goes: the
- * opening figures, the levers, then the evidence under them. Whole-life,
- * so no range. */
+ * opening figures, the levers, then the evidence under them: the trend, how
+ * new templates come to pay, what earns from use to money, whether payers
+ * stay, and every template by outcome. Whole-life, so no range. */
 export default function Patterns() {
   const timeline = useQuery(timelineQuery(0));
   // Payer chains are whole-life whatever the days; 30 shares Money's default cache.
@@ -27,6 +28,7 @@ export default function Patterns() {
   const upgrades = useQuery(upgradesQuery);
   const search = useQuery(searchQuery);
   const candidates = useQuery(candidatesQuery);
+  const verdicts = useQuery(verdictsQuery);
   const data = timeline.data;
   const payers = payouts.data?.payers;
   const model = useMemo(() => (data && payers ? buildStrategy(data, payers) : null), [data, payers]);
@@ -51,25 +53,36 @@ export default function Patterns() {
       {data && model && (
         <>
           <StrategyDocket data={data} model={model} />
-          <Levers data={data} upgrades={upgrades.data} search={search.data} candidates={candidates.data} />
+          <Levers
+            data={data}
+            upgrades={upgrades.data}
+            search={search.data}
+            candidates={candidates.data}
+            failed={{ upgrades: upgrades.isError, search: search.isError, candidates: candidates.isError }}
+          />
           <Trend data={data} model={model} />
           <Section
             id="new"
             title="Do new templates pay?"
-            text="How each publishing month does at the same age, and how soon a template of each size earns its first kickback. The case for publishing more rests here."
+            text="How each publishing month does at the same age, how soon a template of each size earns its first kickback, and what day 21 says about day 45. The case for publishing more rests here."
           >
             <div className="grid gap-x-8 gap-y-8 xl:grid-cols-2">
               <Cohorts model={model} />
               <PaidBySize data={data} />
             </div>
+            <EarlyRead verdicts={verdicts.data} />
           </Section>
-          <Segments data={data} />
+          <Segments data={data} payers={payers!} />
+          <Payers payers={payers!} />
           <Section
             id="outcomes"
             title="Templates by outcome"
             text="Every template in exactly one row. Earners are worth repairing, in-use ones may be one fix from paying, and those nobody took up after 45 days cost upkeep for nothing."
           >
             <CatalogTiers data={data} />
+            <div id="idle" className="scroll-mt-4 lg:scroll-mt-20">
+              <NotTakenUp data={data} />
+            </div>
           </Section>
         </>
       )}

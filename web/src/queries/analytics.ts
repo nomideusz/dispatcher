@@ -47,6 +47,10 @@ export interface TimelineTemplate {
   /** Original (nothing like it on Railway when published) or a competitive
    * pick, set by hand; "" until marked. */
   origin: Origin | "";
+  /** The day a health fix was pushed (YYYY-MM-DD), recorded with
+   * dispatcherctl fixed; "" when none was. Health lags a fix until deployers
+   * take the update. */
+  fixedOn: string;
   /** Railway's Template.createdAt; the API has no separate publish date. */
   publishedAt: string | null;
   firstSeenAt: string;

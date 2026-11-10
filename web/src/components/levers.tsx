@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { Fig, Section } from "~/components/page";
-import { DAY, EDGE_CODE, HEALTH_FLOOR, publishedOn, tiersOf } from "~/components/strategy";
-import { best, FAIR_CHANCE_DAYS, kindLabel, segmentsOf, sizeLabel } from "~/components/what-to-publish";
+import { best, kindLabel, segmentsOf, sizeLabel } from "~/components/what-to-publish";
+import { ageDays, DAY, earned30, EDGE_CODE, FAIR_CHANCE_DAYS, HEALTH_FLOOR, notTakenUp } from "~/lib/catalog";
 import { fmtNum, fmtUsd, shortName, shortNames } from "~/lib/format";
 import type { TimelineResponse, TimelineTemplate } from "~/queries/analytics";
 import type { Candidates } from "~/queries/candidates";
@@ -13,14 +13,20 @@ import type { ServiceUpgrade } from "~/queries/upgrades";
  * older ones are past the launch bump. */
 const FRESH_FROM = 30;
 const FRESH_TO = 90;
+/** Health scores the deploys already running, so it lags a fix; one still
+ * low this long after it was pushed probably didn't hold. */
+const FIX_SETTLE_DAYS = 21;
 /** Search positions past this take a small share of a keyword's deploys. */
 const TOP = 3;
 
 type Lever = {
   key: string;
   name: string;
-  /** The figure that is at stake, in the lever's own unit. */
+  /** The figure that is at stake, in the lever's own unit; null while its
+   * data loads. */
   figure: string | null;
+  /** Its data failed to load, so the figure and evidence can't be trusted. */
+  failed?: boolean;
   unit: string;
   evidence: ReactNode;
   to: string;
@@ -38,24 +44,33 @@ export function Levers({
   upgrades,
   search,
   candidates,
+  failed,
 }: {
   data: TimelineResponse;
   upgrades: ServiceUpgrade[] | undefined;
   search: Search | undefined;
   candidates: Candidates | undefined;
+  /** Which of the three failed to load: its lever says so instead of
+   * waiting forever. */
+  failed: { upgrades: boolean; search: boolean; candidates: boolean };
 }) {
   const { templates } = data;
   const name = shortNames(templates.map((t) => t.name));
   const nowMs = Date.parse(data.sampledAt);
-  const earned = (t: TimelineTemplate) => t.earned30d ?? 0;
-  const age = (t: TimelineTemplate) => (nowMs - Date.parse(publishedOn(t))) / DAY;
+  const earned = earned30;
+  const age = (t: TimelineTemplate) => ageDays(t, nowMs);
   const byEarned = (a: TimelineTemplate, b: TimelineTemplate) => earned(b) - earned(a);
-  const tiers = tiersOf(templates, nowMs);
-  const notTaken = tiers[tiers.length - 1].rows;
+  const notTaken = templates.filter((t) => notTakenUp(t, nowMs));
 
   // Health: money on earners below the floor, and use on the rest of them.
+  // A fix already pushed stays low until deployers take the update, so
+  // those are named apart: they need waiting, not work.
   const sick = templates.filter((t) => t.health != null && t.health < HEALTH_FLOOR && t.code !== EDGE_CODE);
   const sickEarning = sick.filter((t) => earned(t) > 0).sort(byEarned);
+  const sickOpen = sickEarning.filter((t) => !t.fixedOn);
+  const sickStale = sickEarning.filter(
+    (t) => t.fixedOn && nowMs - Date.parse(`${t.fixedOn}T00:00:00Z`) > FIX_SETTLE_DAYS * DAY,
+  );
   const sickIdle = sick.filter((t) => earned(t) === 0 && (t.running ?? 0) > 0);
 
   // Upgrades: the queue's own "behind" rule, so counts match the Upgrades page.
@@ -99,15 +114,23 @@ export function Levers({
     {
       key: "health",
       name: "Fix health",
-      figure: fmtUsd(sickEarning.reduce((s, t) => s + earned(t), 0)),
-      unit: `a month on earners under ${HEALTH_FLOOR}% health`,
+      figure: fmtUsd(sickOpen.reduce((s, t) => s + earned(t), 0)),
+      unit: `a month on earners under ${HEALTH_FLOOR}% health with no fix pushed`,
       evidence: (
         <>
-          <Fig>{fmtNum(sickEarning.length)}</Fig> earning {sickEarning.length === 1 ? "template is" : "templates are"} under{" "}
-          {HEALTH_FLOOR}% deploy health
-          {sickEarning.length > 0 &&
-            `: ${list(sickEarning.slice(0, 3).map((t) => `${name(t.name)} ${t.health?.toFixed(0)}%`))}`}
-          ; <Fig>{fmtNum(sickIdle.length)}</Fig> more have instances running but earn nothing. Health also orders search
+          <Fig>{fmtNum(sickOpen.length)}</Fig> earning {sickOpen.length === 1 ? "template is" : "templates are"} under{" "}
+          {HEALTH_FLOOR}% deploy health and unfixed
+          {sickOpen.length > 0 && `: ${list(sickOpen.slice(0, 3).map((t) => `${name(t.name)} ${t.health?.toFixed(0)}%`))}`}
+          {sickEarning.length > sickOpen.length && (
+            <>
+              ; <Fig>{fmtNum(sickEarning.length - sickOpen.length)}</Fig> more (
+              <Fig>{fmtUsd(sickEarning.filter((t) => t.fixedOn).reduce((s, t) => s + earned(t), 0))}</Fig>) have a fix pushed
+              and wait for deployers to take it
+              {sickStale.length > 0 &&
+                `, ${list(sickStale.slice(0, 3).map((t) => name(t.name)))} for over ${FIX_SETTLE_DAYS} days, so ${sickStale.length === 1 ? "that fix" : "those fixes"} may not have held`}
+            </>
+          )}
+          ; <Fig>{fmtNum(sickIdle.length)}</Fig> have instances running but earn nothing. Health also orders search
           results among listings with the same name.
         </>
       ),
@@ -118,6 +141,7 @@ export function Levers({
       key: "upgrades",
       name: "Upgrade",
       figure: upgrades ? fmtUsd(behindEarning.reduce((s, t) => s + earned(t), 0)) : null,
+      failed: failed.upgrades,
       unit: "a month on earners behind on upgrades",
       evidence: (
         <>
@@ -139,6 +163,7 @@ export function Levers({
       key: "search",
       name: "Climb search",
       figure: search ? fmtNum(weak.length) : null,
+      failed: failed.search,
       unit: `keywords where ours ranks below #${TOP} or dropped out`,
       evidence: (
         <>
@@ -162,6 +187,7 @@ export function Levers({
       key: "listings",
       name: "Win back listings",
       figure: candidates ? fmtNum(toRivals) : null,
+      failed: failed.candidates,
       unit: "deploys in 90 days went to rivals' listings of apps we publish",
       evidence: (
         <>
@@ -210,16 +236,22 @@ export function Levers({
       key: "prune",
       name: "Stop maintaining",
       figure: fmtNum(notTaken.length),
-      unit: "templates 45+ days old with nothing running or earned",
+      unit: `templates ${FAIR_CHANCE_DAYS}+ days old with nothing running or earned`,
       evidence: (
         <>
-          <Fig>{fmtNum(behindIdle.length)}</Fig> of them wait in the upgrade queue
-          {notTaken.length > 0 && `; ${list([...notTaken].sort((a, b) => age(b) - age(a)).slice(0, 3).map((t) => name(t.name)))} are the oldest`}
+          {upgrades && (
+            <>
+              <Fig>{fmtNum(behindIdle.length)}</Fig> of them wait in the upgrade queue
+              {notTaken.length > 0 && "; "}
+            </>
+          )}
+          {notTaken.length > 0 &&
+            `${list([...notTaken].sort((a, b) => age(b) - age(a)).slice(0, 3).map((t) => name(t.name)))} ${notTaken.length === 1 ? "is" : "are"} the oldest`}
           .
         </>
       ),
-      to: "#outcomes",
-      go: "Templates by outcome",
+      to: "#idle",
+      go: "Not taken up, by name",
     },
   ];
 
@@ -234,10 +266,12 @@ export function Levers({
           <div key={l.key} className="grid gap-x-6 gap-y-1 py-3 sm:grid-cols-[9rem_11rem_1fr] lg:grid-cols-[10rem_14rem_1fr_9rem]">
             <h3 className="text-base font-semibold">{l.name}</h3>
             <div>
-              <div className="text-xl leading-tight font-semibold tabular-nums">{l.figure ?? "…"}</div>
+              <div className="text-xl leading-tight font-semibold tabular-nums">{l.figure ?? (l.failed ? "—" : "…")}</div>
               <div className="text-xs text-muted-foreground">{l.unit}</div>
             </div>
-            <p className="text-sm text-muted-foreground sm:col-start-3 lg:col-start-auto">{l.evidence}</p>
+            <p className="text-sm text-muted-foreground sm:col-start-3 lg:col-start-auto">
+              {l.figure == null && l.failed ? "Couldn't load this one. Reload to try again; the other levers stand." : l.evidence}
+            </p>
             {l.to.startsWith("#") ? (
               <a href={l.to} className="text-sm text-primary underline sm:col-start-3 lg:col-start-auto lg:text-right">
                 {l.go}

@@ -1,47 +1,53 @@
 import type { ReactNode } from "react";
+import { Link } from "react-router";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
-import { cursor, GROUPS, groupOf, Key, Tip, tick } from "~/components/chart-kit";
+import { cursor, Key, shareTop, Tip, tick } from "~/components/chart-kit";
 import { DOCKET, DocketCell, Fig, Section } from "~/components/page";
-import { FAIR_CHANCE_DAYS, lifeOf, paidCurve } from "~/components/what-to-publish";
 import { ChartContainer } from "~/components/ui/chart";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead } from "~/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead, useSort } from "~/components/ui/table";
+import { kindLabel } from "~/components/what-to-publish";
+import { ageDays, DAY, earned30, EDGE_CODE, FAIR_CHANCE_DAYS, HEALTH_FLOOR, inUse, lifeOf, notTakenUp, paidCurve, publishedOn } from "~/lib/catalog";
 import { fmtDay, fmtNum, fmtUsd, fmtUsdTick, shortNames } from "~/lib/format";
 import { cn } from "~/lib/utils";
-import type { TimelineResponse, TimelineTemplate } from "~/queries/analytics";
+import { ORIGINS, type TimelineResponse, type TimelineTemplate, type VerdictsResponse } from "~/queries/analytics";
 import type { PayerChain } from "~/queries/payouts";
 
-export const DAY = 86_400_000;
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 /** Most recent publishing months shown on their own; older ones share a layer. */
 const SEPARATE_MONTHS = 3;
 /** Skips the running green: beside teal it fails the validator's normal-vision floor. */
 const COLORS = ["var(--chart-1)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
-export const HEALTH_FLOOR = 70;
 /** The age chart stops here: past it only the oldest batch has a line. */
 const AGE_DAYS = 60;
 /** Almost nothing is paid in the first two weeks, so a shorter line shows nothing. */
 const MIN_LINE_DAYS = 14;
-/** A batch's line runs to the age this share of its templates has reached. */
-const COHORT_SHARE = 0.8;
-/** Under this many templates one payer swings a line 20+ points. */
-const MIN_COHORT = 5;
+/** A batch's line stops once fewer of its templates than this are that old:
+ * under it one payer swings the line 10+ points. */
+const MIN_BATCH = 10;
 /** Shorter collection gaps don't move a weekly figure. */
 const NOTABLE_GAP = 2 * DAY;
 /** A payer still counts for a day past the estimated next invoice, so an invoice
  * that lands a little late doesn't read as a lapse. Our allowance, not Railway's. */
 const PAYER_GRACE = DAY;
 
-/** Its October surge was short-lived, unexplained and has never earned, so it
- * doesn't count as use here. Other pages still show it. */
-export const EDGE_CODE = "microsoft-edge";
-
 const iso = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 const utc = (date: string) => Date.parse(`${date}T00:00:00Z`);
 const monthLabel = (month: string) =>
   new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" }).format(new Date(`${month}-01T00:00:00Z`));
-export const publishedOn = (t: TimelineTemplate) => t.publishedAt ?? t.firstSeenAt;
 /** The word joiner keeps a minus on the same line as its figure. */
-export const signedUsd = (v: number) => `${v >= 0 ? "+" : "−\u2060"}${fmtUsd(Math.abs(v))}`;
+const signed = (v: number, abs: string) => `${v >= 0 ? "+" : "−⁠"}${abs}`;
+export const signedUsd = (v: number) => signed(v, fmtUsd(Math.abs(v)));
+const signedNum = (v: number) => signed(v, fmtNum(Math.abs(v)));
+
+/** Invoices a payer had sent by a moment. Between the first and the last
+ * they are spread evenly, which is how a monthly bill falls. */
+const invoicesBy = (p: PayerChain, at: number) => {
+  const first = Date.parse(p.firstAt);
+  const last = Date.parse(p.lastAt);
+  if (at < first) return 0;
+  if (at >= last || p.invoices < 2) return p.invoices;
+  return 1 + Math.floor(((at - first) / (last - first)) * (p.invoices - 1));
+};
 
 type Batch = { key: string; label: string; color: string; templates: TimelineTemplate[] };
 
@@ -82,27 +88,6 @@ export function buildStrategy(data: TimelineResponse, payers: PayerChain[]) {
     );
   };
 
-  /** What one template of each size earned in the 30 days to `end`, over
-   * its templates already FAIR_CHANCE_DAYS old by then: counting the
-   * just-published, who can't have been paid yet, would make every line sag
-   * while the catalog grows. Each size's biggest lifetime earner is left out,
-   * as in the segment tables, so one hit (Twenty) doesn't make its size's line. */
-  const sizeTop = GROUPS.map((_, g) =>
-    templates.filter((t) => groupOf(t) === g).reduce<TimelineTemplate | null>((m, t) => (!m || t.lifetimeCents > m.lifetimeCents ? t : m), null),
-  );
-  const perSizeBy = (end: string) => {
-    const from = iso(utc(end) - 30 * DAY);
-    const matureBy = iso(utc(end) - FAIR_CHANCE_DAYS * DAY);
-    return GROUPS.map((_, g) => {
-      const ts = templates.filter((t) => groupOf(t) === g && t !== sizeTop[g] && publishedOn(t).slice(0, 10) <= matureBy);
-      const sum = ts.reduce(
-        (s, t) => s + t.activity.reduce((n, a) => (a.date >= from && a.date <= end ? n + a.earnedCents / 100 : n), 0),
-        0,
-      );
-      return ts.length ? sum / ts.length : null;
-    });
-  };
-
   /** The catalog, its payers and its month of kickback, as of the end of a day. */
   const snapshot = (end: string) => {
     const seen = points.filter((p) => p.date <= end);
@@ -115,41 +100,45 @@ export function buildStrategy(data: TimelineResponse, payers: PayerChain[]) {
     const endMs = utc(end);
     const paying = payers.filter(
       (p) => Date.parse(p.firstAt) <= endMs + DAY && endMs <= Date.parse(p.nextDueAt) + PAYER_GRACE,
-    ).length;
+    );
+    // Those on a second or later invoice by then: the kickback that repeats.
+    const repeat = paying.filter((p) => invoicesBy(p, endMs + DAY) >= 2).length;
     const earned = earnedBy(end);
     const total = earned.reduce((s, v) => s + v, 0);
     return {
       published,
       earning: lastWith("earningTemplates")?.earningTemplates ?? null,
       running: sample ? (sample.running ?? 0) - (sample.edgeRunning ?? 0) : null,
-      paying,
+      paying: paying.length,
+      repeat,
+      firstInvoice: paying.length - repeat,
       total,
-      perTemplate: published > 0 ? total / published : 0,
       ...Object.fromEntries(earned.map((v, i) => [`b${i}`, v])),
-      ...Object.fromEntries(perSizeBy(end).map((v, g) => [`s${g}`, v])),
     };
   };
 
   // Week by week from the Monday of the week tracking began. A week still under
-  // way has no deploy bars: a part-week reads as a collapse.
+  // way has no deploy bars, nor has the one tracking began partway through: a
+  // part-week reads as a collapse. Edge's surge is left out, as in running.
   const start = utc(data.trackedSince.slice(0, 10));
   const monday = start - ((new Date(start).getUTCDay() + 6) % 7) * DAY;
   const weeks = [];
   for (let w = monday; iso(w) <= today; w += 7 * DAY) {
     const from = iso(w);
     const end = iso(Math.min(w + 6 * DAY, utc(today)));
-    const finished = iso(w + 6 * DAY) < today;
+    const whole = iso(w + 6 * DAY) < today && w >= start;
     let deploysPaid = 0;
     let deploysUnpaid = 0;
     for (const t of templates) {
+      if (t.code === EDGE_CODE) continue;
       const n = t.activity.reduce((s, a) => (a.date >= from && a.date <= end ? s + a.newProjects : s), 0);
       if (t.lifetimeCents > 0) deploysPaid += n;
       else deploysUnpaid += n;
     }
     weeks.push({
       week: from,
-      deploysPaid: finished ? deploysPaid : null,
-      deploysUnpaid: finished ? deploysUnpaid : null,
+      deploysPaid: whole ? deploysPaid : null,
+      deploysUnpaid: whole ? deploysUnpaid : null,
       ...snapshot(end),
     });
   }
@@ -163,72 +152,47 @@ export function buildStrategy(data: TimelineResponse, payers: PayerChain[]) {
   const fromNew = batches.reduce((s, b, i) => (b.key === "before" ? s : s + change[i]), 0);
   const newTemplates = batches.reduce((s, b) => (b.key === "before" ? s : s + b.templates.length), 0);
 
-  // Each batch followed as one fixed group, so every point of its line is the
-  // same templates: those that have reached the age 80% of the batch has
-  // reached. Averaging whoever is old enough at each age instead swaps
-  // templates in and out along the line. Ages are each template's own, so a
-  // payer's repeat invoices count the same in every batch: day 45 is 45 days
-  // of a template's life whenever it was published.
+  // Share of each batch paid by each day of its templates' own lives,
+  // Kaplan–Meier as in the size chart, so a batch still filling up (most of
+  // October came in its last week) shows the days its older templates have
+  // lived instead of waiting for the youngest. Ages are each template's own,
+  // so a payer's repeat invoices count the same in every batch.
   const nowMs = Date.parse(data.sampledAt);
-  const ageOf = (t: TimelineTemplate) => Math.floor((nowMs - Date.parse(publishedOn(t))) / DAY);
-  /** Kickback a template earned by `age` days after publishing. */
-  const earnedByAge = (t: TimelineTemplate, age: number) => {
-    const pub = utc(publishedOn(t).slice(0, 10));
-    return t.activity.reduce((n, a) => ((utc(a.date) - pub) / DAY <= age ? n + a.earnedCents / 100 : n), 0);
-  };
-  const cohorts = batches.map((b) => {
-    const ages = b.templates.map(ageOf).sort((x, y) => y - x);
-    const k = Math.ceil(ages.length * COHORT_SHARE);
-    const end = k >= MIN_COHORT ? Math.min(AGE_DAYS, ages[k - 1]) : 0;
-    if (end <= MIN_LINE_DAYS) return null;
-    return { end, group: b.templates.filter((t) => ageOf(t) >= end) };
-  });
+  const curves = batches.map((b) => paidCurve(b.templates.flatMap((t) => lifeOf(t, nowMs) ?? []), AGE_DAYS, MIN_BATCH));
+  const reach = curves.map((c) => c.reduce((last, p, day) => (p.share != null ? day : last), -1));
+  const drawn = reach.map((r) => r > MIN_LINE_DAYS);
   const ageRows = Array.from({ length: AGE_DAYS + 1 }, (_, age) => {
     const row: Record<string, number | null> = { age };
-    cohorts.forEach((c, i) => {
-      row[`b${i}`] = c && age <= c.end ? c.group.filter((t) => earnedByAge(t, age) > 0).length / c.group.length : null;
+    curves.forEach((c, i) => {
+      row[`b${i}`] = drawn[i] ? c[age].share : null;
+      row[`n${i}`] = c[age].n;
     });
     return row;
   });
-  // One checkpoint every drawn line has reached, so the key compares like
-  // with like. The kickback figure leaves out the group's biggest earner by
-  // then, so one hit (Twenty) doesn't make its batch.
-  const ends = cohorts.flatMap((c) => (c ? [c.end] : []));
+  // One day every drawn line has reached, so the key compares like with like.
+  const ends = reach.filter((_, i) => drawn[i]);
   const checkpoint = ends.length ? Math.min(...ends) : null;
-  const atCheckpoint = cohorts.map((c) => {
-    if (!c || checkpoint == null) return null;
-    const earned = c.group.map((t) => earnedByAge(t, checkpoint)).sort((x, y) => y - x);
-    const rest = earned.slice(1);
-    return {
-      paid: earned.filter((v) => v > 0).length,
-      of: earned.length,
-      each: rest.reduce((s, v) => s + v, 0) / rest.length,
-      top: earned[0],
-    };
-  });
+  const atCheckpoint = curves.map((c, i) => (drawn[i] && checkpoint != null ? c[checkpoint] : null));
 
-  return { batches, weeks, monthAgo, now, change, growth, fromNew, newTemplates, ageRows, cohorts, checkpoint, atCheckpoint };
+  return { batches, weeks, monthAgo, now, growth, fromNew, newTemplates, ageRows, drawn, checkpoint, atCheckpoint };
 }
 
 /** Where every template stands today. Exactly one row per template. */
-function tiersOf(templates: TimelineTemplate[], nowMs: number) {
-  const age = (t: TimelineTemplate) => (nowMs - Date.parse(publishedOn(t))) / DAY;
-  const earned = (t: TimelineTemplate) => t.earned30d ?? 0;
+export function tiersOf(templates: TimelineTemplate[], nowMs: number) {
   const running = (t: TimelineTemplate) => t.running ?? 0;
-  const counted = (t: TimelineTemplate) => (t.code === EDGE_CODE ? 0 : running(t));
   const defs: { label: string; hint: string; has: (t: TimelineTemplate) => boolean }[] = [
-    { label: "Earning $5+", hint: "in the last 30 days", has: (t) => earned(t) >= 5 },
-    { label: "Earning under $5", hint: "in the last 30 days", has: (t) => earned(t) > 0 && earned(t) < 5 },
-    { label: "In use, not paying", hint: "services running, nothing earned in 30 days", has: (t) => earned(t) === 0 && running(t) > 0 },
+    { label: "Earning $5+", hint: "in the last 30 days", has: (t) => earned30(t) >= 5 },
+    { label: "Earning under $5", hint: "in the last 30 days", has: (t) => earned30(t) > 0 && earned30(t) < 5 },
+    { label: "In use, not paying", hint: "services running, nothing earned in 30 days", has: (t) => earned30(t) === 0 && running(t) > 0 },
     {
       label: "Too young to call",
       hint: `under ${FAIR_CHANCE_DAYS} days old, nothing running`,
-      has: (t) => earned(t) === 0 && running(t) === 0 && age(t) < FAIR_CHANCE_DAYS,
+      has: (t) => earned30(t) === 0 && running(t) === 0 && !notTakenUp(t, nowMs),
     },
     {
       label: "Not taken up",
       hint: `${FAIR_CHANCE_DAYS}+ days old, nothing running or earned`,
-      has: (t) => earned(t) === 0 && running(t) === 0 && age(t) >= FAIR_CHANCE_DAYS,
+      has: (t) => notTakenUp(t, nowMs),
     },
   ];
   return defs.map((d) => {
@@ -236,30 +200,29 @@ function tiersOf(templates: TimelineTemplate[], nowMs: number) {
     return {
       ...d,
       rows,
-      earned: rows.reduce((s, t) => s + earned(t), 0),
-      running: rows.reduce((s, t) => s + counted(t), 0),
-      biggest: [...rows].sort((a, b) => earned(b) - earned(a) || counted(b) - counted(a)).slice(0, 3),
+      earned: rows.reduce((s, t) => s + earned30(t), 0),
+      running: rows.reduce((s, t) => s + inUse(t), 0),
+      biggest: [...rows].sort((a, b) => earned30(b) - earned30(a) || inUse(b) - inUse(a)).slice(0, 3),
       unhealthy: rows.filter((t) => t.health != null && t.health < HEALTH_FLOOR).length,
     };
   });
 }
 
 /** The page's opening figures: is the monthly kickback growing and where
- * from, how concentrated it is, and what a typical template comes to. */
+ * from, how concentrated it is, how often a template comes to pay and what
+ * one that does brings in. */
 export function StrategyDocket({ data, model }: { data: TimelineResponse; model: StrategyModel }) {
   const { batches, growth, fromNew, newTemplates } = model;
   const { templates } = data;
   const name = shortNames(templates.map((t) => t.name));
   const nowMs = Date.parse(data.sampledAt);
-  const earned = (t: TimelineTemplate) => t.earned30d ?? 0;
-  const total = templates.reduce((s, t) => s + earned(t), 0);
-  const ranked = [...templates].sort((a, b) => earned(b) - earned(a));
-  const topShare = (n: number) => (total > 0 ? ranked.slice(0, n).reduce((s, t) => s + earned(t), 0) / total : 0);
-  const earningNow = ranked.filter((t) => earned(t) > 0).length;
-  const mature = ranked.filter((t) => (nowMs - Date.parse(publishedOn(t))) / DAY >= 60);
-  const typical = mature.length ? earned(mature[Math.floor(mature.length / 2)]) : 0;
-  const matureAvg = mature.length ? mature.reduce((s, t) => s + earned(t), 0) / mature.length : 0;
-  const paid30 = paidCurve(templates.flatMap((t) => lifeOf(t, nowMs) ?? []), 30)[30].share;
+  const total = templates.reduce((s, t) => s + earned30(t), 0);
+  const ranked = [...templates].sort((a, b) => earned30(b) - earned30(a));
+  const topShare = (n: number) => (total > 0 ? ranked.slice(0, n).reduce((s, t) => s + earned30(t), 0) / total : 0);
+  const earners = ranked.filter((t) => earned30(t) > 0);
+  const median = earners.length ? earned30(earners[Math.floor(earners.length / 2)]) : 0;
+  const old = templates.filter((t) => ageDays(t, nowMs) >= 60);
+  const paid = paidCurve(templates.flatMap((t) => lifeOf(t, nowMs) ?? []), FAIR_CHANCE_DAYS);
   const since = batches.find((b) => b.key !== "before")?.label;
 
   return (
@@ -268,7 +231,7 @@ export function StrategyDocket({ data, model }: { data: TimelineResponse; model:
         <Fig>{signedUsd(growth)}</Fig> in 30 days: <Fig>{signedUsd(fromNew)}</Fig> from the <Fig>{fmtNum(newTemplates)}</Fig>{" "}
         published since {since}, <Fig>{signedUsd(growth - fromNew)}</Fig> from the <Fig>{fmtNum(templates.length - newTemplates)}</Fig> before
       </DocketCell>
-      <DocketCell label="Earning" value={`${fmtNum(earningNow)} of ${fmtNum(templates.length)}`}>
+      <DocketCell label="Earning" value={`${fmtNum(earners.length)} of ${fmtNum(templates.length)}`}>
         {ranked[0] && (
           <>
             {name(ranked[0].name)} alone is <Fig>{Math.round(topShare(1) * 100)}%</Fig>, the top <Fig>5</Fig>{" "}
@@ -276,31 +239,37 @@ export function StrategyDocket({ data, model }: { data: TimelineResponse; model:
           </>
         )}
       </DocketCell>
-      <DocketCell label="Typical at 60+ days" value={fmtUsd(typical)}>
-        a month, the median of <Fig>{fmtNum(mature.length)}</Fig>; the average is <Fig>{fmtUsd(matureAvg)}</Fig> because a few earn most
-      </DocketCell>
-      <DocketCell label="Paid within 30 days" value={paid30 == null ? "—" : `${Math.round(paid30 * 100)}%`}>
+      <DocketCell label={`Paid by day ${FAIR_CHANCE_DAYS}`} value={paid[FAIR_CHANCE_DAYS].share == null ? "—" : pct(paid[FAIR_CHANCE_DAYS].share!)}>
         of templates, counting young ones for the days they&apos;ve been live
+        {paid[30].share != null && (
+          <>
+            ; <Fig>{pct(paid[30].share!)}</Fig> by day <Fig>30</Fig>
+          </>
+        )}
+      </DocketCell>
+      <DocketCell label="One that pays brings" value={fmtUsd(median)}>
+        a month, the median of the <Fig>{fmtNum(earners.length)}</Fig> earning; the average is{" "}
+        <Fig>{fmtUsd(earners.length ? total / earners.length : 0)}</Fig>.{" "}
+        <Fig>{fmtNum(old.filter((t) => earned30(t) === 0).length)}</Fig> of the <Fig>{fmtNum(old.length)}</Fig> past day{" "}
+        <Fig>60</Fig> earn nothing
       </DocketCell>
     </div>
   );
 }
 
 /** Is publishing paying: the month's kickback by publishing month, then the
- * catalog, its users, its payers and each size's rate, week by week. */
+ * catalog, its deploys, its use and its payers, week by week. */
 export function Trend({ data, model }: { data: TimelineResponse; model: StrategyModel }) {
   const { batches, weeks, monthAgo, now } = model;
   const { templates } = data;
   const name = shortNames(templates.map((t) => t.name));
-  const earned = (t: TimelineTemplate) => t.earned30d ?? 0;
   const last = weeks[weeks.length - 1];
-  const lastFullWeek = [...weeks].reverse().find((w) => w.deploysPaid != null);
+  const lastWholeWeek = [...weeks].reverse().find((w) => w.deploysPaid != null);
   const longGaps = data.gaps.filter((g) => Date.parse(g.to) - Date.parse(g.from) >= NOTABLE_GAP);
   const edge = templates.find((t) => t.code === EDGE_CODE);
   const axis = { dataKey: "week", ...tick, tickMargin: 6, minTickGap: 36, tickFormatter: fmtDay };
   const sync = { data: weeks, syncId: "strategy", margin: { top: 6, right: 4, left: 0, bottom: 0 } };
   const weekTitle = (l: string | number) => `Week of ${fmtDay(String(l))}`;
-  const sizeNow = (g: number) => (last as unknown as Record<string, number | null>)[`s${g}`];
 
   return (
     <Section
@@ -359,7 +328,7 @@ export function Trend({ data, model }: { data: TimelineResponse; model: Strategy
         </p>
       </section>
 
-      <div className="grid gap-x-6 gap-y-5 pt-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid gap-x-6 gap-y-5 pt-2 sm:grid-cols-2 xl:grid-cols-4">
         <Panel
           title="Templates"
           keyItems={[
@@ -380,8 +349,8 @@ export function Trend({ data, model }: { data: TimelineResponse; model: Strategy
         <Panel
           title="Deploys a week"
           keyItems={[
-            { label: "On paying templates", color: "var(--chart-1)", value: fmtNum(lastFullWeek?.deploysPaid ?? 0) },
-            { label: "Never paid", color: "var(--chart-other)", value: fmtNum(lastFullWeek?.deploysUnpaid ?? 0) },
+            { label: "On templates that have paid", color: "var(--chart-1)", value: fmtNum(lastWholeWeek?.deploysPaid ?? 0) },
+            { label: "Never paid", color: "var(--chart-other)", value: fmtNum(lastWholeWeek?.deploysUnpaid ?? 0) },
           ]}
         >
           <BarChart {...sync} aria-label="New projects per week, on templates that have and have not paid">
@@ -397,7 +366,13 @@ export function Trend({ data, model }: { data: TimelineResponse; model: Strategy
         <Panel
           title="Running instances"
           figure={fmtNum(last.running ?? 0)}
-          note={edge?.running ? <>leaving out {name(edge.name)}&apos;s <Fig>{fmtNum(edge.running)}</Fig></> : undefined}
+          note={
+            monthAgo.running != null && last.running != null ? (
+              <>
+                <Fig>{signedNum(last.running - monthAgo.running)}</Fig> in 30 days
+              </>
+            ) : undefined
+          }
         >
           <LineChart {...sync} aria-label="Running instances, week by week">
             <CartesianGrid vertical={false} />
@@ -410,49 +385,44 @@ export function Trend({ data, model }: { data: TimelineResponse; model: Strategy
 
         <Panel
           title="Paying deployers"
-          figure={fmtNum(last.paying)}
-          note={
-            <>
-              <Fig>{`${last.paying - monthAgo.paying >= 0 ? "+" : "−"}${fmtNum(Math.abs(last.paying - monthAgo.paying))}`}</Fig> in 30 days, from invoices
-            </>
-          }
+          keyItems={[
+            { label: "Paid before", color: "var(--chart-1)", value: fmtNum(last.repeat) },
+            { label: "On a first invoice", color: "var(--chart-other)", value: fmtNum(last.firstInvoice) },
+          ]}
         >
-          <LineChart {...sync} aria-label="Paying deployers, week by week">
+          <AreaChart {...sync} aria-label="Paying deployers, those who paid before and those on a first invoice, week by week">
             <CartesianGrid vertical={false} />
             <XAxis {...axis} />
             <YAxis width={36} {...tick} tickCount={3} allowDecimals={false} />
-            <Tooltip isAnimationActive={false} cursor={cursor} content={(p) => <Tip {...p} title={weekTitle} format={fmtNum} />} />
-            <Line name="Paying" type="stepAfter" dataKey="paying" stroke="var(--chart-1)" strokeWidth={2} dot={false} isAnimationActive={false} />
-          </LineChart>
-        </Panel>
-
-        <Panel
-          title="A month per template, by size"
-          keyItems={GROUPS.map((g, i) => ({
-            label: g.short,
-            color: g.color,
-            line: true,
-            value: sizeNow(i) == null ? undefined : fmtUsd(sizeNow(i)!),
-          }))}
-        >
-          <LineChart {...sync} aria-label="Trailing 30-day kickback per published template, by size, week by week">
-            <CartesianGrid vertical={false} />
-            <XAxis {...axis} />
-            <YAxis width={44} {...tick} tickCount={3} tickFormatter={fmtUsdTick} />
-            <Tooltip isAnimationActive={false} cursor={cursor} content={(p) => <Tip {...p} title={weekTitle} format={fmtUsd} />} />
-            {GROUPS.map((g, i) => (
-              <Line key={g.label} name={g.label} dataKey={`s${i}`} stroke={g.color} strokeWidth={2} dot={false} isAnimationActive={false} />
-            ))}
-          </LineChart>
+            <Tooltip
+              isAnimationActive={false}
+              cursor={cursor}
+              content={(p) => (
+                <Tip
+                  {...p}
+                  title={weekTitle}
+                  format={fmtNum}
+                  footer={(l) => {
+                    const w = weeks.find((x) => x.week === l);
+                    return w ? <>Paying <span className="tabular-nums text-foreground">{fmtNum(w.paying)}</span></> : null;
+                  }}
+                />
+              )}
+            />
+            <Area name="Paid before" type="stepAfter" dataKey="repeat" stackId="p" stroke="var(--card)" strokeWidth={1} fill="var(--chart-1)" fillOpacity={1} isAnimationActive={false} />
+            <Area name="First invoice" type="stepAfter" dataKey="firstInvoice" stackId="p" stroke="var(--card)" strokeWidth={1} fill="var(--chart-other)" fillOpacity={1} isAnimationActive={false} />
+          </AreaChart>
         </Panel>
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Deploys count whole weeks, so the current one is left out until it ends, and the key shows the last whole week.
-        “Paying” means at any time so far, so a template that paid late counts in its earlier weeks too.
-        {edge &&
-          ` Deploys still include ${name(edge.name)}, which is most of the mid-October spike and is still being deployed; it has earned ${fmtUsd(earned(edge))} so far, which is too early to judge: Linux templates took about 40 days from their first deploys to earn.`}
-        {" "}A month per template counts only templates {FAIR_CHANCE_DAYS}+ days old that week and leaves out each size&apos;s biggest earner, so a line falls only when templates that have had their chance earn less, not because new ones joined.
+        Deploys count whole weeks, so the one under way and the one tracking began in are left out, and the key shows the last whole week.
+        “Have paid” means at any time so far, so a template that paid late counts in its earlier weeks too.
+        Paying deployers are read from invoices: <Fig>{fmtNum(last.paying)}</Fig> now, <Fig>{signedNum(last.paying - monthAgo.paying)}</Fig> in 30 days.
+        Those who paid before are the kickback that repeats.
+        {edge?.running
+          ? ` Deploys and running instances leave out ${name(edge.name)} (${fmtNum(edge.running)} running), whose mid-October surge would flatten every other week; it has earned ${fmtUsd(earned30(edge))} so far.`
+          : ""}
         {longGaps.map((g) => (
           <span key={g.from}>
             {" "}
@@ -464,51 +434,60 @@ export function Trend({ data, model }: { data: TimelineResponse; model: Strategy
   );
 }
 
-/** Each publishing month followed as one fixed group: the share of it paid by
- * each day of its templates' own lives, so batches compare at the same age
- * instead of the newest looking worst for being young. */
+/** The share of each publishing month paid by each day of its templates'
+ * own lives, so batches compare at the same age instead of the newest
+ * looking worst for being young. */
 export function Cohorts({ model }: { model: StrategyModel }) {
-  const { batches, ageRows, cohorts, checkpoint, atCheckpoint } = model;
-  const tooYoung = batches.filter((_, i) => !cohorts[i]).map((b) => b.label);
+  const { batches, ageRows, drawn, checkpoint, atCheckpoint } = model;
+  const tooYoung = batches.filter((_, i) => !drawn[i]).map((b) => b.label);
   return (
     <section className="min-w-0 space-y-2">
       <h3 className="text-base font-semibold">Do newer batches do better?</h3>
       <Key
         items={batches.flatMap((b, i) => {
-          const c = cohorts[i];
           const at = atCheckpoint[i];
-          if (!c || !at) return [];
+          if (!at || at.share == null) return [];
           return [{
-            label: `${b.label} (${fmtNum(at.of)})`,
+            label: `${b.label} (${fmtNum(b.templates.length)})`,
             color: b.color,
             line: true,
             value: (
               <>
-                {pct(at.paid / at.of)} paid
-                <span className="font-normal text-muted-foreground"> · {fmtUsd(at.each)} each</span>
+                {pct(at.share)}
+                <span className="font-sans font-normal text-muted-foreground"> by day {checkpoint}</span>
               </>
             ),
           }];
         })}
       />
       <ChartContainer config={{}} className="aspect-auto h-56 w-full lg:h-64">
-        <LineChart data={ageRows} margin={{ top: 6, right: 4, left: 0, bottom: 0 }} aria-label="Share of each publishing month's templates paid, by days since publishing">
+        <LineChart data={ageRows} margin={{ top: 6, right: 8, left: 0, bottom: 0 }} aria-label="Share of each publishing month's templates paid, by days since publishing">
           <CartesianGrid vertical={false} />
           <XAxis dataKey="age" {...tick} tickMargin={6} type="number" domain={[0, AGE_DAYS]} ticks={[0, 15, 30, 45, 60]} tickFormatter={(d: number) => `Day ${d}`} />
-          <YAxis width={44} {...tick} tickCount={4} domain={[0, (max: number) => Math.max(0.2, Math.ceil(max * 10) / 10)]} tickFormatter={pct} />
-          <Tooltip isAnimationActive={false} cursor={cursor} content={(p) => <Tip {...p} title={(l) => `Day ${l} after publishing`} format={pct} />} />
+          <YAxis width={44} {...tick} tickCount={4} domain={[0, shareTop]} tickFormatter={pct} />
+          <Tooltip
+            isAnimationActive={false}
+            cursor={cursor}
+            content={(p) => (
+              <Tip
+                {...p}
+                title={(l) => `Day ${l} after publishing`}
+                format={(v, k) => `${pct(v)} paid · of ${p.payload?.[0]?.payload?.[`n${k.slice(1)}`]}`}
+              />
+            )}
+          />
           {checkpoint != null && <ReferenceLine x={checkpoint} stroke="var(--border)" strokeDasharray="3 3" />}
-          {batches.map((b, i) => !cohorts[i] ? null : (
+          {batches.map((b, i) => !drawn[i] ? null : (
             <Line key={b.key} name={b.label} type="stepAfter" dataKey={`b${i}`} stroke={b.color} strokeWidth={2} dot={false} isAnimationActive={false} />
           ))}
         </LineChart>
       </ChartContainer>
       <p className="text-xs text-muted-foreground">
-        Share of each publishing month&apos;s templates that had earned any kickback by each day after publishing.
-        A line runs as far as 80% of its month has reached, and every point is that same group, counted by their own age, so repeat invoices from older payers count the same in each.
+        Share of each publishing month&apos;s templates that had earned any kickback by each day after publishing, each counted by its own age.
+        Young templates count for the days they&apos;ve been live, and a line stops where fewer than {MIN_BATCH} of its month are that old.
         {checkpoint != null && (
           <>
-            {" "}The key reads day <Fig>{checkpoint}</Fig>, the furthest every line reaches: the share paid, then kickback per template by then, leaving out each group&apos;s biggest earner.
+            {" "}The key reads day <Fig>{checkpoint}</Fig>, the furthest every line reaches. A newer line under an older one at the same day means the newer batch is starting slower.
           </>
         )}
         {" "}A first invoice can take a month to arrive, so almost nothing shows before day 15.
@@ -518,10 +497,43 @@ export function Cohorts({ model }: { model: StrategyModel }) {
   );
 }
 
-export type Tier = ReturnType<typeof tiersOf>[number];
-export { tiersOf };
+/** What the day-21 read has told so far: the stored checkpoint of the
+ * verdict backtest, in the two groups it compares. */
+export function EarlyRead({ verdicts }: { verdicts: VerdictsResponse | null | undefined }) {
+  const c = verdicts?.checkpoint;
+  if (!verdicts || !c) return null;
+  const count = (state: string) => verdicts.templates.filter((v) => v.state === state).length;
+  const rose = `added ${fmtUsd(verdicts.minOutcomeRise)}+ by day ${c.horizon}`;
+  return (
+    <section className="min-w-0 space-y-2">
+      <h3 className="text-base font-semibold">Does day 21 tell?</h3>
+      <div className={cn(DOCKET, "sm:grid-cols-3")}>
+        <DocketCell small label="Paid by day 21" value={`${fmtNum(c.p1.truePositives)} of ${fmtNum(c.p1.trueN)}`}>
+          {rose}
+        </DocketCell>
+        <DocketCell small label="Nothing by day 21" value={`${fmtNum(c.p1.falsePositives)} of ${fmtNum(c.p1.falseN)}`}>
+          {rose}
+        </DocketCell>
+        <DocketCell small label="Read today" value={`${fmtNum(count("keep"))} keep`}>
+          <Fig>{fmtNum(count("no signal"))}</Fig> no signal, <Fig>{fmtNum(count("too early"))}</Fig> under 22 days old.{" "}
+          <Link to="/templates?sort=verdict" className="text-primary underline">
+            Templates by verdict
+          </Link>
+        </DocketCell>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        The verdict backtest, judged once on {fmtDay(c.judgedAt)} over the <Fig>{fmtNum(c.n)}</Fig> templates published since
+        tracking began that had reached day {c.horizon}: paid by day 21 as a predictor, {c.p1.result}. Keep shows on Templates
+        only while it passes. The groups are small, and day 90 is judged next.
+      </p>
+    </section>
+  );
+}
 
-/** Where every template stands today, one row per outcome. */
+export type Tier = ReturnType<typeof tiersOf>[number];
+
+/** Where every template stands today, one row per outcome, then the ones
+ * nobody took up by name. */
 export function CatalogTiers({ data }: { data: TimelineResponse }) {
   const { templates } = data;
   const name = shortNames(templates.map((t) => t.name));
@@ -569,6 +581,80 @@ export function CatalogTiers({ data }: { data: TimelineResponse }) {
           hasn&apos;t earned yet, which is too early to judge: Linux templates took about 40 days to earn.
         </p>
       ) : null}
+    </section>
+  );
+}
+
+type IdleKey = "name" | "kind" | "origin" | "services" | "age" | "projects";
+
+/** The templates nobody took up, by name: the list a decision to stop
+ * maintaining starts from. */
+export function NotTakenUp({ data }: { data: TimelineResponse }) {
+  const { templates } = data;
+  const nowMs = Date.parse(data.sampledAt);
+  const name = shortNames(templates.map((t) => t.name));
+  const idle = templates.filter((t) => notTakenUp(t, nowMs));
+  const originLabel = (k: string) => ORIGINS.find((x) => x.key === k)?.label ?? "Unsorted";
+  const { rows, head } = useSort(
+    idle,
+    (t, key: IdleKey) =>
+      ({
+        name: name(t.name),
+        kind: kindLabel(t.kind),
+        origin: originLabel(t.origin),
+        services: t.services,
+        age: ageDays(t, nowMs),
+        projects: t.projects,
+      })[key],
+    "age",
+    ["name", "kind", "origin"],
+  );
+  if (idle.length === 0) return null;
+  const kinds = new Map<string, number>();
+  for (const t of idle) kinds.set(t.kind, (kinds.get(t.kind) ?? 0) + 1);
+  const tally = [...kinds.entries()].sort((a, b) => b[1] - a[1]);
+  const originals = idle.filter((t) => t.origin === "original").length;
+  return (
+    <section className="min-w-0 space-y-2 pt-4">
+      <h3 className="text-base font-semibold">Not taken up, by name</h3>
+      <p className="max-w-[80ch] text-sm text-muted-foreground">
+        <Fig>{fmtNum(idle.length)}</Fig> templates past day {FAIR_CHANCE_DAYS} with nothing running and nothing earned:{" "}
+        {tally.map(([k, n], i) => (
+          <span key={k}>
+            {i > 0 && ", "}
+            <Fig>{fmtNum(n)}</Fig> {kindLabel(k)}
+          </span>
+        ))}
+        ; <Fig>{fmtNum(originals)}</Fig> of them originals. Each still takes its turn in the upgrade queue.
+      </p>
+      <Table rows={rows.length} limit={50} className="min-w-[34rem]">
+        <TableHeader>
+          <TableRow>
+            {head("name", "Template")}
+            {head("kind", "Kind")}
+            {head("origin", "Origin", { className: "max-sm:hidden" })}
+            {head("services", "Services", { numeric: true, className: "max-sm:hidden" })}
+            {head("age", "Days old", { numeric: true })}
+            {head("projects", "Deploys", { numeric: true, hint: "Projects other people ever created from it; none is running now" })}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((t) => (
+            <TableRow key={t.templateId}>
+              <TableRowHead>
+                <Link to={`/templates#t-${t.templateId}`} className="underline decoration-current/40 underline-offset-3 hover:decoration-current">
+                  {name(t.name)}
+                </Link>
+              </TableRowHead>
+              <TableCell className="text-muted-foreground">{kindLabel(t.kind)}</TableCell>
+              <TableCell className="text-muted-foreground max-sm:hidden">{originLabel(t.origin)}</TableCell>
+              <TableCell numeric className="max-sm:hidden">{fmtNum(t.services)}</TableCell>
+              <TableCell numeric>{fmtNum(Math.floor(ageDays(t, nowMs)))}</TableCell>
+              <TableCell numeric>{fmtNum(t.projects)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </section>
   );
 }

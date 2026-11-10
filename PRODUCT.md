@@ -13,7 +13,7 @@ Two people: the repo owner and their co-author, who publish and maintain a catal
 Dispatcher runs the template catalog as a business. A session does one or more of three jobs:
 
 - **Check earnings:** what kickback did, whether payouts landed, which template earned each one, whether anything broke.
-- **Decide what to build:** Candidates (what people deploy on Railway against what we already publish) and Patterns pick the next move: Patterns opens with whether publishing pays and where the next hour goes (fix health, upgrade, climb search, win back listings, publish new, stop maintaining), then the evidence: the trend since tracking began, how new batches and sizes pay, what earns by kind, origin and size, and every template by outcome.
+- **Decide what to build:** Candidates (what people deploy on Railway against what we already publish) and Patterns pick the next move: Patterns opens with whether publishing pays and where the next hour goes (fix health, upgrade, climb search, win back listings, publish new, stop maintaining), then the evidence: the trend since tracking began, how new batches and sizes come to pay and what day 21 says about day 45, what earns by kind, size and origin from use to money (running instances, payers, invoice size, whether payers come back), whether payers stay, and every template by outcome, with the ones nobody took up by name.
 - **Maintain the catalog:** the upgrade queue, template-health drops and broken deploys flag templates that fell behind or failed.
 
 Success means more kickback for less maintenance: the next template gets picked on evidence, a regression gets caught before it costs deploys, and money never goes unnoticed.

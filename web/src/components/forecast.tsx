@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { GROUPS, groupOf } from "~/components/chart-kit";
 import { DOCKET, DocketCell, Fig } from "~/components/page";
-import { daysToPay, lifeOf, paidCurve } from "~/components/what-to-publish";
+import { daysToPay, lifeOf, paidCurve } from "~/lib/catalog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHead } from "~/components/ui/table";
 import { fmtCents, fmtNum } from "~/lib/format";
 import { cn } from "~/lib/utils";

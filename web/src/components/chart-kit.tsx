@@ -12,6 +12,9 @@ export const GROUPS = [
 export const groupOf = (t: TimelineTemplate) => GROUPS.findIndex((g) => g.has(t.services)) as 0 | 1 | 2;
 
 export const tick = { tickLine: false, axisLine: false } as const;
+/** The top of a share axis: the next fifth, so four ticks land on even
+ * steps and charts side by side mostly share a scale. */
+export const shareTop = (max: number) => Math.max(0.2, Math.ceil(max * 5 - 1e-9) / 5);
 export const cursor = { stroke: "var(--border)", fill: "var(--foreground)", fillOpacity: 0.05 };
 /** Under a dollar a day reads better in cents. */
 export const perDay = (v: number) => (v >= 1 ? fmtUsd(v) : `${Math.round(v * 100)}¢`);

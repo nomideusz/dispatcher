@@ -2,13 +2,14 @@ import { useQuery } from "@tanstack/react-query";
 import { Copies } from "~/components/candidates";
 import { PageHeader, Section, useHashFollow } from "~/components/page";
 import { RangeToggle, useRangeDays } from "~/components/range-toggle";
+import { HealthWatch } from "~/components/health-watch";
 import { TemplateFunnel } from "~/components/template-funnel";
 import { TemplateScatter } from "~/components/template-scatter";
 import { TemplatesTable } from "~/components/templates-table";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Skeleton } from "~/components/ui/skeleton";
 import { fmtAgo } from "~/lib/format";
-import { timelineQuery, verdictsQuery } from "~/queries/analytics";
+import { healthSeriesQuery, timelineQuery, verdictsQuery } from "~/queries/analytics";
 import { candidatesQuery } from "~/queries/candidates";
 import { payoutHistoryQuery } from "~/queries/payouts";
 import type { Route } from "./+types/templates";
@@ -23,11 +24,12 @@ export default function Templates() {
   const payouts = useQuery(payoutHistoryQuery(days));
   const candidates = useQuery(candidatesQuery);
   const verdicts = useQuery(verdictsQuery);
+  const health = useQuery(healthSeriesQuery);
   const data = timeline.data;
   const byTemplate = payouts.data?.byTemplate;
   const copies = candidates.data?.copies ?? [];
   // The Held tray on Money links to #t-<id> rows and to #copies.
-  useHashFollow(!!data && candidates.isFetched);
+  useHashFollow(!!data && candidates.isFetched && health.isFetched);
 
   return (
     <main className="viz shell space-y-6 py-6">
@@ -54,6 +56,20 @@ export default function Templates() {
 
       {data && (
         <>
+          <Section
+            id="health"
+            title="Health watch"
+            text="Templates under 70%, or that lost 5 points or more in two weeks, with the most money at stake first. Health scores the instances already running, so it can fall with no new deploy, and a fix to the image shows only in deploys made after it: judge a fix by the deploys since, not by the calendar."
+          >
+            {health.isPending && <Skeleton className="h-40 w-full" />}
+            {health.isError && (
+              <p role="alert" className="text-sm text-(--viz-critical)">
+                Couldn&apos;t load the health history. Reload to try again; the catalog below stands.
+              </p>
+            )}
+            {health.data && <HealthWatch templates={data.templates} series={health.data} />}
+          </Section>
+
           <Section
             id="catalog"
             title="Catalog"

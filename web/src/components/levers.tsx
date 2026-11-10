@@ -2,9 +2,10 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { Fig, Section } from "~/components/page";
 import { best, kindLabel, segmentsOf, sizeLabel } from "~/components/what-to-publish";
-import { ageDays, DAY, earned30, EDGE_CODE, FAIR_CHANCE_DAYS, HEALTH_FLOOR, notTakenUp } from "~/lib/catalog";
+import { ageDays, earned30, EDGE_CODE, FAIR_CHANCE_DAYS, HEALTH_FLOOR, notTakenUp } from "~/lib/catalog";
+import { FIX_TEST_DEPLOYS, readHealth } from "~/lib/health";
 import { fmtNum, fmtUsd, shortName, shortNames } from "~/lib/format";
-import type { TimelineResponse, TimelineTemplate } from "~/queries/analytics";
+import type { HealthSeries, TimelineResponse, TimelineTemplate } from "~/queries/analytics";
 import type { Candidates } from "~/queries/candidates";
 import type { Search } from "~/queries/search";
 import type { ServiceUpgrade } from "~/queries/upgrades";
@@ -13,9 +14,6 @@ import type { ServiceUpgrade } from "~/queries/upgrades";
  * older ones are past the launch bump. */
 const FRESH_FROM = 30;
 const FRESH_TO = 90;
-/** Health scores the deploys already running, so it lags a fix; one still
- * low this long after it was pushed probably didn't hold. */
-const FIX_SETTLE_DAYS = 21;
 /** Search positions past this take a small share of a keyword's deploys. */
 const TOP = 3;
 
@@ -44,12 +42,15 @@ export function Levers({
   upgrades,
   search,
   candidates,
+  health,
   failed,
 }: {
   data: TimelineResponse;
   upgrades: ServiceUpgrade[] | undefined;
   search: Search | undefined;
   candidates: Candidates | undefined;
+  /** Health day by day; without it a pushed fix is counted but not judged. */
+  health: HealthSeries | undefined;
   /** Which of the three failed to load: its lever says so instead of
    * waiting forever. */
   failed: { upgrades: boolean; search: boolean; candidates: boolean };
@@ -68,9 +69,13 @@ export function Levers({
   const sick = templates.filter((t) => t.health != null && t.health < HEALTH_FLOOR && t.code !== EDGE_CODE);
   const sickEarning = sick.filter((t) => earned(t) > 0).sort(byEarned);
   const sickOpen = sickEarning.filter((t) => !t.fixedOn);
-  const sickStale = sickEarning.filter(
-    (t) => t.fixedOn && nowMs - Date.parse(`${t.fixedOn}T00:00:00Z`) > FIX_SETTLE_DAYS * DAY,
-  );
+  // A fix shows only in deploys made after it, so the deploys since decide
+  // whether it is still untested or didn't hold.
+  const sickFixed = sickEarning.filter((t) => t.fixedOn);
+  const fixState = (state: "untested" | "notHeld") =>
+    health ? sickFixed.filter((t) => readHealth(t, health)?.state === state) : [];
+  const fixUntested = fixState("untested");
+  const fixNotHeld = fixState("notHeld");
   const sickIdle = sick.filter((t) => earned(t) === 0 && (t.running ?? 0) > 0);
 
   // Upgrades: the queue's own "behind" rule, so counts match the Upgrades page.
@@ -123,19 +128,24 @@ export function Levers({
           {sickOpen.length > 0 && `: ${list(sickOpen.slice(0, 3).map((t) => `${name(t.name)} ${t.health?.toFixed(0)}%`))}`}
           {sickEarning.length > sickOpen.length && (
             <>
-              ; <Fig>{fmtNum(sickEarning.length - sickOpen.length)}</Fig> more (
-              <Fig>{fmtUsd(sickEarning.filter((t) => t.fixedOn).reduce((s, t) => s + earned(t), 0))}</Fig>) have a fix pushed
-              and wait for deployers to take it
-              {sickStale.length > 0 &&
-                `, ${list(sickStale.slice(0, 3).map((t) => name(t.name)))} for over ${FIX_SETTLE_DAYS} days, so ${sickStale.length === 1 ? "that fix" : "those fixes"} may not have held`}
+              ; <Fig>{fmtNum(sickFixed.length)}</Fig> more (
+              <Fig>{fmtUsd(sickFixed.reduce((s, t) => s + earned(t), 0))}</Fig>) have a fix pushed
+              {health && (
+                <>
+                  : <Fig>{fmtNum(fixUntested.length)}</Fig> with under {FIX_TEST_DEPLOYS} new deploys since, so it can&apos;t be
+                  judged yet
+                  {fixNotHeld.length > 0 &&
+                    `, and ${list(fixNotHeld.slice(0, 3).map((t) => name(t.name)))} with enough to say the fix didn't hold`}
+                </>
+              )}
             </>
           )}
           ; <Fig>{fmtNum(sickIdle.length)}</Fig> have instances running but earn nothing. Health also orders search
           results among listings with the same name.
         </>
       ),
-      to: "/templates?sort=health",
-      go: "Templates by health",
+      to: "/templates#health",
+      go: "Health watch",
     },
     {
       key: "upgrades",

@@ -263,6 +263,27 @@ export interface VerdictsResponse {
   templates: TemplateVerdict[];
 }
 
+/** Every template's health day by day, beside its project and deploy
+ * counts: each array lines up with `days`, null where the day has no sample
+ * or no score. */
+export interface HealthSeries {
+  days: string[];
+  templates: {
+    templateId: string;
+    health: (number | null)[];
+    projects: (number | null)[];
+    /** Every deploy so far, redeploys included; Railway updates it about once a day. */
+    deployments: (number | null)[];
+  }[];
+}
+
+/** 45 days: long enough to hold a fix pushed a month ago and the health it
+ * stood at before. */
+export const healthSeriesQuery = queryOptions({
+  queryKey: ["analytics", "template-health", 45],
+  queryFn: ({ signal }) => api.get("analytics/template-health", { searchParams: { days: 45 }, signal }).json<HealthSeries>(),
+});
+
 export const verdictsQuery = queryOptions({
   queryKey: ["analytics", "verdicts"],
   queryFn: ({ signal }) => api.get("analytics/verdicts", { signal }).json<VerdictsResponse | null>(),

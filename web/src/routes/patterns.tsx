@@ -6,7 +6,7 @@ import { buildStrategy, CatalogTiers, Cohorts, EarlyRead, NotTakenUp, StrategyDo
 import { Skeleton } from "~/components/ui/skeleton";
 import { PaidBySize, Payers, Segments } from "~/components/what-to-publish";
 import { fmtAgo } from "~/lib/format";
-import { timelineQuery, verdictsQuery } from "~/queries/analytics";
+import { healthSeriesQuery, timelineQuery, verdictsQuery } from "~/queries/analytics";
 import { candidatesQuery } from "~/queries/candidates";
 import { payoutHistoryQuery } from "~/queries/payouts";
 import { searchQuery } from "~/queries/search";
@@ -29,6 +29,7 @@ export default function Patterns() {
   const search = useQuery(searchQuery);
   const candidates = useQuery(candidatesQuery);
   const verdicts = useQuery(verdictsQuery);
+  const health = useQuery(healthSeriesQuery);
   const data = timeline.data;
   const payers = payouts.data?.payers;
   const model = useMemo(() => (data && payers ? buildStrategy(data, payers) : null), [data, payers]);
@@ -58,6 +59,7 @@ export default function Patterns() {
             upgrades={upgrades.data}
             search={search.data}
             candidates={candidates.data}
+            health={health.data}
             failed={{ upgrades: upgrades.isError, search: search.isError, candidates: candidates.isError }}
           />
           <Trend data={data} model={model} />

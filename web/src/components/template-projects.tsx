@@ -12,7 +12,7 @@ import { type ProjectPoint, templateProjectsQuery } from "~/queries/analytics";
 
 const hourMinute = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" });
 
-type MetricKey = "health" | "projects" | "recentProjects" | "activeProjects" | "running" | "kickback";
+type MetricKey = "health" | "projects" | "deployments" | "recentProjects" | "activeProjects" | "running" | "kickback";
 type Metric = {
   key: MetricKey;
   label: string;
@@ -41,6 +41,12 @@ const METRICS: Metric[] = [
     scale: { top: 100, line: HEALTH_FLOOR },
   },
   { key: "projects", label: "Projects", note: "Railway's count; it dips when Railway takes one out", ...count },
+  {
+    key: "deployments",
+    label: "Deploys",
+    note: "every deploy, with redeploys and our canaries; counted about daily",
+    ...count,
+  },
   { key: "recentProjects", label: "Recent projects", note: "made in the 90 days before each day", ...count },
   { key: "activeProjects", label: "Active projects", ...count },
   { key: "running", label: "Running instances", note: "services up, what earns", ...count },
@@ -78,8 +84,11 @@ function dayTicks(min: number, max: number, want: number) {
 }
 
 /** A template's history as small multiples in the table's column order:
- * health, projects, active projects, running instances and lifetime
- * kickback. Each panel has its own scale (projects is close to all-time and
+ * health, projects, deploys, active projects, running instances and
+ * lifetime kickback. Deploys rising while projects stand still is deployers
+ * redeploying what they run. An upright line on every panel marks the day a
+ * health fix was pushed: what matters is the deploys to its right, since a
+ * fix shows only in those. Each panel has its own scale (projects is close to all-time and
  * would flatten the rest), and the crosshair is synced so they read as one
  * moment. The x axis is real time, so a stretch where collection was down
  * shows as wide as it was. Projects is Railway's count, not ours, and not
@@ -89,7 +98,7 @@ function dayTicks(min: number, max: number, want: number) {
  * projects, which takes a template over 90 days old.
  * Ported from upstream ThallesP/dispatcher#12, reading our template-list
  * project counts rather than the inflated templateMetrics deployments. */
-export function TemplateProjects({ templateId }: { templateId: string }) {
+export function TemplateProjects({ templateId, fixedOn }: { templateId: string; fixedOn?: string }) {
   const [days, setDays] = useState<number>(30);
   const projects = useQuery(templateProjectsQuery(templateId, days));
   const data = projects.data;
@@ -98,12 +107,16 @@ export function TemplateProjects({ templateId }: { templateId: string }) {
     sampledAt: p.sampledAt,
     health: p.health ?? null,
     projects: p.projects,
+    deployments: p.deployments ?? null,
     recentProjects: p.recentProjects,
     activeProjects: p.activeProjects,
     running: p.running ?? null,
     kickback: p.kickback ?? null,
   }));
   const first = rows[0];
+  // The fix's day, if the range holds it.
+  const fixAt = fixedOn ? Date.parse(`${fixedOn}T00:00:00Z`) : null;
+  const mark = fixAt != null && first && fixAt > first.t && fixAt <= rows[rows.length - 1].t ? fixAt : null;
   const panels = METRICS.flatMap((metric) => {
     if (metric.key === "recentProjects" && rows.every((r) => r.recentProjects === r.projects)) return [];
     const change = changeOf(rows, metric.key);
@@ -117,6 +130,7 @@ export function TemplateProjects({ templateId }: { templateId: string }) {
           <div className="text-sm font-medium">Over time</div>
           <div className="text-xs text-muted-foreground">
             {first ? `Change since ${fmtDayTime(first.sampledAt)} UTC` : `Last ${data?.days ?? days} days`}
+            {mark != null && ` · the upright line is the fix pushed ${fmtDay(fixedOn!)}`}
           </div>
         </div>
         {/* This chart's own range, apart from the page's. */}
@@ -152,7 +166,8 @@ export function TemplateProjects({ templateId }: { templateId: string }) {
         <div
           className={cn(
             "grid gap-6 transition-opacity sm:grid-cols-2",
-            panels.length >= 6 ? "lg:grid-cols-3 xl:grid-cols-6" : panels.length === 5 ? "lg:grid-cols-3 xl:grid-cols-5" : "lg:grid-cols-4",
+            // Seven sit four and three, six three and three, five in a row.
+            panels.length >= 7 ? "lg:grid-cols-4" : panels.length === 6 ? "lg:grid-cols-3" : panels.length === 5 ? "lg:grid-cols-3 xl:grid-cols-5" : "lg:grid-cols-4",
             projects.isPlaceholderData && "opacity-60",
           )}
         >
@@ -165,7 +180,8 @@ export function TemplateProjects({ templateId }: { templateId: string }) {
               change={change}
               // A metric that starts with the range needs no date of its own.
               since={change.since === first.sampledAt ? null : change.since}
-              ticks={panels.length >= 5 ? 3 : 4}
+              ticks={panels.length === 5 ? 3 : 4}
+              mark={mark}
             />
           ))}
         </div>
@@ -181,6 +197,7 @@ function MetricPanel({
   change,
   since,
   ticks,
+  mark,
 }: {
   syncId: string;
   metric: Metric;
@@ -188,6 +205,8 @@ function MetricPanel({
   change: Change;
   since: string | null;
   ticks: number;
+  /** When a health fix was pushed, as a time on the x axis. */
+  mark: number | null;
 }) {
   const key = metric.key;
   const chartConfig = { [key]: { label: metric.label, color: "var(--chart-1)" } } satisfies ChartConfig;
@@ -246,6 +265,7 @@ function MetricPanel({
             domain={domain}
             tickFormatter={tick}
           />
+          {mark != null && <ReferenceLine x={mark} stroke="var(--chart-5)" strokeWidth={1.5} />}
           {metric.scale && <ReferenceLine y={metric.scale.line} stroke="var(--muted-foreground)" strokeDasharray="3 3" strokeOpacity={0.6} />}
           <ChartTooltip
             content={

@@ -428,7 +428,7 @@ function TemplateRow({
           <TableCell colSpan={COLUMNS} className="p-0">
             <div className="sticky left-0 w-[calc(100vw-4rem)] max-w-[86rem] space-y-3 px-5 pt-2 pb-6">
               <Facts r={r} />
-              <TemplateProjects templateId={r.templateId} />
+              <TemplateProjects templateId={r.templateId} fixedOn={r.fixedOn || undefined} />
             </div>
           </TableCell>
         </TableRow>
@@ -454,6 +454,11 @@ function Facts({ r }: { r: Row }) {
         </span>
       ) : (
         <span>Not paid yet</span>
+      )}
+      {r.fixedOn && (
+        <span>
+          Health fix pushed <span className="tabular-nums text-foreground">{fmtDay(r.fixedOn)}</span>
+        </span>
       )}
       {p && p.new + p.returning + p.lapsed > 0 && (
         <span>

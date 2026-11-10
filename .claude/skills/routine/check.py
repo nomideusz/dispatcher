@@ -7,14 +7,16 @@ next run (days or weeks later) can say what moved. --dry-run skips the save.
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LAST = os.path.join(HERE, "last.json")
-CTL = os.environ.get("DISPATCHERCTL") or os.path.expanduser("~/go/bin/dispatcherctl")
+CTL = os.environ.get("DISPATCHERCTL") or shutil.which("dispatcherctl") or os.path.expanduser("~/go/bin/dispatcherctl")
 HEALTH_FLOOR = 70  # the checklist's "under 70%" line
+FIX_TEST_DEPLOYS = 5  # new projects a fix needs before it can be judged (Dispatcher's Health watch uses the same)
 FIX_FIRST = 10  # earning templates under the floor before publishing pauses
 PLUMBING = {"Storage", "Starters", "Queues"}  # databases, boilerplates and queues: not apps we build
 SECTIONS = ("health", "catalog", "upgrades", "search", "candidates", "verdict", "payouts")
@@ -57,10 +59,24 @@ def band(t):
 
 
 def get(*args):
-    out = subprocess.run([CTL, "--compact", *args], capture_output=True, text=True, timeout=120)
+    # utf-8, not the locale's: template names hold characters cp1252 can't read.
+    out = subprocess.run([CTL, "--compact", *args], capture_output=True, text=True, encoding="utf-8", timeout=120)
     if out.returncode != 0:
         sys.exit(f"dispatcherctl {' '.join(args)} failed: {out.stderr.strip()}")
     return json.loads(out.stdout)
+
+
+def new_since_fix(health, template_id, fixed_on):
+    """New projects since the day before a fix was pushed, or None when the
+    series doesn't reach back that far. Health scores the instances already
+    running, so a fix shows only in deploys made after it."""
+    series = next((t for t in health["templates"] if t["templateId"] == template_id), None)
+    before = [i for i, d in enumerate(health["days"]) if d < fixed_on]
+    if not series or not before:
+        return None
+    then = next((v for v in reversed(series["projects"][: before[-1] + 1]) if v is not None), None)
+    now = next((v for v in reversed(series["projects"]) if v is not None), None)
+    return None if then is None or now is None else max(0, now - then)
 
 
 def behind_templates(upgrades):
@@ -75,7 +91,7 @@ def behind_templates(upgrades):
     return {b: sum(1 for w in worst.values() if w == b) for b in ("patch", "minor", "floating")}
 
 
-def figures(timeline, upgrades, search, candidates, verdicts):
+def figures(timeline, upgrades, search, candidates, verdicts, health=None):
     ts = timeline["templates"]
     by_template = {}
     for u in upgrades:
@@ -101,6 +117,7 @@ def figures(timeline, upgrades, search, candidates, verdicts):
                 "health": round(t["health"]),
                 "earnedCents": t.get("earnedCents") or 0,
                 "fixedOn": t.get("fixedOn") or "",
+                "newSinceFix": new_since_fix(health, t["templateId"], t["fixedOn"]) if health and t.get("fixedOn") else None,
                 "upgrades": sorted({u.get("behind") or "" for u in by_template.get(t["templateId"], [])} - {""})
                 + (["major"] if any(u.get("major") for u in by_template.get(t["templateId"], [])) else []),
             }
@@ -155,6 +172,9 @@ def show_health(f, last, detail=False):
     for t in f["low"] if detail else f["low"][:10]:
         up = f"  upgrades pending: {', '.join(t['upgrades'])}" if t["upgrades"] else ""
         fixed = f"  fix pushed {t['fixedOn']}" if t.get("fixedOn") else ""
+        since = t.get("newSinceFix")
+        if fixed and since is not None:
+            fixed += f", {since} new since" + (" (too few to judge)" if since < FIX_TEST_DEPLOYS else " (didn't hold)")
         print(f"  {t['health']:>3}%  ${t['earnedCents'] / 100:>7.2f}/30d  {t['name']}{fixed}{up}")
     if not detail and len(f["low"]) > 10:
         print(f"  … {len(f['low']) - 10} more (--only health lists all)")
@@ -399,8 +419,9 @@ def main():
         "search": get("get", "/api/search"),
         "candidates": get("get", "/api/candidates"),
         "verdicts": get("get", "/api/analytics/verdicts"),
+        "health": get("get", "/api/analytics/template-health?days=45"),
     }
-    f = figures(data["timeline"], data["upgrades"], data["search"], data["candidates"], data["verdicts"])
+    f = figures(data["timeline"], data["upgrades"], data["search"], data["candidates"], data["verdicts"], data["health"])
     if section:
         # One section compares with the last full check and leaves it in place,
         # so the next routine still reports everything that moved since then.

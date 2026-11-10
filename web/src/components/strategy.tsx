@@ -5,6 +5,7 @@ import { cursor, Key, shareTop, Tip, tick } from "~/components/chart-kit";
 import { DOCKET, DocketCell, Fig, Section } from "~/components/page";
 import { ChartContainer } from "~/components/ui/chart";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead, useSort } from "~/components/ui/table";
+import { VerdictGuide } from "~/components/verdict-guide";
 import { kindLabel } from "~/components/what-to-publish";
 import { ageDays, DAY, earned30, EDGE_CODE, FAIR_CHANCE_DAYS, HEALTH_FLOOR, inUse, lifeOf, notTakenUp, paidCurve, publishedOn } from "~/lib/catalog";
 import { fmtDay, fmtNum, fmtUsd, fmtUsdTick, shortNames } from "~/lib/format";
@@ -523,10 +524,16 @@ export function EarlyRead({ verdicts }: { verdicts: VerdictsResponse | null | un
         </DocketCell>
       </div>
       <p className="text-xs text-muted-foreground">
-        The verdict backtest, judged once on {fmtDay(c.judgedAt)} over the <Fig>{fmtNum(c.n)}</Fig> templates published since
-        tracking began that had reached day {c.horizon}: paid by day 21 as a predictor, {c.p1.result}. Keep shows on Templates
-        only while it passes. The groups are small, and day 90 is judged next.
+        Each template is read once, at day 21. This is the test of that reading, made once on {fmtDay(c.judgedAt)} over the{" "}
+        <Fig>{fmtNum(c.n)}</Fig> templates published since tracking began that had reached day {c.horizon}
+        {c.p1.result === "pass"
+          ? ": paid by day 21 passed, so those templates read keep on Templates."
+          : c.p1.result === "fail"
+            ? ": paid by day 21 failed, so no template reads keep."
+            : ": too few templates to say, so no template reads keep yet."}
+        {" "}The groups are small, and day 90 is tested next.
       </p>
+      <VerdictGuide verdicts={verdicts} label="What the Verdict column means" />
     </section>
   );
 }

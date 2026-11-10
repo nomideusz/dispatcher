@@ -4,6 +4,7 @@ import { useLocation } from "react-router";
 import { useUrlState } from "~/components/page";
 import { TemplateProjects } from "~/components/template-projects";
 import { Button } from "~/components/ui/button";
+import { VerdictGuide, verdictNote } from "~/components/verdict-guide";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead, TableSortHead } from "~/components/ui/table";
 import { fmtCents, fmtDay, fmtDayTime, fmtLongDay, fmtNum, fmtUsd, shortNames } from "~/lib/format";
 import { cn } from "~/lib/utils";
@@ -12,7 +13,6 @@ import {
   KINDS,
   type Origin,
   ORIGINS,
-  type PredictorResult,
   qualifiesForBonus,
   SUPPORT_BONUS_THRESHOLD,
   type TemplateVerdict,
@@ -221,11 +221,18 @@ export function TemplatesTable({
         />
       </div>
 
+      <VerdictGuide verdicts={verdicts} />
+
       <Table rows={rows.length} limit={50}>
         <TableHeader>
           <TableRow>
               {header("name", "Template", undefined, false)}
-              {header("verdict", "Verdict", verdictHint(verdicts), false)}
+              {header(
+                "verdict",
+                "Verdict",
+                "An early read, taken once at 21 days old: does it already show the template will earn? “What Verdict means” above the table spells out each state; point at one for that template's reading",
+                false,
+              )}
               {header(
                 "health",
                 "Health",
@@ -256,6 +263,7 @@ export function TemplatesTable({
                 scale={scale}
                 lifetimeTotal={lifetimeTotal}
                 byTemplateLoaded={byTemplate != null}
+                verdicts={verdicts}
               />
             ))}
           {rows.length === 0 && (
@@ -285,33 +293,12 @@ function newHint(dates: string[], tracked: string, templates: TimelineTemplate[]
     : hint;
 }
 
-/** What the states mean and the checkpoint they follow, with its numbers,
- * so a column full of "no signal" says why. */
-function verdictHint(v: VerdictsResponse | null | undefined) {
-  const states =
-    "keep: paid by day 21, while P1 passes. watch: 2+ services and 2+ active projects at day 21, while P2 passes. no signal: neither. too early: under 22 days old. pre-tracking: live before tracking began, or no reading at day 21";
-  if (v === undefined) return states;
-  const c = v?.checkpoint;
-  if (!c) return `No checkpoint stored yet, so nothing shows keep or watch. ${states}`;
-  const p = (name: string, r: PredictorResult) =>
-    `${name} ${r.result} (${r.truePositives} of ${r.trueN} rose, against ${r.falsePositives} of ${r.falseN} without it)`;
-  return `Judged at day ${c.horizon} on ${fmtDay(c.judgedAt)}, n = ${c.n}: ${p("P1", c.p1)}; ${p("P2", c.p2)}. ${states}`;
-}
-
-/** The state, with the frozen day-21 reading on hover. */
-function Verdict({ v }: { v: TemplateVerdict | undefined }) {
+/** The state; its meaning and the frozen day-21 reading on hover. */
+function Verdict({ v, all }: { v: TemplateVerdict | undefined; all: VerdictsResponse | null | undefined }) {
   if (!v) return <span className="text-muted-foreground">—</span>;
-  const title = v.reading
-    ? [
-        `Day 21 reading ${fmtDay(v.reading.at)}: ${fmtUsd(v.reading.earnings)} earned, ${v.reading.activeProjects} active`,
-        v.p1 != null ? `P1 ${v.p1 ? "true" : "false"} · P2 ${v.p2 ? "true" : "false"}` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ")
-    : undefined;
   return (
     <span
-      title={title}
+      title={verdictNote(v, all)}
       className={cn(
         "whitespace-nowrap",
         v.state === "keep" ? "font-medium" : v.state === "watch" ? "" : "text-xs text-muted-foreground",
@@ -331,6 +318,7 @@ function TemplateRow({
   scale,
   lifetimeTotal,
   byTemplateLoaded,
+  verdicts,
 }: {
   r: Row;
   /** The short name, told apart from its siblings; the full one is its title. */
@@ -339,6 +327,7 @@ function TemplateRow({
   lifetimeTotal: number;
   /** Payers come from the payout query; until it loads, "—" means unknown. */
   byTemplateLoaded: boolean;
+  verdicts: VerdictsResponse | null | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const panelId = `template-projects-${r.templateId}`;
@@ -392,7 +381,7 @@ function TemplateRow({
           </div>
         </TableRowHead>
         <TableCell>
-          <Verdict v={r.verdict} />
+          <Verdict v={r.verdict} all={verdicts} />
         </TableCell>
         <TableCell numeric>
           <Health r={r} />

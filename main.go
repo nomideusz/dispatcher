@@ -34,6 +34,7 @@ func main() {
 	mux.Handle("GET /api/analytics/templates", auth(handleTemplateAnalytics(db)))
 	mux.Handle("GET /api/analytics/templates/{template}/projects", auth(handleTemplateProjects(db)))
 	mux.Handle("GET /api/analytics/timeline", auth(handleTimeline(db)))
+	mux.Handle("GET /api/analytics/template-health", auth(handleTemplateHealth(db)))
 	mux.Handle("GET /api/analytics/verdicts", auth(handleVerdicts(db)))
 	mux.Handle("POST /api/analytics/refresh", auth(handleRefreshAnalytics(db)))
 	mux.Handle("GET /api/upgrades", auth(handleUpgrades(db)))

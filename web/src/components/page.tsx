@@ -91,6 +91,13 @@ export function Fig({ children }: { children: ReactNode }) {
   return <span className="tabular-nums">{children}</span>;
 }
 
+/** The #target useHashFollow last brought into view. A jump is made once:
+ * useUrlState drops a followed hash from the URL, because the router's
+ * ScrollRestoration scrolls to the hash on every navigation that carries
+ * one, preventScrollReset or not, and a sort would yank the page back to
+ * the row each time. */
+let followed = "";
+
 /** Bring the URL's #target into view once the page has drawn it: the rows
  * and sections that links point at exist only after the data loads. A row
  * also takes the held mark (data-marked, see app.css) and focus, so a screen
@@ -112,14 +119,20 @@ export function useHashFollow(ready: boolean) {
         el.focus({ preventScroll: true });
       }
       el.scrollIntoView({ block: row ? "center" : "start" });
+      followed = hash;
     });
-    return () => cancelAnimationFrame(frame);
+    // Leaving the page forgets the jump, so the same link works again.
+    return () => {
+      cancelAnimationFrame(frame);
+      followed = "";
+    };
   }, [ready, hash]);
 }
 
 /** Query params as page state that survives a reload and a shared link.
- * `set` patches several at once (null deletes) and keeps the #hash, which
- * a plain setSearchParams would drop. */
+ * `set` patches several at once (null deletes). It keeps a #hash that is
+ * still to be followed, which a plain setSearchParams would drop, and
+ * drops one already followed (see `followed`). */
 export function useUrlState(): [URLSearchParams, (patch: Record<string, string | null>) => void] {
   const location = useLocation();
   const navigate = useNavigate();
@@ -133,7 +146,8 @@ export function useUrlState(): [URLSearchParams, (patch: Record<string, string |
     }
     const search = next.toString();
     if (search === window.location.search.slice(1)) return;
-    navigate({ search: search ? `?${search}` : "", hash: window.location.hash }, { replace: true, preventScrollReset: true });
+    const hash = window.location.hash;
+    navigate({ search: search ? `?${search}` : "", hash: hash === followed ? "" : hash }, { replace: true, preventScrollReset: true });
   };
   return [params, set];
 }

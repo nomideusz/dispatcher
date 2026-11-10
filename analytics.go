@@ -307,6 +307,11 @@ type projectPoint struct {
 	// Kickback is the lifetime payout in dollars as the template list
 	// reported it at the sample.
 	Kickback float64 `json:"kickback"`
+	// Deployments is templateMetrics.totalDeployments: every deploy, redeploys
+	// into existing projects included, so a rise without new projects is
+	// deployers redeploying (a push to the template's repo does that). Nil on
+	// samples without metrics.
+	Deployments *int64 `json:"deployments"`
 }
 
 // projectChanges compares the newest sample in the window with the oldest,
@@ -350,7 +355,8 @@ func templateProjectPoints(ctx context.Context, db *gorm.DB, templateID string, 
 	points := []projectPoint{}
 	err := db.WithContext(ctx).Raw(`
 		SELECT sampled_at, projects, recent_projects, active_projects, active_deployments AS running,
-		       template_health AS health, COALESCE(total_payout, 0) AS kickback
+		       template_health AS health, COALESCE(total_payout, 0) AS kickback,
+		       total_deployments AS deployments
 		FROM template_snapshots
 		WHERE template_id = ? AND sampled_at >= ? AND status = 'PUBLISHED'
 		ORDER BY sampled_at`, templateID, since).Scan(&points).Error

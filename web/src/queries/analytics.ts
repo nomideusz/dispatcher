@@ -136,6 +136,9 @@ export interface ProjectPoint {
   health: number | null;
   /** Lifetime kickback in dollars as of the sample. */
   kickback: number;
+  /** Every deploy so far, redeploys into existing projects included; null on
+   * a sample without metrics. */
+  deployments: number | null;
 }
 
 export interface TemplateProjects {

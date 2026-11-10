@@ -160,6 +160,9 @@ func TestTemplateProjectPointsSkipsImportedRowsAndOtherTemplates(t *testing.T) {
 	if points[0].Running != nil || c.Running == nil || c.Running.Current != 7 || c.Running.Previous != nil {
 		t.Fatalf("running = %+v", c.Running)
 	}
+	if points[0].Deployments != nil || points[1].Deployments == nil || *points[1].Deployments != 40 {
+		t.Fatalf("deployments = %+v", points)
+	}
 	if points[0].Health != nil || points[1].Health == nil || *points[1].Health != 82.5 || points[1].Kickback != 3.25 {
 		t.Fatalf("health and kickback = %+v", points)
 	}

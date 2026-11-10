@@ -242,7 +242,7 @@ export function TemplatesTable({
                 Last {dates.length}d
               </TableHead>
               {header("newProjects", "New", newHint(dates, trackedSince.slice(0, 10), templates))}
-              {header("projects", "Projects", "Projects made from it that still exist: deleting one lowers this, while New keeps counting it")}
+              {header("projects", "Projects", "Projects made from it, by Railway's count. A stopped project stays in it, but now and then Railway takes one out, so it can dip; New keeps counting those")}
               {header("activeProjects", "Active", "Projects live today")}
               {header("running", "Running", "Service instances up now")}
               {header("earnedCents", `Earned ${dates.length}d`, `Kickback in the last ${dates.length} days`)}

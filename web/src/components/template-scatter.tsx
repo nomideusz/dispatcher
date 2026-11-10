@@ -222,7 +222,7 @@ function DotTip({ active, payload }: { active?: boolean; payload?: { payload: Do
     ["Paying, 30 days", d.payers != null ? fmtNum(d.payers) : "—"],
     ["Running instances", d.running != null ? fmtNum(d.running) : "—"],
     ["Active projects", fmtNum(d.activeProjects)],
-    ["Projects, all time", fmtNum(d.projects)],
+    ["Projects", fmtNum(d.projects)],
     ["Services", fmtNum(d.services)],
   ];
   return (

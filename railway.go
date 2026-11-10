@@ -269,6 +269,8 @@ type workspaceTemplate struct {
 	TotalPayout float64 `json:"totalPayout"`
 	// Projects, RecentProjects and ActiveProjects count Railway projects
 	// deployed from the template (all time, last 90 days, still running).
+	// Projects is not strictly cumulative: Railway now and then takes a
+	// project out of it, so it can fall by one and rise again.
 	// These are the counts Railway shows for a template; templateMetrics'
 	// totalDeployments/activeDeployments run roughly 1.5–3× higher (they
 	// count something else — deploy events or services) and must not be

@@ -87,7 +87,9 @@ funnel card explains them in place. Checked against live data:
   "Deployments"): every deploy, the author's own tests and redeploys into
   existing projects included. Only goes up.
 - **Projects** (`Template.projects`, the public page's "Total deploys"):
-  projects other users created from the template, all time.
+  projects other users created from the template. Close to all time: a
+  stopped project stays in it, but Railway now and then takes one out, so
+  the count can dip.
 - **Active projects** (`Template.activeProjects`): those projects still live.
 - **Running** (`templateMetrics.activeDeployments`, the metrics page's
   "Active"): running service instances, not projects, so a four-service

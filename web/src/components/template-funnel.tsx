@@ -38,14 +38,14 @@ export function TemplateFunnel({
       value: projects,
       color: "var(--chart-3)",
       of: pct(projects, deployments) + " of deployments",
-      text: "Projects other people created from your templates, all time. Railway's template page calls this “Total deploys”.",
+      text: "Projects other people created from your templates, by Railway's count. Close to all time: now and then Railway takes one out, so it can dip. Railway's template page calls this “Total deploys”.",
     },
     {
       label: "Active projects",
       value: active,
       color: "var(--chart-3)",
       of: pct(active, projects) + " of projects",
-      text: "Those projects still live today. A deleted project leaves this count but stays in Projects.",
+      text: "Those projects still live today. A project that stops leaves this count but stays in Projects.",
     },
     {
       label: "Paying",

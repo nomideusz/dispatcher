@@ -36,14 +36,17 @@ const METRICS = [
   { key: "running", label: "Running instances", note: "services up, what earns" },
   { key: "activeProjects", label: "Active projects" },
   { key: "recentProjects", label: "Recent projects", note: "made in the 90 days before each day" },
-  { key: "projects", label: "Total projects" },
+  { key: "projects", label: "Projects", note: "Railway's count; it dips when Railway takes one out" },
 ] as const;
 
 type MetricKey = (typeof METRICS)[number]["key"];
 
-/** A template's use over time, as small multiples: total projects is
- * cumulative and dwarfs the others, so one shared y-scale would flatten
- * them into the floor. Running instances lead: they are what earns. Each metric gets its own panel and scale;
+/** A template's use over time, as small multiples: projects is close to
+ * all-time and dwarfs the others, so one shared y-scale would flatten them
+ * into the floor. It is Railway's count, not ours, and not strictly
+ * cumulative: a stopped project stays in it, but now and then Railway takes
+ * one out (19 of 139 templates had dipped by 2026-11-10), so a step down is
+ * real data. Running instances lead: they are what earns. Each metric gets its own panel and scale;
  * the crosshair is synced so the panels still read as one moment in time.
  * Ported from upstream ThallesP/dispatcher#12, reading our template-list
  * project counts rather than the inflated templateMetrics deployments. */

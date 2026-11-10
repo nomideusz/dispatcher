@@ -297,7 +297,7 @@ export function Trend({ data, model }: { data: TimelineResponse; model: Strategy
               content={(p) => (
                 <Tip
                   {...p}
-                  payload={p.payload?.map((x) => ({ ...x, color: batches[Number(String(x.dataKey).slice(1))]?.color }))}
+                  swatch="fill"
                   title={weekTitle}
                   format={fmtUsd}
                   footer={(l) => {
@@ -400,6 +400,7 @@ export function Trend({ data, model }: { data: TimelineResponse; model: Strategy
               content={(p) => (
                 <Tip
                   {...p}
+                  swatch="fill"
                   title={weekTitle}
                   format={fmtNum}
                   footer={(l) => {
@@ -410,7 +411,7 @@ export function Trend({ data, model }: { data: TimelineResponse; model: Strategy
               )}
             />
             <Area name="Paid before" type="stepAfter" dataKey="repeat" stackId="p" stroke="var(--card)" strokeWidth={1} fill="var(--chart-1)" fillOpacity={1} isAnimationActive={false} />
-            <Area name="First invoice" type="stepAfter" dataKey="firstInvoice" stackId="p" stroke="var(--card)" strokeWidth={1} fill="var(--chart-other)" fillOpacity={1} isAnimationActive={false} />
+            <Area name="On a first invoice" type="stepAfter" dataKey="firstInvoice" stackId="p" stroke="var(--card)" strokeWidth={1} fill="var(--chart-other)" fillOpacity={1} isAnimationActive={false} />
           </AreaChart>
         </Panel>
       </div>

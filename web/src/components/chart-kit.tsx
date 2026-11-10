@@ -20,7 +20,7 @@ export const cursor = { stroke: "var(--border)", fill: "var(--foreground)", fill
 export const perDay = (v: number) => (v >= 1 ? fmtUsd(v) : `${Math.round(v * 100)}¢`);
 
 export type Names = ReturnType<typeof shortNames>;
-type TipItem = { name?: string | number; value?: unknown; color?: string; dataKey?: unknown };
+type TipItem = { name?: string | number; value?: unknown; color?: string; fill?: string; dataKey?: unknown };
 
 /** One tooltip for every chart: the day (or day count), each series
  * formatted by the chart that owns it, and optionally what earned. */
@@ -32,6 +32,7 @@ export function Tip({
   format,
   extra,
   footer,
+  swatch,
 }: {
   active?: boolean;
   payload?: readonly TipItem[];
@@ -40,6 +41,10 @@ export function Tip({
   format: (v: number, key: string) => string;
   extra?: (label: string | number) => [string, number][];
   footer?: (label: string | number) => ReactNode;
+  /** Recharts reports an area by its stroke. Stacked areas are outlined in
+   * the card colour to part the layers, so they pass "fill" to get the
+   * colour the layer is drawn in. */
+  swatch?: "fill";
 }) {
   if (!active || !payload?.length || label == null) return null;
   const top = extra?.(label) ?? [];
@@ -52,7 +57,7 @@ export function Tip({
         .map((p) => (
           <div key={String(p.dataKey)} className="flex items-center justify-between gap-4">
             <span className="flex items-center gap-1.5 text-muted-foreground">
-              <span className="size-2 rounded-[2px]" style={{ background: p.color }} />
+              <span className="size-2 rounded-[2px]" style={{ background: swatch === "fill" ? (p.fill ?? p.color) : p.color }} />
               {p.name}
             </span>
             <span className="tabular-nums">{format(p.value as number, String(p.dataKey))}</span>

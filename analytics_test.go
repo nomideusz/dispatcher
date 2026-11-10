@@ -137,7 +137,8 @@ func TestTemplateProjectPointsSkipsImportedRowsAndOtherTemplates(t *testing.T) {
 		{SampledAt: at(1), TemplateID: "a", Status: "IMPORTED"}, // backfill zeros
 		{SampledAt: at(1), TemplateID: "b", Status: "PUBLISHED", Projects: 99},
 		{SampledAt: at(2), TemplateID: "a", Status: "PUBLISHED", Projects: 15, RecentProjects: 9, ActiveProjects: 4,
-			TotalDeployments: pointerTo(int64(40)), ActiveDeployments: pointerTo(int64(7))},
+			TotalDeployments: pointerTo(int64(40)), ActiveDeployments: pointerTo(int64(7)),
+			TemplateHealth: pointerTo(82.5), TotalPayout: 3.25},
 	}
 	if err := gorm.G[TemplateSnapshot](db).CreateInBatches(t.Context(), &rows, 100); err != nil {
 		t.Fatal(err)
@@ -158,6 +159,9 @@ func TestTemplateProjectPointsSkipsImportedRowsAndOtherTemplates(t *testing.T) {
 	// to compare it with.
 	if points[0].Running != nil || c.Running == nil || c.Running.Current != 7 || c.Running.Previous != nil {
 		t.Fatalf("running = %+v", c.Running)
+	}
+	if points[0].Health != nil || points[1].Health == nil || *points[1].Health != 82.5 || points[1].Kickback != 3.25 {
+		t.Fatalf("health and kickback = %+v", points)
 	}
 	if buildProjectChanges(nil) != nil {
 		t.Fatal("empty window should have no change")

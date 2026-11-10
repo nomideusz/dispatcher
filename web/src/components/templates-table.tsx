@@ -6,6 +6,7 @@ import { TemplateProjects } from "~/components/template-projects";
 import { Button } from "~/components/ui/button";
 import { VerdictGuide, verdictNote } from "~/components/verdict-guide";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead, TableSortHead } from "~/components/ui/table";
+import { DAY, daysToPay } from "~/lib/catalog";
 import { fmtCents, fmtDay, fmtDayTime, fmtLongDay, fmtNum, fmtUsd, shortNames } from "~/lib/format";
 import { cn } from "~/lib/utils";
 import {
@@ -343,7 +344,7 @@ function TemplateRow({
               type="button"
               aria-expanded={open}
               aria-controls={panelId}
-              aria-label={`${open ? "Hide" : "Show"} projects over time for ${r.name}`}
+              aria-label={`${open ? "Hide" : "Show"} history for ${r.name}`}
               onClick={() => setOpen((o) => !o)}
               className="-mt-0.5 -ml-1.5 flex size-6 shrink-0 cursor-pointer items-center justify-center text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             >
@@ -426,17 +427,45 @@ function TemplateRow({
               while the wide table is scrolled sideways. */}
           <TableCell colSpan={COLUMNS} className="p-0">
             <div className="sticky left-0 w-[calc(100vw-4rem)] max-w-[86rem] space-y-3 px-5 pt-2 pb-6">
-              {r.firstPaidAt && (
-                <p className="text-xs text-muted-foreground">
-                  First paid <span className="tabular-nums">{fmtDayTime(r.firstPaidAt)}</span> UTC
-                </p>
-              )}
+              <Facts r={r} />
               <TemplateProjects templateId={r.templateId} />
             </div>
           </TableCell>
         </TableRow>
       )}
     </>
+  );
+}
+
+/** What the columns can't hold: how old it is, how long the first kickback
+ * took, and who pays now. */
+function Facts({ r }: { r: Row }) {
+  const p = r.payers;
+  const age = r.publishedAt ? Math.floor((Date.now() - Date.parse(r.publishedAt)) / DAY) : null;
+  const paidOn = daysToPay(r);
+  const num = (n: number) => <span className="tabular-nums text-foreground">{fmtNum(n)}</span>;
+  return (
+    <p className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
+      {age != null && <span>{num(age)} days old</span>}
+      {r.firstPaidAt ? (
+        <span>
+          First paid <span className="tabular-nums text-foreground">{fmtDayTime(r.firstPaidAt)}</span> UTC
+          {paidOn != null && <>, day {num(paidOn)}</>}
+        </span>
+      ) : (
+        <span>Not paid yet</span>
+      )}
+      {p && p.new + p.returning + p.lapsed > 0 && (
+        <span>
+          Payers: {num(p.new)} on a first invoice, {num(p.returning)} returning, {num(p.lapsed)} lapsed
+        </span>
+      )}
+      {p && p.payers > 0 && (
+        <span>
+          <span className="tabular-nums text-foreground">{fmtCents(Math.round(p.payerCents / p.payers))}</span> a payer in the last 30 days
+        </span>
+      )}
+    </p>
   );
 }
 

@@ -132,6 +132,10 @@ export interface ProjectPoint {
   activeProjects: number;
   /** Running instances; null on samples taken before metrics were collected. */
   running: number | null;
+  /** Deploy health, 0–100; null while unscored or on a sample without metrics. */
+  health: number | null;
+  /** Lifetime kickback in dollars as of the sample. */
+  kickback: number;
 }
 
 export interface TemplateProjects {

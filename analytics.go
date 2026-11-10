@@ -301,6 +301,12 @@ type projectPoint struct {
 	// Running is templateMetrics.activeDeployments, nil on samples taken
 	// before metrics were collected.
 	Running *int64 `json:"running"`
+	// Health is templateMetrics.templateHealth, the figure the catalog table
+	// shows; nil on samples without metrics.
+	Health *float64 `json:"health"`
+	// Kickback is the lifetime payout in dollars as the template list
+	// reported it at the sample.
+	Kickback float64 `json:"kickback"`
 }
 
 // projectChanges compares the newest sample in the window with the oldest,
@@ -322,7 +328,8 @@ type templateProjectsResponse struct {
 }
 
 // handleTemplateProjects returns one template's total, recent (last 90 days)
-// and active project counts over time; ?days=N bounds the window (default 30).
+// and active project counts over time, with its running instances, health
+// and lifetime kickback at each sample; ?days=N bounds the window (default 30).
 func handleTemplateProjects(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		days := windowDays(r, db, time.Now())
@@ -342,7 +349,8 @@ func handleTemplateProjects(db *gorm.DB) http.HandlerFunc {
 func templateProjectPoints(ctx context.Context, db *gorm.DB, templateID string, since time.Time) ([]projectPoint, error) {
 	points := []projectPoint{}
 	err := db.WithContext(ctx).Raw(`
-		SELECT sampled_at, projects, recent_projects, active_projects, active_deployments AS running
+		SELECT sampled_at, projects, recent_projects, active_projects, active_deployments AS running,
+		       template_health AS health, COALESCE(total_payout, 0) AS kickback
 		FROM template_snapshots
 		WHERE template_id = ? AND sampled_at >= ? AND status = 'PUBLISHED'
 		ORDER BY sampled_at`, templateID, since).Scan(&points).Error

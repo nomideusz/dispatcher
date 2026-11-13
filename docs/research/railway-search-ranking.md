@@ -76,6 +76,7 @@ Each result is classed by how its name and slug match the query. Only 8.5% of re
   - Every earlier slug win had the word in the name: `edge` is "Microsoft Edge", `mint` is "Linux Mint", `ssh` is "SSH Bastion".
   - Outside the exact-name tier it ranks #1 in 96% of cases for tier-2 names, and it beats 352 of 403 same-tier rivals in tier 1.
   - **It doesn't beat a tier-2 rival at exactly 100.** On 9 Nov our `ubuntu-terminal` (name "Linux Terminal | Ubuntu Web Shell…", health 96, 139 active) fell to #2 for "ubuntu terminal" under onepush's "Ubuntu Web Terminal" (published 29 Oct, tier 2, health 100, 8 active). The same day `linux-desktop-kde` at 50 still held #1 for "linux desktop kde" over two tier-2 rivals at 96. So an exact slug on a non-exact name sits between tier 0 and tier 2: above 70–99 and lower rivals, below a tier-2 listing at 100.
+  - **Exactly 100 also lifts tier 2 over tier 1.** On 13 Nov Linux Terminal (name starts with "Linux Terminal", tier 1, health 92, 147 active) was #2 for "linux terminal" under "Kali Linux Web Terminal" (tier 2, health 100, 1 active). The exact-name tier still holds against 100: for "outline", three tier-0 listings at 84, unscored and 50 rank above a tier-1 "Outline Knowledge Base" at 100. So below tier 0, the 100 band can beat a better text match.
   - Examples:
     - Rakit's `edge` (named "Microsoft Edge") is #1 for "edge".
     - Our `ubuntu-terminal` and `linux-desktop-kde` are #1 for those phrases at 96% and 33% health.

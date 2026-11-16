@@ -7,7 +7,7 @@ import { ChartContainer } from "~/components/ui/chart";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableRow, TableRowHead, useSort } from "~/components/ui/table";
 import { VerdictGuide } from "~/components/verdict-guide";
 import { kindLabel } from "~/components/what-to-publish";
-import { ageDays, DAY, earned30, EDGE_CODE, FAIR_CHANCE_DAYS, HEALTH_FLOOR, inUse, lifeOf, notTakenUp, paidCurve, publishedOn } from "~/lib/catalog";
+import { ageDays, DAY, daysToPay, earned30, EDGE_CODE, FAIR_CHANCE_DAYS, HEALTH_FLOOR, inUse, lifeOf, notTakenUp, paidCurve, publishedOn } from "~/lib/catalog";
 import { fmtDay, fmtNum, fmtUsd, fmtUsdTick, shortNames } from "~/lib/format";
 import { cn } from "~/lib/utils";
 import { ORIGINS, type TimelineResponse, type TimelineTemplate, type VerdictsResponse } from "~/queries/analytics";
@@ -432,7 +432,123 @@ export function Trend({ data, model }: { data: TimelineResponse; model: Strategy
           </span>
         ))}
       </p>
+
+      <SinceStart data={data} />
     </Section>
+  );
+}
+
+/** Everything so far, day by day from the first template: the kickback in
+ * all, the catalog that earned it, the projects deployed from it, and what
+ * each template has brought on average. Four charts, not one with two
+ * scales: dollars and counts don't share an axis. */
+function SinceStart({ data }: { data: TimelineResponse }) {
+  const { points, templates } = data;
+  const paidOn = templates.flatMap((t) => (t.firstPaidAt ? [t.firstPaidAt.slice(0, 10)] : [])).sort();
+  // Both totals only grow, so a day without a reading (a collection gap)
+  // carries the last one instead of breaking the line.
+  let kickback: number | null = null;
+  let projectsSoFar: number | null = null;
+  let paid = 0;
+  const days = points.map((p) => {
+    if (p.lifetimeCents != null) kickback = p.lifetimeCents / 100;
+    if (p.projects != null) projectsSoFar = p.projects;
+    while (paid < paidOn.length && paidOn[paid] <= p.date) paid++;
+    return {
+      day: p.date,
+      kickback,
+      published: p.published,
+      paid,
+      projects: projectsSoFar,
+      perTemplate: kickback != null && p.published > 0 ? kickback / p.published : null,
+    };
+  });
+  if (days.length === 0) return null;
+  const last = days[days.length - 1];
+  const monthAgoDay = iso(utc(last.day) - 30 * DAY);
+  const monthAgo = [...days].reverse().find((d) => d.day <= monthAgoDay) ?? days[0];
+  const firstProjects = days.find((d) => d.projects != null);
+  const edge = templates.find((t) => t.code === EDGE_CODE);
+  const kickbackNow = last.kickback ?? 0;
+  const projects = last.projects ?? 0;
+  const axis = { dataKey: "day", ...tick, tickMargin: 6, minTickGap: 36, tickFormatter: fmtDay };
+  const sync = { data: days, syncId: "since-start", margin: { top: 6, right: 4, left: 0, bottom: 0 } };
+  const dayTitle = (l: string | number) => fmtDay(String(l));
+  const delta = (now: number | null, then: number | null, fmt: (v: number) => string) =>
+    now != null && then != null ? (
+      <>
+        <Fig>{fmt(now - then)}</Fig> in 30 days
+      </>
+    ) : undefined;
+
+  return (
+    <section className="space-y-2 pt-4">
+      <h3 className="text-base font-semibold">Since the first template</h3>
+      <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2 xl:grid-cols-4">
+        <Panel title="Kickback in all" figure={fmtUsd(kickbackNow)} note={delta(last.kickback, monthAgo.kickback, signedUsd)}>
+          <AreaChart {...sync} aria-label="Kickback earned in all, day by day since the first template">
+            <CartesianGrid vertical={false} />
+            <XAxis {...axis} />
+            <YAxis width={44} {...tick} tickCount={3} tickFormatter={fmtUsdTick} />
+            <Tooltip isAnimationActive={false} cursor={cursor} content={(p) => <Tip {...p} swatch="fill" title={dayTitle} format={fmtUsd} />} />
+            <Area name="Kickback in all" type="stepAfter" dataKey="kickback" stroke="var(--chart-1)" strokeWidth={2} fill="var(--chart-1)" fillOpacity={0.15} isAnimationActive={false} />
+          </AreaChart>
+        </Panel>
+
+        <Panel
+          title="Templates"
+          keyItems={[
+            { label: "Published", color: "var(--chart-other)", line: true, value: fmtNum(last.published) },
+            { label: "Have ever paid", color: "var(--chart-1)", line: true, value: fmtNum(last.paid) },
+          ]}
+        >
+          <LineChart {...sync} aria-label="Templates published and templates that have ever paid, day by day">
+            <CartesianGrid vertical={false} />
+            <XAxis {...axis} />
+            <YAxis width={44} {...tick} tickCount={3} allowDecimals={false} />
+            <Tooltip isAnimationActive={false} cursor={cursor} content={(p) => <Tip {...p} title={dayTitle} format={fmtNum} />} />
+            <Line name="Published" type="stepAfter" dataKey="published" stroke="var(--chart-other)" strokeWidth={2} dot={false} isAnimationActive={false} />
+            <Line name="Have ever paid" type="stepAfter" dataKey="paid" stroke="var(--chart-1)" strokeWidth={2} dot={false} isAnimationActive={false} />
+          </LineChart>
+        </Panel>
+
+        <Panel title="Projects deployed" figure={fmtNum(projects)} note={delta(last.projects, monthAgo.projects, signedNum)}>
+          <LineChart {...sync} aria-label="Projects deployed from the templates in all, day by day since tracking began">
+            <CartesianGrid vertical={false} />
+            <XAxis {...axis} />
+            <YAxis width={44} {...tick} tickCount={3} allowDecimals={false} />
+            <Tooltip isAnimationActive={false} cursor={cursor} content={(p) => <Tip {...p} title={dayTitle} format={fmtNum} />} />
+            <Line name="Projects deployed" type="stepAfter" dataKey="projects" stroke="var(--chart-1)" strokeWidth={2} dot={false} isAnimationActive={false} />
+          </LineChart>
+        </Panel>
+
+        <Panel
+          title="Kickback per template"
+          figure={last.perTemplate == null ? "—" : fmtUsd(last.perTemplate)}
+          note={
+            projects > 0 ? (
+              <>
+                on average; <Fig>{fmtUsd(kickbackNow / projects)}</Fig> per project deployed
+              </>
+            ) : undefined
+          }
+        >
+          <LineChart {...sync} aria-label="Kickback in all divided by templates published, day by day">
+            <CartesianGrid vertical={false} />
+            <XAxis {...axis} />
+            <YAxis width={44} {...tick} tickCount={3} tickFormatter={fmtUsdTick} />
+            <Tooltip isAnimationActive={false} cursor={cursor} content={(p) => <Tip {...p} title={dayTitle} format={fmtUsd} />} />
+            <Line name="Per template" type="stepAfter" dataKey="perTemplate" stroke="var(--chart-1)" strokeWidth={2} dot={false} isAnimationActive={false} />
+          </LineChart>
+        </Panel>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Kickback in all is what Railway has credited the published templates since the first went up on {fmtDay(days[0].day)}, withdrawn or not.
+        {firstProjects && ` Projects start on ${fmtDay(firstProjects.day)}, when tracking began, at Railway's own count to that day.`}
+        {edge && projects > 0 && ` ${fmtNum(edge.projects)} of the ${fmtNum(projects)} are ${shortNames(templates.map((t) => t.name))(edge.name)}.`}
+        {" "}Per template rising means the catalog earns faster than it grows; falling means new templates are joining faster than they pay.
+      </p>
+    </section>
   );
 }
 
@@ -441,7 +557,14 @@ export function Trend({ data, model }: { data: TimelineResponse; model: Strategy
  * looking worst for being young. */
 export function Cohorts({ model }: { model: StrategyModel }) {
   const { batches, ageRows, drawn, checkpoint, atCheckpoint } = model;
-  const tooYoung = batches.filter((_, i) => !drawn[i]).map((b) => b.label);
+  // A batch too young to draw can still have paid (Evolution API on day 5),
+  // so say how many have, or the hidden line reads as nothing earned.
+  const tooYoung = batches
+    .filter((_, i) => !drawn[i])
+    .map((b) => {
+      const paid = b.templates.filter((t) => daysToPay(t) != null).length;
+      return `${b.label} (${fmtNum(paid)} of ${fmtNum(b.templates.length)} ${paid === 1 ? "has" : "have"} paid)`;
+    });
   return (
     <section className="min-w-0 space-y-2">
       <h3 className="text-base font-semibold">Do newer batches do better?</h3>

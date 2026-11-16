@@ -117,6 +117,7 @@ function RefreshButton() {
 const PAGES = [
   ["/", "Money"],
   ["/templates", "Templates"],
+  ["/health", "Health"],
   ["/upgrades", "Upgrades"],
   ["/patterns", "Patterns"],
   ["/candidates", "Candidates"],

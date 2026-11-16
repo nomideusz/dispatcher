@@ -3,7 +3,7 @@ import { Fig } from "~/components/page";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHead, useSort } from "~/components/ui/table";
 import { earned30, HEALTH_FLOOR } from "~/lib/catalog";
 import { fmtDay, fmtLongDay, fmtNum, fmtUsd, shortNames } from "~/lib/format";
-import { FIX_TEST_DEPLOYS, type HealthRead, onWatch, readHealth, WATCH_DAYS } from "~/lib/health";
+import { FIX_TEST_DEPLOYS, type HealthRead, onWatch, readHealth, SCORED_DEPLOYS, SLOW_FILL_DAYS, WATCH_DAYS } from "~/lib/health";
 import { cn } from "~/lib/utils";
 import type { HealthSeries, TimelineTemplate } from "~/queries/analytics";
 
@@ -28,12 +28,19 @@ function reading(r: HealthRead) {
   }
 }
 
+/** Days to fill the scored set: whole days, and past a year only that,
+ * since a stretch with one or no new project can't say more. */
+export const fmtFill = (days: number) => (days > 365 ? "> 1 yr" : days < 1 ? "< 1d" : `${fmtNum(Math.round(days))}d`);
+
+/** Opens a template in the Health page's detail section. */
+export const detailLink = (templateId: string) => ({ search: `?t=${encodeURIComponent(templateId)}`, hash: "#detail" });
+
 const SPARK_W = 96;
 const SPARK_H = 24;
 
 /** Health over the series on a fixed 0–100 scale, so rows compare: the
  * dashed line is the floor and the tick is the day a fix was pushed. */
-function Spark({ r }: { r: HealthRead }) {
+export function Spark({ r }: { r: HealthRead }) {
   const n = r.spark.length;
   if (n < 2) return null;
   const x = (i: number) => (i / (n - 1)) * SPARK_W;
@@ -75,13 +82,14 @@ export function HealthWatch({ templates, series }: { templates: TimelineTemplate
   });
   const { rows, head } = useSort(
     watched,
-    ({ t, r }, key: "name" | "health" | "change" | "newProjects" | "redeploys" | "fix" | "earned" | "running") =>
+    ({ t, r }, key: "name" | "health" | "change" | "newProjects" | "redeploys" | "fill" | "fix" | "earned" | "running") =>
       ({
         name: name(t.name),
         health: r.now,
         change: r.change,
         newProjects: r.newProjects,
         redeploys: r.redeploys,
+        fill: r.fillDays,
         fix: r.fix?.newSince,
         earned: earned30(t),
         running: t.running,
@@ -113,6 +121,7 @@ export function HealthWatch({ templates, series }: { templates: TimelineTemplate
             </TableHead>
             {head("newProjects", "New", { numeric: true, hint: `Projects made from it in the last ${WATCH_DAYS} days. Only these can show whether the current image deploys well` })}
             {head("redeploys", "Redeploys", { numeric: true, hint: `Deploys in the last ${WATCH_DAYS} days beyond the new projects: deployers redeploying what they already run, and our own canaries. Railway counts them about once a day` })}
+            {head("fill", `To ${SCORED_DEPLOYS}`, { numeric: true, hint: `Days to collect ${SCORED_DEPLOYS} new projects at the last ${WATCH_DAYS} days' pace. Health scores at most the ${SCORED_DEPLOYS} latest deploys. Within ${SLOW_FILL_DAYS} days all ${SCORED_DEPLOYS} count: health moves in steps of 4 as new deploys land, and a bad one ages out. Past that, fewer count, so it moves in odd steps and mostly on instances already running` })}
             {head("fix", "Since fix", { numeric: true, hint: `New projects since the day a fix was recorded. Under ${FIX_TEST_DEPLOYS}, the fix can't be judged: health scores the instances already running` })}
             {head("earned", "Earned 30d", { numeric: true })}
             {head("running", "Running", { numeric: true, hint: "Service instances up now" })}
@@ -123,7 +132,7 @@ export function HealthWatch({ templates, series }: { templates: TimelineTemplate
           {rows.map(({ t, r }) => (
             <TableRow key={t.templateId}>
               <TableRowHead>
-                <Link to={{ hash: `#t-${t.templateId}` }} className="underline decoration-current/40 underline-offset-3 hover:decoration-current">
+                <Link to={detailLink(t.templateId)} preventScrollReset className="underline decoration-current/40 underline-offset-3 hover:decoration-current">
                   {name(t.name)}
                 </Link>
               </TableRowHead>
@@ -136,6 +145,13 @@ export function HealthWatch({ templates, series }: { templates: TimelineTemplate
               </TableCell>
               <TableCell numeric className={cn(!r.newProjects && "text-muted-foreground")}>{r.newProjects == null ? "—" : fmtNum(r.newProjects)}</TableCell>
               <TableCell numeric className={cn(!r.redeploys && "text-muted-foreground")}>{r.redeploys == null ? "—" : fmtNum(r.redeploys)}</TableCell>
+              <TableCell
+                numeric
+                className={cn(r.fillDays == null && "text-muted-foreground")}
+                title={r.fillDays != null && r.fillDays > SLOW_FILL_DAYS ? `Fewer than ${SCORED_DEPLOYS} deploys are likely scored` : undefined}
+              >
+                {r.fillDays == null ? "—" : fmtFill(r.fillDays)}
+              </TableCell>
               <TableCell numeric className={cn(!r.fix && "text-muted-foreground")} title={r.fix?.healthThen != null ? `Fix pushed ${fmtLongDay(r.fix.on)}, at ${r.fix.healthThen.toFixed(0)}% health` : undefined}>
                 {r.fix ? (r.fix.newSince == null ? fmtDay(r.fix.on) : fmtNum(r.fix.newSince)) : "—"}
               </TableCell>

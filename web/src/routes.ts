@@ -4,6 +4,7 @@ export default [
   layout("routes/protected.tsx", [
     index("routes/analytics.tsx"),
     route("templates", "routes/templates.tsx"),
+    route("health", "routes/health.tsx"),
     route("upgrades", "routes/upgrades.tsx"),
     route("patterns", "routes/patterns.tsx"),
     route("candidates", "routes/candidates.tsx"),

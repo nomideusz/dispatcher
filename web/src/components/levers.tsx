@@ -144,8 +144,8 @@ export function Levers({
           results among listings with the same name.
         </>
       ),
-      to: "/templates#health",
-      go: "Health watch",
+      to: "/health",
+      go: "Health",
     },
     {
       key: "upgrades",

@@ -91,6 +91,8 @@ func TestOurRepo(t *testing.T) {
 		`{"services":{"a":{"source":{"image":"postgres:17"}},"b":{"source":{"repo":"https://github.com/NomiDeusz/dino.git"}}}}`: "github.com/NomiDeusz/dino.git",
 		`{"services":{"a":{"source":{"repo":"https://github.com/someone/edge"}}}}`:                                              "",
 		`{"services":{"a":{"source":{"image":"ghcr.io/two-workspaces/laya:671e888"}}}}`:                                         "github.com/two-workspaces/laya",
+		`{"services":{"a":{"source":{"repo":"two-workspaces/obsidian"}}}}`:                                                      "github.com/two-workspaces/obsidian",
+		`{"services":{"a":{"source":{"repo":"someone/two-workspaces"}}}}`:                                                       "",
 		`"not an object"`: "",
 		`null`:            "",
 	} {

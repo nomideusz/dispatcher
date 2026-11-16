@@ -135,6 +135,11 @@ func fetchMarket(ctx context.Context) ([]MarketTemplate, error) {
 // ourRepoRe matches GitHub repos of the accounts our templates build from.
 var ourRepoRe = regexp.MustCompile(`(?i)github\.com/(two-workspaces|nomideusz)/[\w.-]+`)
 
+// bareRepoRe matches a repo source written as "owner/repo", the form a
+// template gets when its creator picks the repo in Railway's GitHub picker
+// rather than pasting a URL.
+var bareRepoRe = regexp.MustCompile(`^[\w.-]+/[\w.-]+$`)
+
 // ourRepo returns the first repo of ours a template's services build from.
 // A config that doesn't parse has none: one odd template must not fail the
 // whole read.
@@ -151,7 +156,11 @@ func ourRepo(config json.RawMessage) string {
 		return ""
 	}
 	for _, s := range c.Services {
-		if m := ourRepoRe.FindString(s.Source.Repo + " " + ourImageRepo(s.Source.Image)); m != "" {
+		repo := strings.TrimSpace(s.Source.Repo)
+		if bareRepoRe.MatchString(repo) {
+			repo = "github.com/" + repo
+		}
+		if m := ourRepoRe.FindString(repo + " " + ourImageRepo(s.Source.Image)); m != "" {
 			return m
 		}
 	}

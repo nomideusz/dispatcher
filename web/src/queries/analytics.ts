@@ -274,6 +274,13 @@ export interface HealthSeries {
     projects: (number | null)[];
     /** Every deploy so far, redeploys included; Railway updates it about once a day. */
     deployments: (number | null)[];
+    /** Each day's lowest scored health: the floor of a score that swings. */
+    low: (number | null)[];
+    /** The day's hour-to-hour health moves, summed by whether a new project
+     * arrived in the hour: a fall with one is new deploys failing, a fall
+     * without one is instances already running going down. */
+    changeWithNew: (number | null)[];
+    changeWithout: (number | null)[];
   }[];
 }
 

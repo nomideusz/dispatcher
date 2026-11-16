@@ -20,7 +20,9 @@ function reading(r: HealthRead) {
         ? `Fix pushed ${fmtDay(r.fix!.on)} and still under ${HEALTH_FLOOR}%`
         : `Fix pushed ${fmtDay(r.fix!.on)} didn't hold: ${plural(since, "new project")} since, still under ${HEALTH_FLOOR}%`;
     case "runningFail":
-      return `Falling with ${plural(r.newProjects ?? 0, "new project")}: instances already running are failing`;
+      return (r.newProjects ?? 0) <= 2
+        ? `Falling with ${plural(r.newProjects ?? 0, "new project")}: instances already running are failing`
+        : `Fell in hours with no new project, ${plural(r.newProjects ?? 0, "new project")} around it: instances already running are failing`;
     case "newFail":
       return `Falling as ${plural(r.newProjects ?? 0, "new project")} landed: canary a fresh deploy`;
     default:

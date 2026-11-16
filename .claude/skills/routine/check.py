@@ -92,10 +92,12 @@ def new_since_fix(health, template_id, fixed_on):
 def pace(health, template_id, now_health):
     """The stretch's figures for one template, as the Health page computes
     them: health change, new projects and the days to collect 25 at that
-    pace (inf with none). Nones when the series doesn't hold it."""
+    pace (inf with none), and the stretch's hour-to-hour moves split by
+    whether a new project arrived in the hour. Nones when the series doesn't
+    hold it."""
     series = next((t for t in health["templates"] if t["templateId"] == template_id), None) if health else None
     if not series:
-        return {"change": None, "newProjects": None, "fill": None}
+        return {"change": None, "newProjects": None, "fill": None, "changeWithNew": 0, "changeWithout": 0}
     cut = max(0, len(health["days"]) - 1 - WATCH_DAYS)
 
     def first(vs):
@@ -108,20 +110,34 @@ def pace(health, template_id, now_health):
     a, b = first(series["projects"]), last(series["projects"])
     new = None if a is None or b is None else max(0, b - a)
     fill = None if new is None else (float("inf") if new == 0 else SCORED_DEPLOYS * WATCH_DAYS / new)
+
+    def moved(key):
+        # The days after the stretch's first, which the change starts from.
+        return round(sum(v or 0 for v in (series.get(key) or [])[cut + 1:]))
+
     return {
         "change": None if then is None or now_health is None else round(now_health - then),
         "newProjects": new,
         "fill": fill,
+        "changeWithNew": moved("changeWithNew"),
+        "changeWithout": moved("changeWithout"),
     }
 
 
-def health_before(health, template_id, day):
-    """Health on the last sampled day before `day`, or None."""
+def health_floor_at(health, template_id, day):
+    """The lowest health on `day` and the sampled day before it, or None.
+    A fix is recorded by day, not hour, and a score that swings (one
+    instance crash-looping) has a last reading that may be a high: Laya read
+    67 the day before its 15 Nov fix and 50 hours before the push. Only a
+    reading under this floor is a fall since the fix."""
     series = next((t for t in health["templates"] if t["templateId"] == template_id), None) if health else None
-    before = [i for i, d in enumerate(health["days"]) if d < day] if health else []
-    if not series or not before:
+    if not series:
         return None
-    return next((v for v in reversed(series["health"][: before[-1] + 1]) if v is not None), None)
+    days = health["days"]
+    before = [i for i, d in enumerate(days) if d < day]
+    picks = ([before[-1]] if before else []) + [i for i, d in enumerate(days) if d == day]
+    lows = [v for i in picks for v in [(series.get("low") or series["health"])[i]] if v is not None]
+    return min(lows) if lows else None
 
 
 def js_round(x):
@@ -142,8 +158,15 @@ def fast_reading(t):
     if new >= SCORED_DEPLOYS:
         return (f"{new} new replaced all {SCORED_DEPLOYS} and {bad} of the newest are down: "
                 f"about 1 new deploy in {js_round(SCORED_DEPLOYS / max(bad, 1))} fails, read the failed ones")
-    if t["change"] is not None and t["change"] < 0 and new > FEW_DEPLOYS:
-        return f"lost {-t['change']} as {new} new landed: new deploys failing, canary a fresh deploy now"
+    # A fall is the new deploys only when it came in the hours they arrived:
+    # Pterodactyl lost 12 in one hour with none (15 Nov) while 21 came up
+    # healthy around it.
+    if t.get("changeWithNew", 0) < 0:
+        return (f"lost {-t['changeWithNew']} in the hours new projects landed ({new} new in {WATCH_DAYS}d): "
+                f"new deploys failing, canary a fresh deploy now")
+    if t["change"] is not None and t["change"] < 0 and t.get("changeWithout", 0) < 0:
+        return (f"lost {-t['changeWithout']} in hours with no new project: instances already running went down, "
+                f"not new deploys; {bad} of {SCORED_DEPLOYS} down, ages out within ~{fmt_fill(t['fill'])} if new deploys stay healthy")
     return f"{bad} of {SCORED_DEPLOYS} down, ages out within ~{fmt_fill(t['fill'])} if new deploys come up healthy"
 
 
@@ -201,7 +224,7 @@ def figures(timeline, upgrades, search, candidates, verdicts, health=None):
                 "earnedCents": t.get("earnedCents") or 0,
                 "fixedOn": t.get("fixedOn") or "",
                 "newSinceFix": new_since_fix(health, t["templateId"], t["fixedOn"]) if health and t.get("fixedOn") else None,
-                "healthAtFix": health_before(health, t["templateId"], t["fixedOn"]) if t.get("fixedOn") else None,
+                "floorAtFix": health_floor_at(health, t["templateId"], t["fixedOn"]) if t.get("fixedOn") else None,
                 **paces[t["templateId"]],
                 "upgrades": sorted({u.get("behind") or "" for u in by_template.get(t["templateId"], [])} - {""})
                 + (["major"] if any(u.get("major") for u in by_template.get(t["templateId"], [])) else []),
@@ -273,11 +296,14 @@ def low_note(t):
                 note += " (slow: verify with a held canary, not the score)"
             else:
                 note += " (too few to judge)"
-        at_fix = t.get("healthAtFix")
-        if at_fix is not None and t["health"] < at_fix and not since:
-            note += f"  fell from {at_fix:.0f}% since the fix with no new projects: running instances failing, look again"
-    elif t.get("change") is not None and t["change"] <= -HEALTH_FALL and (t.get("newProjects") or 0) <= FEW_DEPLOYS:
-        note += f"  fell {-t['change']} with {t.get('newProjects') or 0} new: running instances failing"
+        floor = t.get("floorAtFix")
+        if floor is not None and t["health"] < floor and not since:
+            note += (f"  fell under {floor:.0f}% (its low around the fix) with no new projects: "
+                     f"running instances failing, look again")
+    elif t.get("change") is not None and t["change"] <= -HEALTH_FALL and (
+        (t.get("newProjects") or 0) <= FEW_DEPLOYS or t.get("changeWithout", 0) <= -HEALTH_FALL
+    ):
+        note += f"  fell {-t['change']} ({-t.get('changeWithout', 0)} in hours with no new project): running instances failing"
     return note
 
 

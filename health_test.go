@@ -48,3 +48,37 @@ func TestHealthSeriesTakesEachDaysLastScoredReading(t *testing.T) {
 		t.Fatalf("b = %+v", b)
 	}
 }
+
+func TestHealthSeriesSplitsMovesByWhetherAProjectArrived(t *testing.T) {
+	db, err := gorm.Open(duckdb.Open(filepath.Join(t.TempDir(), "health.duckdb")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&TemplateSnapshot{}); err != nil {
+		t.Fatal(err)
+	}
+	day := time.Date(2026, time.November, 1, 0, 0, 0, 0, time.UTC)
+	at := func(h int) time.Time { return day.Add(time.Duration(h) * time.Hour) }
+	sample := func(h, projects int, health float64) TemplateSnapshot {
+		return TemplateSnapshot{SampledAt: at(h), TemplateID: "a", Status: "PUBLISHED", Projects: int64(projects), TemplateHealth: pointerTo(health)}
+	}
+	rows := []TemplateSnapshot{
+		sample(1, 5, 100),
+		sample(2, 6, 96),  // a new project and a fall: -4 with new
+		sample(3, 6, 84),  // no new project: -12 without
+		sample(4, 6, 88),  // +4 without
+		sample(9, 7, 50),  // across a 5-hour gap: neither
+		sample(10, 7, 50), // no move
+	}
+	if err := gorm.G[TemplateSnapshot](db).CreateInBatches(t.Context(), &rows, 100); err != nil {
+		t.Fatal(err)
+	}
+	got, err := healthDayRows(t.Context(), db, day)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := buildHealthSeries(got).Templates[0]
+	if *a.Low[0] != 50 || *a.ChangeWithNew[0] != -4 || *a.ChangeWithout[0] != -8 {
+		t.Fatalf("low %v, with new %v, without %v", *a.Low[0], *a.ChangeWithNew[0], *a.ChangeWithout[0])
+	}
+}

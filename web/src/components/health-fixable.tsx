@@ -18,7 +18,9 @@ function reading({ r }: FixableRow) {
   const fix = r.fix ? ` · fix pushed ${fmtDay(r.fix.on)}${r.fix.newSince != null ? `, ${plural(r.fix.newSince, "new project")} since` : ""}` : "";
   switch (fastState(r)) {
     case "falling":
-      return `Lost ${Math.abs(r.change!).toFixed(0)} points as ${plural(n, "new project")} landed: new deploys are failing, canary one${fix}`;
+      return `Lost ${Math.abs(r.changeWithNew).toFixed(0)} points in the hours new projects landed (${plural(n, "new project")} in ${WATCH_DAYS} days): new deploys are failing, canary one${fix}`;
+    case "runningDown":
+      return `Lost ${Math.abs(r.changeWithout).toFixed(0)} points in hours with no new project: instances already running went down, not the new deploys. ${fmtNum(bad)} of ${SCORED_DEPLOYS} down; if new deploys keep coming up healthy they push the misses out within about ${fmtFill(r.fillDays!)}${fix}`;
     case "turnedOver":
       return `${plural(n, "new project")} replaced the whole scored set and ${fmtNum(bad)} of the newest ${SCORED_DEPLOYS} are down: about 1 new deploy in ${fmtNum(Math.round(SCORED_DEPLOYS / bad))} fails now${fix}`;
     default:

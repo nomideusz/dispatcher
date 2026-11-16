@@ -39,6 +39,12 @@ export type HealthRead = {
   /** Days to collect SCORED_DEPLOYS new projects at the stretch's pace;
    * Infinity when none came in it. */
   fillDays: number | null;
+  /** The stretch's hour-to-hour moves split by whether a new project arrived
+   * in the hour: a loss with one is new deploys failing, a loss without one
+   * is instances already running going down. The two sum to `change` but
+   * for steps across a gap in sampling. */
+  changeWithNew: number;
+  changeWithout: number;
   /** The recorded fix: new projects since the day before it and the health
    * it stood at then; both null when it predates the series. */
   fix: { on: string; newSince: number | null; healthThen: number | null } | null;
@@ -77,6 +83,10 @@ export function readHealth(t: TimelineTemplate, series: HealthSeries): HealthRea
   const deploys = diff(s.deployments, cut);
   const redeploys = deploys == null || newProjects == null ? null : Math.max(0, deploys - newProjects);
   const fillDays = newProjects == null ? null : newProjects === 0 ? Infinity : (SCORED_DEPLOYS * WATCH_DAYS) / newProjects;
+  // Moves on the days after the stretch's first, which `change` starts from.
+  const sumAfter = (values: (number | null)[] | undefined) => (values ?? []).slice(cut + 1).reduce<number>((a, v) => a + (v ?? 0), 0);
+  const changeWithNew = sumAfter(s.changeWithNew);
+  const changeWithout = sumAfter(s.changeWithout);
 
   let fix: HealthRead["fix"] = null;
   if (t.fixedOn) {
@@ -102,11 +112,13 @@ export function readHealth(t: TimelineTemplate, series: HealthSeries): HealthRea
       : fix && low
         ? "notHeld"
         : falling
-          ? (newProjects ?? 0) <= FEW_DEPLOYS
+          ? // Blame the side that lost more: a fall with many new projects can
+            // still be the running instances, if the hours it fell in had none.
+            (newProjects ?? 0) <= FEW_DEPLOYS || changeWithout < changeWithNew
             ? "runningFail"
             : "newFail"
           : "low";
-  return { now: t.health, change, newProjects, redeploys, fillDays, fix, state, days: series.days, spark: s.health };
+  return { now: t.health, change, newProjects, redeploys, fillDays, changeWithNew, changeWithout, fix, state, days: series.days, spark: s.health };
 }
 
 /** A template worth a look: under the floor, or falling toward it. */
@@ -127,15 +139,19 @@ export const badOf25 = (health: number) => Math.round(((100 - health) * SCORED_D
 
 export type FastState =
   | "turnedOver" // 25+ new projects in the stretch: every miss is a recent deploy
-  | "falling" // losing points as new deploys land, the set not yet replaced
+  | "falling" // losing points in the hours new deploys landed, the set not yet replaced
+  | "runningDown" // losing points in hours with no new project: instances already running went down
   | "agingOut"; // the misses predate most of the set and can still age out
 
-/** Why a fast template is short of 100, from the stretch's counts. A full
+/** Why a fast template is short of 100, from the stretch's hours. A full
  * turnover comes first: once the stretch replaced all 25, a dip of one
- * deploy says no more than the misses left standing. */
+ * deploy says no more than the misses left standing. A fall is the new
+ * deploys only when it came in the hours they arrived: Pterodactyl lost 12
+ * in one hour with none (15 Nov) while 21 came up healthy around it. */
 export function fastState(r: HealthRead): FastState {
   if ((r.newProjects ?? 0) >= SCORED_DEPLOYS) return "turnedOver";
-  if (r.change != null && r.change < 0 && (r.newProjects ?? 0) > FEW_DEPLOYS) return "falling";
+  if (r.changeWithNew < 0) return "falling";
+  if (r.change != null && r.change < 0 && r.changeWithout < 0) return "runningDown";
   return "agingOut";
 }
 

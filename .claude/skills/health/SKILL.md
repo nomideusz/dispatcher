@@ -17,10 +17,11 @@ Health holds search position, and position drives deploys, so this comes first. 
 1. Run `python3 -I .claude/skills/routine/check.py --only health` (`python` on Windows, where `python3` is the Store alias). If dispatcherctl says the session expired, ask the owner to run `! dispatcherctl login`.
 2. Pick in this order:
    1. **Still fixable**, printed first: fast templates short of 100. Each line ends with what to do:
-      - "new deploys failing, canary a fresh deploy now": a fall as new projects land, the most urgent.
+      - "new deploys failing, canary a fresh deploy now": points lost in the hours new projects arrived, the most urgent.
+      - "instances already running went down": points lost in hours with no new project, while new deploys came up healthy around them. Not a first-boot defect: it ages out like the line below, so canary only when it repeats.
       - "about 1 new deploy in N fails": all 25 replaced and misses remain, so read the recent failed deploys for a pattern.
       - "ages out": a few old misses that healthy new deploys will push out, so leave it.
-   2. **Under 70, earning**, by the **Health** bullet in `.claude/skills/routine/SKILL.md`. That bullet covers the order, the `fix pushed` rule and when a fix didn't hold. A line that says "fell … since the fix with no new projects" is back on the list despite its fix: instances already running are failing, which that fix didn't address.
+   2. **Under 70, earning**, by the **Health** bullet in `.claude/skills/routine/SKILL.md`. That bullet covers the order, the `fix pushed` rule and when a fix didn't hold. A line that says "fell under N% (its low around the fix) with no new projects" is back on the list despite its fix: instances already running are failing, which that fix didn't address. The floor is the lowest reading on the fix day and the day before, because a score that swings hour to hour can read high on the last sample before a fix.
    3. **Past those**, pick by what reaching exactly 100 wins in search: the research's table of health fixes (`docs/research/railway-search-ranking.md`, "Where we stand"), e.g. Hermes Agent Dashboard, Evolution API, Postiz and Twenty CRM.
 3. Before hunting a bug, read the template's hours. The Health page's One template view (`/health?t=ID#detail`) shows hourly health beside new projects per day, To 25 over time, every move with what moved in that hour, and its search positions. `dispatcherctl get "/api/analytics/templates/ID/projects?days=30"` gives the same rows.
    - **A move in an hour a new project arrived** is that deploy.

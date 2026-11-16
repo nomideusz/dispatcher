@@ -32,6 +32,15 @@ html.dark {
   color-scheme: dark;
 }
 
+/* Chrome on Windows paints a native select's option list white when the
+   select itself is transparent, under options that inherit light ink in the
+   carbon copy. Give the list the popover's ground and ink, both themes. */
+select option,
+select optgroup {
+  background-color: var(--popover);
+  color: var(--popover-foreground);
+}
+
 @theme inline {
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);

@@ -17,6 +17,16 @@ LAST = os.path.join(HERE, "last.json")
 CTL = os.environ.get("DISPATCHERCTL") or shutil.which("dispatcherctl") or os.path.expanduser("~/go/bin/dispatcherctl")
 HEALTH_FLOOR = 70  # the checklist's "under 70%" line
 FIX_TEST_DEPLOYS = 5  # new projects a fix needs before it can be judged (Dispatcher's Health watch uses the same)
+# Health's pace, as the Health page reads it (web/src/lib/health.ts): the score
+# covers at most the 25 latest deploys. A template that collects 25 new projects
+# within about 30 days scores all 25, so new deploys set it and a fix shows in
+# days; a slower one scores fewer, and the instances already running set it
+# (measured 16 Nov over 207 templates).
+SCORED_DEPLOYS = 25
+WATCH_DAYS = 14  # the stretch pace and falls are read over
+SLOW_FILL_DAYS = 30
+HEALTH_FALL = 5  # points lost over the stretch that count as falling
+FEW_DEPLOYS = 2  # new projects in the stretch at or under which a fall is running instances
 FIX_FIRST = 10  # earning templates under the floor before publishing pauses
 PLUMBING = {"Storage", "Starters", "Queues"}  # databases, boilerplates and queues: not apps we build
 SECTIONS = ("health", "catalog", "upgrades", "search", "candidates", "verdict", "payouts")
@@ -79,6 +89,64 @@ def new_since_fix(health, template_id, fixed_on):
     return None if then is None or now is None else max(0, now - then)
 
 
+def pace(health, template_id, now_health):
+    """The stretch's figures for one template, as the Health page computes
+    them: health change, new projects and the days to collect 25 at that
+    pace (inf with none). Nones when the series doesn't hold it."""
+    series = next((t for t in health["templates"] if t["templateId"] == template_id), None) if health else None
+    if not series:
+        return {"change": None, "newProjects": None, "fill": None}
+    cut = max(0, len(health["days"]) - 1 - WATCH_DAYS)
+
+    def first(vs):
+        return next((v for v in vs[cut:] if v is not None), None)
+
+    def last(vs):
+        return next((v for v in reversed(vs) if v is not None), None)
+
+    then = first(series["health"])
+    a, b = first(series["projects"]), last(series["projects"])
+    new = None if a is None or b is None else max(0, b - a)
+    fill = None if new is None else (float("inf") if new == 0 else SCORED_DEPLOYS * WATCH_DAYS / new)
+    return {
+        "change": None if then is None or now_health is None else round(now_health - then),
+        "newProjects": new,
+        "fill": fill,
+    }
+
+
+def health_before(health, template_id, day):
+    """Health on the last sampled day before `day`, or None."""
+    series = next((t for t in health["templates"] if t["templateId"] == template_id), None) if health else None
+    before = [i for i, d in enumerate(health["days"]) if d < day] if health else []
+    if not series or not before:
+        return None
+    return next((v for v in reversed(series["health"][: before[-1] + 1]) if v is not None), None)
+
+
+def js_round(x):
+    """Half up, as the Health page rounds: Python's round() goes to even."""
+    return int(x + 0.5)
+
+
+def fmt_fill(fill):
+    if fill is None:
+        return "?"
+    return "> 1 yr" if fill > 365 else "< 1d" if fill < 1 else f"{js_round(fill)}d"
+
+
+def fast_reading(t):
+    """Why a fast template is short of 100 and what to do, as on the Health page."""
+    bad = js_round((100 - t["health"]) * SCORED_DEPLOYS / 100)
+    new = t["newProjects"] or 0
+    if new >= SCORED_DEPLOYS:
+        return (f"{new} new replaced all {SCORED_DEPLOYS} and {bad} of the newest are down: "
+                f"about 1 new deploy in {js_round(SCORED_DEPLOYS / max(bad, 1))} fails, read the failed ones")
+    if t["change"] is not None and t["change"] < 0 and new > FEW_DEPLOYS:
+        return f"lost {-t['change']} as {new} new landed: new deploys failing, canary a fresh deploy now"
+    return f"{bad} of {SCORED_DEPLOYS} down, ages out within ~{fmt_fill(t['fill'])} if new deploys come up healthy"
+
+
 def behind_templates(upgrades):
     """Templates behind, each counted once at its furthest level."""
     worst = {}
@@ -101,6 +169,21 @@ def figures(timeline, upgrades, search, candidates, verdicts, health=None):
         (t for t in ts if t.get("health") is not None and t["health"] < HEALTH_FLOOR and (t.get("running") or 0) > 0),
         key=lambda t: (-(t.get("earnedCents") or 0), t["health"]),
     )
+    paces = {t["templateId"]: pace(health, t["templateId"], t.get("health")) for t in ts}
+    # Short of 100 while still fast: new deploys set the score, so a fix shows in
+    # days. Let one slip and the lost rank slows deploys until it turns slow.
+    fixable = sorted(
+        (
+            t
+            for t in ts
+            if t.get("health") is not None
+            and t["health"] < 100
+            and (t.get("activeProjects") or 0) > 0
+            and paces[t["templateId"]]["fill"] is not None
+            and paces[t["templateId"]]["fill"] <= SLOW_FILL_DAYS
+        ),
+        key=lambda t: (-(t.get("earned30d") or 0), t["health"]),
+    )
     own = [k for k in search["keywords"] if k["source"] == "ours"]
     upgraded = sorted({u["templateId"]: u.get("upgradedOn") or "" for u in upgrades}.values(), reverse=True)
     week_ago = (datetime.now(timezone.utc) - timedelta(days=UPGRADE_EVERY)).date().isoformat()
@@ -118,12 +201,23 @@ def figures(timeline, upgrades, search, candidates, verdicts, health=None):
                 "earnedCents": t.get("earnedCents") or 0,
                 "fixedOn": t.get("fixedOn") or "",
                 "newSinceFix": new_since_fix(health, t["templateId"], t["fixedOn"]) if health and t.get("fixedOn") else None,
+                "healthAtFix": health_before(health, t["templateId"], t["fixedOn"]) if t.get("fixedOn") else None,
+                **paces[t["templateId"]],
                 "upgrades": sorted({u.get("behind") or "" for u in by_template.get(t["templateId"], [])} - {""})
                 + (["major"] if any(u.get("major") for u in by_template.get(t["templateId"], [])) else []),
             }
             for t in low
         ],
         "lowEarning": sum(1 for t in low if (t.get("earnedCents") or 0) > 0),
+        "fixable": [
+            {
+                "name": t["name"],
+                "health": round(t["health"]),
+                "earned30d": t.get("earned30d") or 0,
+                **paces[t["templateId"]],
+            }
+            for t in fixable
+        ],
         # Per template, not per service image: a template counts once, at the
         # furthest it is behind (minor over patch over a floating tag).
         "behind": behind_templates(upgrades),
@@ -164,18 +258,51 @@ def delta(now, before, key):
     return f" ({'+' if d > 0 else ''}{d})" if d else " (=)"
 
 
+def low_note(t):
+    """The pace and fix notes for one under-70 line."""
+    slow = t.get("fill") is None or t["fill"] > SLOW_FILL_DAYS
+    note = f"  to 25: {fmt_fill(t.get('fill'))}" + (" (slow)" if slow and t.get("fill") is not None else "")
+    since = t.get("newSinceFix")
+    if t.get("fixedOn"):
+        note += f"  fix pushed {t['fixedOn']}"
+        if since is not None:
+            note += f", {since} new since"
+            if since >= FIX_TEST_DEPLOYS:
+                note += " (didn't hold)"
+            elif slow:
+                note += " (slow: verify with a held canary, not the score)"
+            else:
+                note += " (too few to judge)"
+        at_fix = t.get("healthAtFix")
+        if at_fix is not None and t["health"] < at_fix and not since:
+            note += f"  fell from {at_fix:.0f}% since the fix with no new projects: running instances failing, look again"
+    elif t.get("change") is not None and t["change"] <= -HEALTH_FALL and (t.get("newProjects") or 0) <= FEW_DEPLOYS:
+        note += f"  fell {-t['change']} with {t.get('newProjects') or 0} new: running instances failing"
+    return note
+
+
 def show_health(f, last, detail=False):
+    fixable = f.get("fixable", [])
+    print(f"STILL FIXABLE: {len(fixable)} short of 100 that still get {SCORED_DEPLOYS} new projects "
+          f"within {SLOW_FILL_DAYS} days (a fix shows in days)")
+    for t in fixable:
+        print(f"  {t['health']:>3}%  ${t['earned30d']:>7.2f}/30d  {t['name']}  "
+              f"{t['newProjects']} new in {WATCH_DAYS}d, to 25: {fmt_fill(t['fill'])}  -> {fast_reading(t)}")
+    if last and "fixable" in last:
+        was = {t["name"] for t in last["fixable"]}
+        gone = sorted(was - {t["name"] for t in fixable})
+        new = [t["name"] for t in fixable if t["name"] not in was]
+        if new:
+            print(f"  new since last: {', '.join(new)}")
+        if gone:
+            print(f"  gone since last (back at 100, or slowed past {SLOW_FILL_DAYS} days): {', '.join(gone)}")
     print(f"HEALTH: {len(f['low'])} live templates under {HEALTH_FLOOR}%, {f['lowEarning']} of them earning" + delta(
         {"n": f["lowEarning"]}, last and {"n": last["lowEarning"]}, "n"))
     if f["lowEarning"] > FIX_FIRST:
         print(f"  over {FIX_FIRST} earning: fix before you publish")
     for t in f["low"] if detail else f["low"][:10]:
         up = f"  upgrades pending: {', '.join(t['upgrades'])}" if t["upgrades"] else ""
-        fixed = f"  fix pushed {t['fixedOn']}" if t.get("fixedOn") else ""
-        since = t.get("newSinceFix")
-        if fixed and since is not None:
-            fixed += f", {since} new since" + (" (too few to judge)" if since < FIX_TEST_DEPLOYS else " (didn't hold)")
-        print(f"  {t['health']:>3}%  ${t['earnedCents'] / 100:>7.2f}/30d  {t['name']}{fixed}{up}")
+        print(f"  {t['health']:>3}%  ${t['earnedCents'] / 100:>7.2f}/30d  {t['name']}{low_note(t)}{up}")
     if not detail and len(f["low"]) > 10:
         print(f"  … {len(f['low']) - 10} more (--only health lists all)")
     if last:

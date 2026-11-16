@@ -46,15 +46,16 @@ function daily(points: ProjectPoint[], from: number) {
   if (arr.length === 0) return [];
   const first = Math.floor(Math.max(from, arr[0].t) / DAY) * DAY;
   const last = Math.floor(arr[arr.length - 1].t / DAY) * DAY;
-  const out: { t: number; day: string; newProjects: number; fill: number | null; fillShown: number | null }[] = [];
+  // Not `fill`: Recharts paints a bar in its row's `fill`, and days aren't a colour.
+  const out: { t: number; day: string; newProjects: number; fillDays: number | null; fillShown: number | null }[] = [];
   for (let d = first; d <= last; d += DAY) {
     const end = d + DAY;
     const newProjects = arr.reduce((s, a) => (a.t >= d && a.t < end ? s + a.n : s), 0);
     // Only once the series holds the whole stretch before the day's end.
     const full = arr[0].t <= end - WATCH_DAYS * DAY + HOUR;
     const inStretch = arr.reduce((s, a) => (a.t >= end - WATCH_DAYS * DAY && a.t < end ? s + a.n : s), 0);
-    const fill = full ? (inStretch === 0 ? Infinity : (SCORED_DEPLOYS * WATCH_DAYS) / inStretch) : null;
-    out.push({ t: d + DAY / 2, day: new Date(d).toISOString().slice(0, 10), newProjects, fill, fillShown: fill == null ? null : Math.min(fill, FILL_CAP) });
+    const fillDays = full ? (inStretch === 0 ? Infinity : (SCORED_DEPLOYS * WATCH_DAYS) / inStretch) : null;
+    out.push({ t: d + DAY / 2, day: new Date(d).toISOString().slice(0, 10), newProjects, fillDays, fillShown: fillDays == null ? null : Math.min(fillDays, FILL_CAP) });
   }
   return out;
 }
@@ -263,7 +264,7 @@ export function HealthDetail({
                 />
                 <ReferenceLine y={SLOW_FILL_DAYS} stroke="var(--muted-foreground)" strokeDasharray="3 3" strokeOpacity={0.6} />
                 <Marks fixAt={fixAt} upgradeAt={upgradeAt} />
-                {tooltip((row) => (row.fill === Infinity ? "no new projects" : fmtFill(row.fill as number)), `To ${SCORED_DEPLOYS}`)}
+                {tooltip((row) => (row.fillDays === Infinity ? "no new projects" : fmtFill(row.fillDays as number)), `To ${SCORED_DEPLOYS}`)}
                 <Area dataKey="fillShown" type="stepAfter" stroke="var(--chart-4)" strokeWidth={2} fill="var(--chart-4)" fillOpacity={0.1} dot={false} connectNulls={false} isAnimationActive={false} />
               </AreaChart>
             </ChartContainer>

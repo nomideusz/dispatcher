@@ -450,7 +450,7 @@ function SinceStart({ data }: { data: TimelineResponse }) {
   let kickback: number | null = null;
   let projectsSoFar: number | null = null;
   let paid = 0;
-  const days = points.map((p) => {
+  const all = points.map((p) => {
     if (p.lifetimeCents != null) kickback = p.lifetimeCents / 100;
     if (p.projects != null) projectsSoFar = p.projects;
     while (paid < paidOn.length && paidOn[paid] <= p.date) paid++;
@@ -463,7 +463,12 @@ function SinceStart({ data }: { data: TimelineResponse }) {
       perTemplate: kickback != null && p.published > 0 ? kickback / p.published : null,
     };
   });
-  if (days.length === 0) return null;
+  if (all.length === 0) return null;
+  // The first template sat alone for two months (5 May to 9 Jul 2026), a
+  // flat stretch that squeezes the rest into a third of each chart. Start
+  // where a second one went up; the totals carry what came before.
+  const second = all.findIndex((d) => d.published >= 2);
+  const days = second > 0 ? all.slice(second) : all;
   const last = days[days.length - 1];
   const monthAgoDay = iso(utc(last.day) - 30 * DAY);
   const monthAgo = [...days].reverse().find((d) => d.day <= monthAgoDay) ?? days[0];
@@ -483,7 +488,7 @@ function SinceStart({ data }: { data: TimelineResponse }) {
 
   return (
     <section className="space-y-2 pt-4">
-      <h3 className="text-base font-semibold">Since the first template</h3>
+      <h3 className="text-base font-semibold">Since publishing began</h3>
       <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2 xl:grid-cols-4">
         <Panel title="Kickback in all" figure={fmtUsd(kickbackNow)} note={delta(last.kickback, monthAgo.kickback, signedUsd)}>
           <AreaChart {...sync} aria-label="Kickback earned in all, day by day since the first template">
@@ -543,7 +548,9 @@ function SinceStart({ data }: { data: TimelineResponse }) {
         </Panel>
       </div>
       <p className="text-xs text-muted-foreground">
-        Kickback in all is what Railway has credited the published templates since the first went up on {fmtDay(days[0].day)}, withdrawn or not.
+        Kickback in all is what Railway has credited the published templates, withdrawn or not.
+        {days[0] !== all[0] &&
+          ` The charts start on ${fmtDay(days[0].day)}, when a second template went up; the first had been up alone since ${fmtDay(all[0].day)} and earned ${fmtUsd(days[0].kickback ?? 0)}, which the totals include.`}
         {firstProjects && ` Projects start on ${fmtDay(firstProjects.day)}, when tracking began, at Railway's own count to that day.`}
         {edge && projects > 0 && ` ${fmtNum(edge.projects)} of the ${fmtNum(projects)} are ${shortNames(templates.map((t) => t.name))(edge.name)}.`}
         {" "}Per template rising means the catalog earns faster than it grows; falling means new templates are joining faster than they pay.

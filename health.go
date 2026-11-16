@@ -93,7 +93,7 @@ func healthDayRows(ctx context.Context, db *gorm.DB, since time.Time) ([]healthD
 		       SUM(step) FILTER (WHERE close AND arrived) AS change_with_new,
 		       SUM(step) FILTER (WHERE close AND NOT arrived) AS change_without
 		FROM s
-		GROUP BY template_id, CAST(sampled_at AS DATE)
+		GROUP BY template_id, CAST(timezone('UTC', sampled_at) AS DATE) -- the UTC day buildHealthSeries labels it with, whatever the server's zone
 		ORDER BY template_id, last_at`, since).Scan(&rows).Error
 	return rows, err
 }

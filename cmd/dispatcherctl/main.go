@@ -155,6 +155,8 @@ func parseCommand(args []string, stderr io.Writer) (command, error) {
 		"refresh":           {method: http.MethodPost, path: "/api/analytics/refresh", requiresAuth: true},
 		"upgrades":          {method: http.MethodGet, path: "/api/upgrades", requiresAuth: true},
 		"refresh-upgrades":  {method: http.MethodPost, path: "/api/upgrades/refresh", requiresAuth: true},
+		"links":             {method: http.MethodGet, path: "/api/links", requiresAuth: true},
+		"refresh-links":     {method: http.MethodPost, path: "/api/links/refresh", requiresAuth: true},
 		"proposals":         {method: http.MethodGet, path: "/api/proposals", requiresAuth: true},
 	}
 	if cmd, ok := simple[args[0]]; ok {
@@ -303,6 +305,7 @@ Query commands:
   templates                List current template analytics
   payouts [--days N]       Show payout history (default: 30 days)
   upgrades                 List pinned images and newer upstream tags
+  links                    List broken or unverified links in template readmes
   notifications            List notification targets
   withdraw-settings        Show auto-withdraw settings
   withdraw-accounts        List payout destinations and balance
@@ -314,6 +317,7 @@ Other commands:
   logout                   Remove the saved session for this instance
   refresh                  Collect a fresh analytics snapshot
   refresh-upgrades         Re-check every template image against its registry
+  refresh-links            Re-check every link in every template readme
   kind TEMPLATE_ID KIND    Set a template's kind: business, ai, media, desktop,
                            agent or devtools ("" leaves it unsorted)
   origin TEMPLATE_ID ORIGIN

@@ -39,6 +39,8 @@ func main() {
 	mux.Handle("GET /api/analytics/verdicts", auth(handleVerdicts(db)))
 	mux.Handle("POST /api/analytics/refresh", auth(handleRefreshAnalytics(db)))
 	mux.Handle("GET /api/upgrades", auth(handleUpgrades(db)))
+	mux.Handle("GET /api/links", auth(handleLinks(db)))
+	mux.Handle("POST /api/links/refresh", auth(handleRefreshLinks(db)))
 	mux.Handle("POST /api/upgrades/refresh", auth(handleRefreshUpgrades(db)))
 	mux.Handle("PUT /api/templates/{id}/kind", auth(handleSetTemplateKind(db)))
 	mux.Handle("PUT /api/templates/{id}/origin", auth(handleSetTemplateOrigin(db)))

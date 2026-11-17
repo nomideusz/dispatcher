@@ -68,6 +68,9 @@ func startCrons(db *gorm.DB) *cron.Cron {
 	if _, err := c.AddFunc(upgradeCheckSpec, func() { runUpgradeCheck(db) }); err != nil {
 		log.Fatalf("schedule upgrade check: %v", err)
 	}
+	if _, err := c.AddFunc(linkCheckSpec, func() { runLinkCheck(db) }); err != nil {
+		log.Fatalf("schedule link check: %v", err)
+	}
 	if _, err := c.AddFunc(marketFetchSpec, func() { runMarketFetch(db) }); err != nil {
 		log.Fatalf("schedule market fetch: %v", err)
 	}

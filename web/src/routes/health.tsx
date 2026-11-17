@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { HealthDetail } from "~/components/health-detail";
 import { type FixableRow, FixableTable } from "~/components/health-fixable";
 import { HealthWatch } from "~/components/health-watch";
+import { ReadmeLinks } from "~/components/readme-links";
 import { DOCKET, DocketCell, Fig, PageHeader, Section, useHashFollow, useUrlState } from "~/components/page";
 import { Skeleton } from "~/components/ui/skeleton";
 import { earned30, HEALTH_FLOOR } from "~/lib/catalog";
@@ -9,6 +10,7 @@ import { fmtAgo, fmtNum } from "~/lib/format";
 import { HEALTH_FALL, isFast, isFixable, onWatch, readHealth, SCORED_DEPLOYS, SLOW_FILL_DAYS, searchStake, WATCH_DAYS } from "~/lib/health";
 import { cn } from "~/lib/utils";
 import { healthSeriesQuery, timelineQuery } from "~/queries/analytics";
+import { linksQuery } from "~/queries/links";
 import { searchQuery } from "~/queries/search";
 import { upgradesQuery } from "~/queries/upgrades";
 import type { Route } from "./+types/health";
@@ -22,6 +24,7 @@ export default function Health() {
   const series = useQuery(healthSeriesQuery);
   const search = useQuery(searchQuery);
   const upgrades = useQuery(upgradesQuery);
+  const links = useQuery(linksQuery);
   const [params, setParams] = useUrlState();
   const data = timeline.data;
   useHashFollow(!!data && series.isFetched);
@@ -134,6 +137,20 @@ export default function Health() {
           )}
         </>
       )}
+
+      <Section
+        id="links"
+        title="Readme links"
+        text="Every link in every published template's marketplace readme, read daily. A dead deploy button sends visitors to a missing template, and one unknown code also blanks a batch of 50 templates on zaur.app. Fix the repo's README, then republish so the marketplace copy matches."
+      >
+        {links.isPending && <Skeleton className="h-24 w-full" />}
+        {links.isError && (
+          <p role="alert" className="text-sm text-(--viz-critical)">
+            Couldn&apos;t load the link check. Reload to try again.
+          </p>
+        )}
+        {links.data && <ReadmeLinks report={links.data} />}
+      </Section>
     </main>
   );
 }

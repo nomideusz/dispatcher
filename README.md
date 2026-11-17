@@ -108,6 +108,24 @@ activity list.
 
 Background collection, auto-withdraw, weekly summaries, and notification delivery assume the app runs as a single process. Running multiple replicas can duplicate cron work and notifications.
 
+## Public catalog and readme links
+
+`GET /api/catalog` needs no login. It lists the latest sample's published
+templates with their kind, published date and Railway's public project
+counts, and nothing that is not already on the marketplace. zaur.app builds
+its templates table from it.
+
+Daily at 06:38 UTC every published template's marketplace readme is read and
+each distinct link checked once (`links.go`). A deploy button on a code with
+no published template, a 404 or 410 and a domain that no longer resolves are
+broken (a 404 or a missing domain must fail twice, five seconds apart); a
+relative link is flagged too, since it leads nowhere on Railway's page. A bot
+wall, rate limit, timeout or 5xx is "unverified", not broken. Code blocks and
+placeholder hosts (`*.up.railway.app`, localhost, example.com) are skipped.
+The Health page lists the result; `GET /api/links` and `dispatcherctl links`
+return it, and `POST /api/links/refresh` (`dispatcherctl refresh-links`)
+re-runs it.
+
 ## CLI
 
 `dispatcherctl` is a small, standalone HTTP client intended for agents and

@@ -23,6 +23,7 @@ func main() {
 	auth := requireAuth(db)
 
 	mux.HandleFunc("GET /api/health", handleHealth(db))
+	mux.HandleFunc("GET /api/catalog", handleCatalog(db))
 	mux.HandleFunc("GET /api/auth/redirect", handleAuthRedirect(db))
 	mux.HandleFunc("GET /api/auth/callback", handleAuthCallback(db))
 	mux.HandleFunc("POST /api/auth/cli/start", handleCLIAuthStart(db))

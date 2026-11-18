@@ -7,7 +7,7 @@ import { DOCKET, DocketCell, Fig, PageHeader, Section, useHashFollow, useUrlStat
 import { Skeleton } from "~/components/ui/skeleton";
 import { earned30, HEALTH_FLOOR } from "~/lib/catalog";
 import { fmtAgo, fmtNum } from "~/lib/format";
-import { HEALTH_FALL, isFast, isFixable, onWatch, readHealth, runningToBlame, SCORED_DEPLOYS, SLOW_FILL_DAYS, searchStake, WATCH_DAYS } from "~/lib/health";
+import { HEALTH_FALL, isFast, isFixable, onWatch, readHealth, runningToBlame, SCORED_DEPLOYS, trialsEnding, SLOW_FILL_DAYS, searchStake, WATCH_DAYS } from "~/lib/health";
 import { cn } from "~/lib/utils";
 import { healthSeriesQuery, timelineQuery } from "~/queries/analytics";
 import { linksQuery } from "~/queries/links";
@@ -45,6 +45,7 @@ export default function Health() {
   const low = scored.filter((t) => t.health! < HEALTH_FLOOR);
   const falling = reads.filter(({ r }) => r.change != null && r.change <= -HEALTH_FALL);
   const fallingQuiet = falling.filter(({ r }) => runningToBlame(r));
+  const fallingTrials = fallingQuiet.filter(({ r }) => trialsEnding(r));
   const slowWatched = watched.filter(({ r }) => !isFast(r));
 
   // The detail opens on ?t=, else on what most needs a look.
@@ -95,6 +96,11 @@ export default function Health() {
             <DocketCell label={`Falling, ${WATCH_DAYS} days`} value={fmtNum(falling.length)}>
               <p>
                 lost {HEALTH_FALL} points or more; <Fig>{fmtNum(fallingQuiet.length)}</Fig> on instances already running
+                {fallingTrials.length > 0 && (
+                  <>
+                    , <Fig>{fmtNum(fallingTrials.length)}</Fig> likely trials ending
+                  </>
+                )}
               </p>
             </DocketCell>
           </div>

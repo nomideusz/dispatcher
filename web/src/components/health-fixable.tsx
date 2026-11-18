@@ -3,7 +3,7 @@ import { detailLink, fmtFill, Spark } from "~/components/health-watch";
 import { Table, TableBody, TableCell, TableHeader, TableHead, TableRow, TableRowHead, useSort } from "~/components/ui/table";
 import { earned30 } from "~/lib/catalog";
 import { fmtDay, fmtNum, fmtUsd, shortNames } from "~/lib/format";
-import { badOf25, fastState, type HealthRead, SCORED_DEPLOYS, SLOW_FILL_DAYS, type SearchStake, WATCH_DAYS } from "~/lib/health";
+import { badOf25, fastState, trialNote, type HealthRead, SCORED_DEPLOYS, SLOW_FILL_DAYS, type SearchStake, WATCH_DAYS } from "~/lib/health";
 import { cn } from "~/lib/utils";
 import type { TimelineTemplate } from "~/queries/analytics";
 
@@ -12,7 +12,11 @@ export type FixableRow = { t: TimelineTemplate; r: HealthRead; stake: SearchStak
 const plural = (n: number, one: string, many = `${one}s`) => `${fmtNum(n)} ${n === 1 ? one : many}`;
 
 /** What the counts say about a fast template short of 100. */
-function reading({ r }: FixableRow) {
+function reading(row: FixableRow) {
+  return readingOf(row) + trialNote(row.r);
+}
+
+function readingOf({ r }: FixableRow) {
   const bad = badOf25(r.now);
   const n = r.newProjects ?? 0;
   const fix = r.fix ? ` · fix pushed ${fmtDay(r.fix.on)}${r.fix.newSince != null ? `, ${plural(r.fix.newSince, "new project")} since` : ""}` : "";

@@ -3,7 +3,7 @@ import { Fig } from "~/components/page";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHead, useSort } from "~/components/ui/table";
 import { earned30, HEALTH_FLOOR } from "~/lib/catalog";
 import { fmtDay, fmtLongDay, fmtNum, fmtUsd, shortNames } from "~/lib/format";
-import { FIX_TEST_DEPLOYS, HEALTH_FALL, type HealthRead, onWatch, readHealth, runningToBlame, SCORED_DEPLOYS, SLOW_FILL_DAYS, WATCH_DAYS } from "~/lib/health";
+import { FIX_TEST_DEPLOYS, HEALTH_FALL, type HealthRead, onWatch, readHealth, runningToBlame, SCORED_DEPLOYS, SLOW_FILL_DAYS, TRIAL_DAYS, trialNote, trialsEnding, WATCH_DAYS } from "~/lib/health";
 import { cn } from "~/lib/utils";
 import type { HealthSeries, TimelineTemplate } from "~/queries/analytics";
 
@@ -14,7 +14,7 @@ function reading(r: HealthRead) {
   const since = r.fix?.newSince;
   switch (r.state) {
     case "fellSinceFix":
-      return `Fell from ${r.fix!.healthThen!.toFixed(0)}% to ${r.now.toFixed(0)}% since the fix pushed ${fmtDay(r.fix!.on)}, with ${plural(since!, "new project")}: instances already running are failing, which the fix didn't reach`;
+      return `Fell from ${r.fix!.healthThen!.toFixed(0)}% to ${r.now.toFixed(0)}% since the fix pushed ${fmtDay(r.fix!.on)}, with ${plural(since!, "new project")}: instances already running went down, which the fix didn't reach`;
     case "untested":
       return `Fix pushed ${fmtDay(r.fix!.on)}${r.fix!.healthThen != null ? ` at ${r.fix!.healthThen.toFixed(0)}%` : ""}: ${plural(since!, "new project")} since, too few to judge it`;
     case "notHeld":
@@ -23,8 +23,8 @@ function reading(r: HealthRead) {
         : `Fix pushed ${fmtDay(r.fix!.on)} didn't hold: ${plural(since, "new project")} since, still under ${HEALTH_FLOOR}%`;
     case "runningFail":
       return (r.newProjects ?? 0) <= 2
-        ? `Falling with ${plural(r.newProjects ?? 0, "new project")}: instances already running are failing`
-        : `Fell in hours with no new project, ${plural(r.newProjects ?? 0, "new project")} around it: instances already running are failing`;
+        ? `Falling with ${plural(r.newProjects ?? 0, "new project")}: instances already running went down`
+        : `Fell in hours with no new project, ${plural(r.newProjects ?? 0, "new project")} around it: instances already running went down`;
     case "newFail":
       return `Falling as ${plural(r.newProjects ?? 0, "new project")} landed: canary a fresh deploy`;
     default:
@@ -108,14 +108,21 @@ export function HealthWatch({ templates, series }: { templates: TimelineTemplate
   const count = (state: HealthRead["state"]) => watched.filter(({ r }) => r.state === state).length;
   // The same rule as the page's Falling figure, so the two agree.
   const falling = watched.filter(({ r }) => r.change != null && r.change <= -HEALTH_FALL);
-  const fallingRunning = falling.filter(({ r }) => runningToBlame(r)).length;
+  const fallingRunning = falling.filter(({ r }) => runningToBlame(r));
+  const fallingTrials = fallingRunning.filter(({ r }) => trialsEnding(r)).length;
   return (
     <div className="space-y-3">
       <p className="max-w-[80ch] text-sm text-muted-foreground">
         <Fig>{fmtNum(low.length)}</Fig> under {HEALTH_FLOOR}%, <Fig>{fmtNum(low.filter(({ t }) => earned30(t) > 0).length)}</Fig> of
         them earning{watched.length > low.length && <>; <Fig>{fmtNum(watched.length - low.length)}</Fig> more falling</>}.{" "}
-        <Fig>{fmtNum(falling.length)}</Fig> fell {HEALTH_FALL} points or more in {WATCH_DAYS} days, <Fig>{fmtNum(fallingRunning)}</Fig> of
-        them on instances already running. Of the fixes, <Fig>{fmtNum(count("untested"))}</Fig> can&apos;t be judged yet,{" "}
+        <Fig>{fmtNum(falling.length)}</Fig> fell {HEALTH_FALL} points or more in {WATCH_DAYS} days, <Fig>{fmtNum(fallingRunning.length)}</Fig> of
+        them on instances already running
+        {fallingTrials > 0 && (
+          <>
+            , <Fig>{fmtNum(fallingTrials)}</Fig> of those about {TRIAL_DAYS[0] + 1} days after projects arrived, when Railway trials end
+          </>
+        )}
+        . Of the fixes, <Fig>{fmtNum(count("untested"))}</Fig> can&apos;t be judged yet,{" "}
         <Fig>{fmtNum(count("notHeld"))}</Fig> didn&apos;t hold
         {count("fellSinceFix") > 0 && (
           <>
@@ -171,7 +178,10 @@ export function HealthWatch({ templates, series }: { templates: TimelineTemplate
               </TableCell>
               <TableCell numeric className={cn(!earned30(t) && "text-muted-foreground")}>{fmtUsd(earned30(t))}</TableCell>
               <TableCell numeric>{t.running == null ? "—" : fmtNum(t.running)}</TableCell>
-              <TableCell className="min-w-56 text-xs text-muted-foreground">{reading(r)}</TableCell>
+              <TableCell className="min-w-56 text-xs text-muted-foreground">
+                {reading(r)}
+                {trialNote(r)}
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>

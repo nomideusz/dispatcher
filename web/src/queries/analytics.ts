@@ -295,8 +295,10 @@ export interface HealthSeries {
 /** 45 days: long enough to hold a fix pushed a month ago and the health it
  * stood at before. */
 export const healthSeriesQuery = queryOptions({
-  queryKey: ["analytics", "template-health", 45],
-  queryFn: ({ signal }) => api.get("analytics/template-health", { searchParams: { days: 45 }, signal }).json<HealthSeries>(),
+  // 48 days: the 14-day stretch plus the 33 days before it that trial ends
+  // are traced back over, and a day's margin.
+  queryKey: ["analytics", "template-health", 48],
+  queryFn: ({ signal }) => api.get("analytics/template-health", { searchParams: { days: 48 }, signal }).json<HealthSeries>(),
 });
 
 export const verdictsQuery = queryOptions({

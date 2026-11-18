@@ -12,6 +12,12 @@ export const FIX_TEST_DEPLOYS = 5;
 /** New projects in the stretch at or under which a fall is the running
  * instances failing, not the new deploys. */
 const FEW_DEPLOYS = 2;
+/** Days after a project arrives in which its instance most often goes down
+ * unprompted: Railway's trial runs 30 days, and its services stop when it
+ * ends. Measured 18 Nov over 211 templates: an instance is about twice as
+ * likely to go unhealthy 30 to 32 days after its project arrived, and the
+ * effect stops at day 33. */
+export const TRIAL_DAYS = [29, 33] as const;
 /** Health scores at most this many of the latest deploys: one bad deploy
  * among a full set costs 4 points. */
 export const SCORED_DEPLOYS = 25;
@@ -46,6 +52,11 @@ export type HealthRead = {
    * for steps across a gap in sampling. */
   changeWithNew: number;
   changeWithout: number;
+  /** Points lost in hours with no new project over the stretch, and the part
+   * of them lost on days that fall TRIAL_DAYS after projects arrived: those
+   * look like deployers' trials ending, not a defect. Negative or 0. */
+  quietLoss: number;
+  trialLoss: number;
   /** The recorded fix: new projects since it went out (since the end of its
    * day when the time isn't known) and the health just before it; both null
    * when no sample predates it. */
@@ -90,6 +101,28 @@ export function readHealth(t: TimelineTemplate, series: HealthSeries): HealthRea
   const changeWithNew = sumAfter(s.changeWithNew);
   const changeWithout = sumAfter(s.changeWithout);
 
+  // Quiet losses day by day, split by whether projects arrived TRIAL_DAYS
+  // before. Days are looked up by date: the series skips days with no sample.
+  const at = new Map(series.days.map((d, i) => [d, i]));
+  const arrivedOn = (day: string) => {
+    const i = at.get(day);
+    if (i == null || i === 0) return 0;
+    const now = s.projects[i];
+    const before = lastUpTo(s.projects, i - 1);
+    return now != null && before != null ? Math.max(0, now - before) : 0;
+  };
+  const daysBefore = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00Z`) - n * 86_400_000).toISOString().slice(0, 10);
+  let quietLoss = 0;
+  let trialLoss = 0;
+  for (let i = cut + 1; i <= last; i++) {
+    const v = s.changeWithout?.[i];
+    if (v == null || v >= 0) continue;
+    quietLoss += v;
+    let arrived = 0;
+    for (let n = TRIAL_DAYS[0]; n <= TRIAL_DAYS[1]; n++) arrived += arrivedOn(daysBefore(series.days[i], n));
+    if (arrived > 0) trialLoss += v;
+  }
+
   // Counted server-side from the hourly samples: a day's series can't tell
   // the deploys before a fix that morning from the ones after it.
   const fix: HealthRead["fix"] = t.fixedOn
@@ -113,7 +146,7 @@ export function readHealth(t: TimelineTemplate, series: HealthSeries): HealthRea
               ? "runningFail"
               : "newFail"
             : "low";
-  return { now: t.health, change, newProjects, redeploys, fillDays, changeWithNew, changeWithout, fix, state, days: series.days, spark: s.health };
+  return { now: t.health, change, newProjects, redeploys, fillDays, changeWithNew, changeWithout, quietLoss, trialLoss, fix, state, days: series.days, spark: s.health };
 }
 
 /** Whether a fall is the instances already running rather than new
@@ -122,6 +155,17 @@ export function readHealth(t: TimelineTemplate, series: HealthSeries): HealthRea
  * instances, if the hours it fell in had none. */
 export const runningToBlame = (r: Pick<HealthRead, "newProjects" | "changeWithNew" | "changeWithout">) =>
   (r.newProjects ?? 0) <= FEW_DEPLOYS || r.changeWithout < r.changeWithNew;
+
+/** Most of the points lost in quiet hours came about 30 days after projects
+ * arrived: likely deployers' trials ending, which no push fixes. Inferred
+ * from timing, since Railway shows no state per deploy. */
+export const trialsEnding = (r: Pick<HealthRead, "quietLoss" | "trialLoss">) => r.quietLoss <= -4 && r.trialLoss <= r.quietLoss / 2;
+
+/** The reading's clause for a fall that lines up with trials ending. */
+export const trialNote = (r: Pick<HealthRead, "quietLoss" | "trialLoss">) =>
+  trialsEnding(r)
+    ? ` · ${Math.abs(r.trialLoss).toFixed(0)} of the ${Math.abs(r.quietLoss).toFixed(0)} points lost in hours with no new project came ${TRIAL_DAYS[0]}–${TRIAL_DAYS[1]} days after projects arrived, when Railway trials end: likely deployers' trials running out rather than a defect`
+    : "";
 
 /** A template worth a look: under the floor, or falling toward it. */
 export const onWatch = (r: HealthRead) => r.now < HEALTH_FLOOR || (r.change != null && r.change <= -HEALTH_FALL);

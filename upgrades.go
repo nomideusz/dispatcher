@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -77,7 +78,10 @@ type serviceImageRef struct {
 	// Dockerfile is the service's build.dockerfilePath under Root, empty
 	// for the default Dockerfile.
 	Dockerfile string
-	HA         string
+	// Built is our own image (ghcr.io/two-workspaces/x:sha) when Repo is
+	// the repo it is built from: its dockerfileLabel is read first.
+	Built string
+	HA    string
 }
 
 // templateImages lists the image-based and repo-built services of a template.
@@ -102,7 +106,7 @@ func (t workspaceTemplate) templateImages() []serviceImageRef {
 		if repo := ourImageRepo(svc.Source.Image); repo != "" {
 			// Our own build of a repo: its tags only ever say it is current,
 			// so the upstream pins are read from that repo's Dockerfile.
-			refs = append(refs, serviceImageRef{Service: svc.Name, Repo: repo, Root: "/"})
+			refs = append(refs, serviceImageRef{Service: svc.Name, Repo: repo, Root: "/", Built: svc.Source.Image})
 		} else if svc.Source.Image != "" {
 			image, tag := splitImageTag(svc.Source.Image)
 			refs = append(refs, serviceImageRef{Service: svc.Name, Image: image, Tag: tag, HA: svc.HATemplateCode})
@@ -464,6 +468,106 @@ func fetchDockerfile(ctx context.Context, repo, root, name string) (dockerfile s
 	return string(body), err == nil, err
 }
 
+// dockerfileLabel holds, base64-encoded, the Dockerfile an image of ours was
+// built from. Our Actions set it, so the pins of what a template deploys are
+// read from the image itself: its repo may be private (edge-src, whose public
+// edge repo stays frozen for the rivals building from it) or ahead of it.
+const dockerfileLabel = "app.zaur.dockerfile.base64"
+
+// imageDockerfile reads dockerfileLabel from a public image's config, taking
+// the linux/amd64 entry of a multi-platform index. ok is false for an image
+// without the label.
+func imageDockerfile(ctx context.Context, ref string) (dockerfile string, ok bool, err error) {
+	image, tag := splitImageTag(ref)
+	host, repo := registryRepo(image)
+	base := fmt.Sprintf("https://%s/v2/%s/", host, repo)
+	token := ""
+	get := func(path, accept string, v any) error {
+		for try := 0; try < 2; try++ {
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path, nil)
+			if err != nil {
+				return err
+			}
+			if accept != "" {
+				req.Header.Set("Accept", accept)
+			}
+			if token != "" {
+				req.Header.Set("Authorization", "Bearer "+token)
+			}
+			resp, err := registryClient.Do(req)
+			if err != nil {
+				return err
+			}
+			if resp.StatusCode == http.StatusUnauthorized && token == "" {
+				challenge := resp.Header.Get("WWW-Authenticate")
+				resp.Body.Close()
+				if token, err = registryToken(ctx, challenge); err != nil {
+					return err
+				}
+				continue
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("%s: %s", path, resp.Status)
+			}
+			return json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(v)
+		}
+		return fmt.Errorf("%s: unauthorized", path)
+	}
+	const accept = "application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, " +
+		"application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json"
+	var manifest struct {
+		Manifests []struct {
+			Digest   string `json:"digest"`
+			Platform struct {
+				OS           string `json:"os"`
+				Architecture string `json:"architecture"`
+			} `json:"platform"`
+		} `json:"manifests"`
+		Config struct {
+			Digest string `json:"digest"`
+		} `json:"config"`
+	}
+	if err := get("manifests/"+strings.TrimPrefix(tag, "@"), accept, &manifest); err != nil {
+		return "", false, err
+	}
+	if manifest.Config.Digest == "" {
+		digest := ""
+		for _, m := range manifest.Manifests {
+			if m.Platform.OS == "linux" && m.Platform.Architecture == "amd64" {
+				digest = m.Digest
+				break
+			}
+		}
+		if digest == "" {
+			return "", false, nil
+		}
+		if err := get("manifests/"+digest, accept, &manifest); err != nil {
+			return "", false, err
+		}
+	}
+	var config struct {
+		Config struct {
+			Labels map[string]string `json:"Labels"`
+		} `json:"config"`
+	}
+	if manifest.Config.Digest == "" {
+		return "", false, nil
+	}
+	if err := get("blobs/"+manifest.Config.Digest, "", &config); err != nil {
+		return "", false, err
+	}
+	encoded := config.Config.Labels[dockerfileLabel]
+	if encoded == "" {
+		return "", false, nil
+	}
+	raw, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return "", false, fmt.Errorf("%s label: %w", dockerfileLabel, err)
+	}
+	return string(raw), true, nil
+}
+
 // listTags lists the versions behind an Image: registry tags, or for a
 // marked Dockerfile ARG the latest stable GitHub release, npm or PyPI version.
 // Only the latest is fetched for those, which is enough for newestTags to
@@ -731,7 +835,16 @@ func checkTemplateUpgrades(db *gorm.DB) error {
 				if ref.Repo == "" {
 					continue
 				}
-				dockerfile, ok, err := fetchDockerfile(ctx, ref.Repo, ref.Root, ref.Dockerfile)
+				dockerfile, ok, err := "", false, error(nil)
+				if ref.Built != "" {
+					dockerfile, ok, err = imageDockerfile(ctx, ref.Built)
+					if err != nil {
+						log.Printf("upgrade check: %s: %v", ref.Built, err)
+					}
+				}
+				if !ok {
+					dockerfile, ok, err = fetchDockerfile(ctx, ref.Repo, ref.Root, ref.Dockerfile)
+				}
 				if err != nil {
 					failed[i] = append(failed[i], ServiceImage{CheckedAt: checkedAt, TemplateID: t.ID, Service: ref.Service, Image: ref.Repo, Behind: "unknown", Error: err.Error()})
 				} else if ok {

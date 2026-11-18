@@ -1,9 +1,14 @@
 package main
 
 import (
+	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -281,7 +286,7 @@ func TestTemplateImagesDockerfilePath(t *testing.T) {
 	got := fmt.Sprint(tpl.templateImages())
 	want := fmt.Sprint([]serviceImageRef{
 		{Service: "db", Image: "postgres", Tag: "17"},
-		{Service: "laya", Repo: "https://github.com/two-workspaces/laya", Root: "/"},
+		{Service: "laya", Repo: "https://github.com/two-workspaces/laya", Root: "/", Built: "ghcr.io/two-workspaces/laya:671e888"},
 		{Service: "ui", Repo: "https://github.com/o/datalens", Root: "/", Dockerfile: "Dockerfile.ui"},
 	})
 	if got != want {
@@ -340,5 +345,50 @@ func TestUpgradeRows(t *testing.T) {
 	want = "[free/app/patch/Free busy/app/minor/Busy pinned/app/patch/Pinned pinned/db//Pinned bare//unchecked/Bare]"
 	if fmt.Sprint(got) != want || rows[0].Urgent != "CVE" || rows[2].Urgent != "" {
 		t.Errorf("upgradeRows with urgent = %v, want %v", got, want)
+	}
+}
+
+// Our images carry their Dockerfile in a label, read through a multi-platform
+// index (amd64 picked over the attestation entry) behind an anonymous token.
+func TestImageDockerfile(t *testing.T) {
+	dockerfile := "FROM linuxserver/msedge:157.0.4341.60-1-ls217\n"
+	var srv *httptest.Server
+	srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/token" {
+			fmt.Fprint(w, `{"token":"t"}`)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer t" {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="`+srv.URL+`/token",service="s",scope="repository:o/edge:pull"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		switch r.URL.Path {
+		case "/v2/o/edge/manifests/abc1234":
+			fmt.Fprint(w, `{"manifests":[{"digest":"sha256:att","platform":{"os":"unknown","architecture":"unknown"}},{"digest":"sha256:amd","platform":{"os":"linux","architecture":"amd64"}}]}`)
+		case "/v2/o/edge/manifests/sha256:amd":
+			fmt.Fprint(w, `{"config":{"digest":"sha256:cfg"}}`)
+		case "/v2/o/edge/blobs/sha256:cfg":
+			fmt.Fprintf(w, `{"config":{"Labels":{%q:%q}}}`, dockerfileLabel, base64.StdEncoding.EncodeToString([]byte(dockerfile)))
+		case "/v2/o/plain/manifests/v1":
+			fmt.Fprint(w, `{"config":{"digest":"sha256:none"}}`)
+		case "/v2/o/plain/blobs/sha256:none":
+			fmt.Fprint(w, `{"config":{"Labels":{}}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	old := registryClient
+	registryClient = srv.Client()
+	defer func() { registryClient = old }()
+	host := strings.TrimPrefix(srv.URL, "https://")
+
+	got, ok, err := imageDockerfile(context.Background(), host+"/o/edge:abc1234")
+	if err != nil || !ok || got != dockerfile {
+		t.Errorf("labelled image = %q, %v, %v", got, ok, err)
+	}
+	if _, ok, err := imageDockerfile(context.Background(), host+"/o/plain:v1"); err != nil || ok {
+		t.Errorf("unlabelled image: ok=%v err=%v, want false, nil", ok, err)
 	}
 }

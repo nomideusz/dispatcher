@@ -88,7 +88,7 @@ function Panel({ label, note, children }: { label: string; note: string; childre
 }
 
 /** The marks every panel carries: the day a fix was pushed and the day the
- * pins last moved. */
+ * it was last upgraded. */
 function Marks({ fixAt, upgradeAt }: { fixAt: number | null; upgradeAt: number | null }) {
   return (
     <>
@@ -207,7 +207,7 @@ export function HealthDetail({
               ? `fix pushed${selected.fixedAt ? ` at ${selected.fixedAt.slice(11, 16)} UTC` : ""}${read?.fix?.newSince != null ? `, ${plural(read.fix.newSince, "new project")} since` : ""}`
               : "no fix recorded"}
           </p>
-          <p>{upgradedOn ? <>pins last moved <Fig>{fmtDay(upgradedOn)}</Fig></> : "no upgrade recorded"}</p>
+          <p>{upgradedOn ? <>last upgraded <Fig>{fmtDay(upgradedOn)}</Fig></> : "no upgrade recorded"}</p>
         </DocketCell>
         <DocketCell small label="Search" value={stake == null ? null : stake[0] ? `#${stake[0].position}` : "—"}>
           {stake?.[0] ? (
@@ -280,7 +280,7 @@ export function HealthDetail({
       {(fixAt != null || upgradeAt != null) && (
         <p className="text-xs text-muted-foreground">
           {fixAt != null && <>The solid upright line is the fix pushed {fmtDay(selected.fixedOn)}. </>}
-          {upgradeAt != null && <>The dashed one is the day its pins last moved, {fmtDay(upgradedOn)}.</>}
+          {upgradeAt != null && <>The dashed one is the day it was last upgraded, {fmtDay(upgradedOn)}.</>}
         </p>
       )}
 

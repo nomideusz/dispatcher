@@ -22,6 +22,7 @@ export const SCORED_DEPLOYS = 25;
 export const SLOW_FILL_DAYS = 30;
 
 export type HealthState =
+  | "fellSinceFix" // a fix is pushed, too few deploys since, and it fell anyway: instances already running
   | "untested" // a fix is pushed, too few deploys since to judge it
   | "notHeld" // a fix is pushed, deploys have landed, still low
   | "runningFail" // falling with next to no new deploys
@@ -97,20 +98,30 @@ export function readHealth(t: TimelineTemplate, series: HealthSeries): HealthRea
 
   const falling = change != null && change <= -HEALTH_FALL;
   const low = t.health < HEALTH_FLOOR;
+  const untested = fix?.newSince != null && fix.newSince < FIX_TEST_DEPLOYS;
   const state: HealthState =
-    fix?.newSince != null && fix.newSince < FIX_TEST_DEPLOYS
-      ? "untested"
-      : fix && low
-        ? "notHeld"
-        : falling
-          ? // Blame the side that lost more: a fall with many new projects can
-            // still be the running instances, if the hours it fell in had none.
-            (newProjects ?? 0) <= FEW_DEPLOYS || changeWithout < changeWithNew
-            ? "runningFail"
-            : "newFail"
-          : "low";
+    untested && fix!.newSince! <= FEW_DEPLOYS && fix!.healthThen != null && t.health <= fix!.healthThen - HEALTH_FALL
+      ? // Next to no new deploys since to have moved it, so the fall is
+        // instances already running, which the fix didn't reach.
+        "fellSinceFix"
+      : untested
+        ? "untested"
+        : fix && low
+          ? "notHeld"
+          : falling
+            ? runningToBlame({ newProjects, changeWithNew, changeWithout })
+              ? "runningFail"
+              : "newFail"
+            : "low";
   return { now: t.health, change, newProjects, redeploys, fillDays, changeWithNew, changeWithout, fix, state, days: series.days, spark: s.health };
 }
+
+/** Whether a fall is the instances already running rather than new
+ * deploys: next to no new projects in the stretch, or more lost in the hours
+ * none arrived. A fall with many new projects can still be the running
+ * instances, if the hours it fell in had none. */
+export const runningToBlame = (r: Pick<HealthRead, "newProjects" | "changeWithNew" | "changeWithout">) =>
+  (r.newProjects ?? 0) <= FEW_DEPLOYS || r.changeWithout < r.changeWithNew;
 
 /** A template worth a look: under the floor, or falling toward it. */
 export const onWatch = (r: HealthRead) => r.now < HEALTH_FLOOR || (r.change != null && r.change <= -HEALTH_FALL);

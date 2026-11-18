@@ -3,7 +3,7 @@ import { Fig } from "~/components/page";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableRowHead, useSort } from "~/components/ui/table";
 import { earned30, HEALTH_FLOOR } from "~/lib/catalog";
 import { fmtDay, fmtLongDay, fmtNum, fmtUsd, shortNames } from "~/lib/format";
-import { FIX_TEST_DEPLOYS, type HealthRead, onWatch, readHealth, SCORED_DEPLOYS, SLOW_FILL_DAYS, WATCH_DAYS } from "~/lib/health";
+import { FIX_TEST_DEPLOYS, HEALTH_FALL, type HealthRead, onWatch, readHealth, runningToBlame, SCORED_DEPLOYS, SLOW_FILL_DAYS, WATCH_DAYS } from "~/lib/health";
 import { cn } from "~/lib/utils";
 import type { HealthSeries, TimelineTemplate } from "~/queries/analytics";
 
@@ -13,6 +13,8 @@ const plural = (n: number, one: string, many = `${one}s`) => `${fmtNum(n)} ${n =
 function reading(r: HealthRead) {
   const since = r.fix?.newSince;
   switch (r.state) {
+    case "fellSinceFix":
+      return `Fell from ${r.fix!.healthThen!.toFixed(0)}% to ${r.now.toFixed(0)}% since the fix pushed ${fmtDay(r.fix!.on)}, with ${plural(since!, "new project")}: instances already running are failing, which the fix didn't reach`;
     case "untested":
       return `Fix pushed ${fmtDay(r.fix!.on)}${r.fix!.healthThen != null ? ` at ${r.fix!.healthThen.toFixed(0)}%` : ""}: ${plural(since!, "new project")} since, too few to judge it`;
     case "notHeld":
@@ -104,13 +106,23 @@ export function HealthWatch({ templates, series }: { templates: TimelineTemplate
   }
   const low = watched.filter(({ r }) => r.now < HEALTH_FLOOR);
   const count = (state: HealthRead["state"]) => watched.filter(({ r }) => r.state === state).length;
+  // The same rule as the page's Falling figure, so the two agree.
+  const falling = watched.filter(({ r }) => r.change != null && r.change <= -HEALTH_FALL);
+  const fallingRunning = falling.filter(({ r }) => runningToBlame(r)).length;
   return (
     <div className="space-y-3">
       <p className="max-w-[80ch] text-sm text-muted-foreground">
         <Fig>{fmtNum(low.length)}</Fig> under {HEALTH_FLOOR}%, <Fig>{fmtNum(low.filter(({ t }) => earned30(t) > 0).length)}</Fig> of
         them earning{watched.length > low.length && <>; <Fig>{fmtNum(watched.length - low.length)}</Fig> more falling</>}.{" "}
-        <Fig>{fmtNum(count("untested"))}</Fig> have a fix that can&apos;t be judged yet, <Fig>{fmtNum(count("notHeld"))}</Fig> a fix
-        that didn&apos;t hold, and <Fig>{fmtNum(count("runningFail"))}</Fig> are falling with no new deploys to blame.
+        <Fig>{fmtNum(falling.length)}</Fig> fell {HEALTH_FALL} points or more in {WATCH_DAYS} days, <Fig>{fmtNum(fallingRunning)}</Fig> of
+        them on instances already running. Of the fixes, <Fig>{fmtNum(count("untested"))}</Fig> can&apos;t be judged yet,{" "}
+        <Fig>{fmtNum(count("notHeld"))}</Fig> didn&apos;t hold
+        {count("fellSinceFix") > 0 && (
+          <>
+            , and <Fig>{fmtNum(count("fellSinceFix"))}</Fig> fell since with no new deploys to blame
+          </>
+        )}
+        .
       </p>
       <Table rows={rows.length} limit={50} className="min-w-[60rem]">
         <TableHeader>
@@ -124,7 +136,7 @@ export function HealthWatch({ templates, series }: { templates: TimelineTemplate
             {head("newProjects", "New", { numeric: true, hint: `Projects made from it in the last ${WATCH_DAYS} days. Only these can show whether the current image deploys well` })}
             {head("redeploys", "Redeploys", { numeric: true, hint: `Deploys in the last ${WATCH_DAYS} days beyond the new projects: deployers redeploying what they already run, and our own canaries. Railway counts them about once a day` })}
             {head("fill", `To ${SCORED_DEPLOYS}`, { numeric: true, hint: `Days to collect ${SCORED_DEPLOYS} new projects at the last ${WATCH_DAYS} days' pace. Health scores at most the ${SCORED_DEPLOYS} latest deploys. Within ${SLOW_FILL_DAYS} days all ${SCORED_DEPLOYS} count: health moves in steps of 4 as new deploys land, and a bad one ages out. Past that, fewer count, so it moves in odd steps and mostly on instances already running` })}
-            {head("fix", "Since fix", { numeric: true, hint: `New projects since the day a fix was recorded. Under ${FIX_TEST_DEPLOYS}, the fix can't be judged: health scores the instances already running` })}
+            {head("fix", "Since fix", { numeric: true, hint: `New projects since the fix went out (since the end of its day when only the day was recorded). Under ${FIX_TEST_DEPLOYS}, the fix can't be judged: health scores the instances already running` })}
             {head("earned", "Earned 30d", { numeric: true })}
             {head("running", "Running", { numeric: true, hint: "Service instances up now" })}
             <TableHead>Reading</TableHead>

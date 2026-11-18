@@ -72,9 +72,9 @@ export function Levers({
   // A fix shows only in deploys made after it, so the deploys since decide
   // whether it is still untested or didn't hold.
   const sickFixed = sickEarning.filter((t) => t.fixedOn);
-  const fixState = (state: "untested" | "notHeld") =>
-    health ? sickFixed.filter((t) => readHealth(t, health)?.state === state) : [];
-  const fixUntested = fixState("untested");
+  const fixState = (...states: ("untested" | "fellSinceFix" | "notHeld")[]) =>
+    health ? sickFixed.filter((t) => states.some((s) => readHealth(t, health)?.state === s)) : [];
+  const fixUntested = fixState("untested", "fellSinceFix");
   const fixNotHeld = fixState("notHeld");
   const sickIdle = sick.filter((t) => earned(t) === 0 && (t.running ?? 0) > 0);
 

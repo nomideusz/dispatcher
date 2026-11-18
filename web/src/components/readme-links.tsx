@@ -66,7 +66,7 @@ export function ReadmeLinks({ report }: { report: LinkReport }) {
         <p>
           {report.checkedAt
             ? `${fmtNum(report.links)} links in ${fmtNum(report.readmes)} readmes, checked ${fmtAgo(report.checkedAt, new Date().toISOString())} ago`
-            : "Not checked yet: the first check runs daily at 06:38 UTC."}
+            : "Not checked yet: the check runs daily at 06:38 UTC, or press Re-check."}
         </p>
         <Button size="xs" variant="outline" disabled={refresh.isPending} onClick={() => refresh.mutate()}>
           {refresh.isPending ? "Checking…" : "Re-check"}

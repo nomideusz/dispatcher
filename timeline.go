@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"sort"
 	"time"
@@ -76,12 +77,18 @@ type timelineActivity struct {
 // knows about it: the window's projects and kickback, day by day in Activity,
 // and the dates it was last deployed and first/last paid (all time).
 type timelineTemplate struct {
-	TemplateID     string     `json:"templateId"`
-	Name           string     `json:"name"`
-	Code           string     `json:"code"`
-	Kind           string     `json:"kind"`
-	Origin         string     `json:"origin"`
-	FixedOn        string     `json:"fixedOn"`
+	TemplateID string     `json:"templateId"`
+	Name       string     `json:"name"`
+	Code       string     `json:"code"`
+	Kind       string     `json:"kind"`
+	Origin     string     `json:"origin"`
+	FixedOn    string     `json:"fixedOn"`
+	FixedAt    *time.Time `json:"fixedAt"`
+	// FixNewProjects and FixHealthThen judge the recorded fix: projects made
+	// since it went out (since the end of FixedOn when the time isn't known),
+	// and health on the last sample before it. Null when no sample predates it.
+	FixNewProjects *int64     `json:"fixNewProjects"`
+	FixHealthThen  *float64   `json:"fixHealthThen"`
 	PublishedAt    *time.Time `json:"publishedAt"`
 	FirstSeenAt    time.Time  `json:"firstSeenAt"`
 	Services       int64      `json:"services"`
@@ -164,7 +171,7 @@ func handleTimeline(db *gorm.DB) http.HandlerFunc {
 				SELECT template_id, MIN(sampled_at) AS first_seen_at
 				FROM template_snapshots WHERE status = 'PUBLISHED' GROUP BY template_id
 			)
-			SELECT s.template_id, s.name, s.code, COALESCE(k.kind, '') AS kind, COALESCE(o.origin, '') AS origin, COALESCE(f.fixed_on, '') AS fixed_on, s.published_at, seen.first_seen_at,
+			SELECT s.template_id, s.name, s.code, COALESCE(k.kind, '') AS kind, COALESCE(o.origin, '') AS origin, COALESCE(f.fixed_on, '') AS fixed_on, f.fixed_at, s.published_at, seen.first_seen_at,
 			       s.services, s.projects, s.active_projects,
 			       s.active_deployments AS running, s.total_deployments AS deployments,
 			       s.template_health AS health, s.support_health,
@@ -177,6 +184,10 @@ func handleTimeline(db *gorm.DB) http.HandlerFunc {
 			WHERE s.sampled_at = ? AND s.status = 'PUBLISHED'
 			ORDER BY s.total_payout DESC, s.name`, *sampledAt).Scan(&templates).Error
 		if err != nil {
+			fail(err)
+			return
+		}
+		if err := applyFixBaselines(ctx, db, templates); err != nil {
 			fail(err)
 			return
 		}
@@ -410,4 +421,53 @@ func buildTimeline(days int, now, trackedSince time.Time, events []timelineEvent
 		p.LifetimeCents = &life
 	}
 	return resp
+}
+
+// applyFixBaselines fills in what judges each recorded fix: the projects
+// made since it went out and the health it stood at just before. With no
+// time recorded, projects count from the end of the fix day, so deploys made
+// earlier that day are never credited to it, and health is read before the
+// day began.
+func applyFixBaselines(ctx context.Context, db *gorm.DB, templates []timelineTemplate) error {
+	var rows []struct {
+		TemplateID   string
+		BaseProjects *int64
+		HealthThen   *float64
+	}
+	err := db.WithContext(ctx).Raw(`
+		WITH f AS (
+			SELECT template_id,
+			       COALESCE(fixed_at, CAST(CAST(fixed_on AS DATE) + INTERVAL 1 DAY AS TIMESTAMPTZ)) AS count_from,
+			       COALESCE(fixed_at, CAST(CAST(fixed_on AS DATE) AS TIMESTAMPTZ)) AS health_before
+			FROM template_fixes WHERE fixed_on <> ''
+		)
+		SELECT f.template_id,
+		       (SELECT s.projects FROM template_snapshots s
+		        WHERE s.template_id = f.template_id AND s.status = 'PUBLISHED' AND s.sampled_at <= f.count_from
+		        ORDER BY s.sampled_at DESC LIMIT 1) AS base_projects,
+		       (SELECT s.template_health FROM template_snapshots s
+		        WHERE s.template_id = f.template_id AND s.status = 'PUBLISHED' AND s.sampled_at < f.health_before
+		          AND s.template_health IS NOT NULL
+		        ORDER BY s.sampled_at DESC LIMIT 1) AS health_then
+		FROM f`).Scan(&rows).Error
+	if err != nil {
+		return err
+	}
+	byID := make(map[string]int, len(templates))
+	for i, t := range templates {
+		byID[t.TemplateID] = i
+	}
+	for _, r := range rows {
+		i, ok := byID[r.TemplateID]
+		if !ok {
+			continue
+		}
+		t := &templates[i]
+		t.FixHealthThen = r.HealthThen
+		if r.BaseProjects != nil {
+			n := max(0, t.Projects-*r.BaseProjects)
+			t.FixNewProjects = &n
+		}
+	}
+	return nil
 }

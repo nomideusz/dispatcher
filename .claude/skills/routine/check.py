@@ -223,7 +223,9 @@ def figures(timeline, upgrades, search, candidates, verdicts, health=None):
                 "health": round(t["health"]),
                 "earnedCents": t.get("earnedCents") or 0,
                 "fixedOn": t.get("fixedOn") or "",
-                "newSinceFix": new_since_fix(health, t["templateId"], t["fixedOn"]) if health and t.get("fixedOn") else None,
+                # The server counts from when the fix went out (the end of its day
+                # when the time isn't known); the day series is the fallback.
+                "newSinceFix": t["fixNewProjects"] if "fixNewProjects" in t else new_since_fix(health, t["templateId"], t["fixedOn"]) if health and t.get("fixedOn") else None,
                 "floorAtFix": health_floor_at(health, t["templateId"], t["fixedOn"]) if t.get("fixedOn") else None,
                 **paces[t["templateId"]],
                 "upgrades": sorted({u.get("behind") or "" for u in by_template.get(t["templateId"], [])} - {""})

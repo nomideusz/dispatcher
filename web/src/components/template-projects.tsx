@@ -98,7 +98,7 @@ function dayTicks(min: number, max: number, want: number) {
  * projects, which takes a template over 90 days old.
  * Ported from upstream ThallesP/dispatcher#12, reading our template-list
  * project counts rather than the inflated templateMetrics deployments. */
-export function TemplateProjects({ templateId, fixedOn }: { templateId: string; fixedOn?: string }) {
+export function TemplateProjects({ templateId, fixedOn, fixedAt }: { templateId: string; fixedOn?: string; fixedAt?: string }) {
   const [days, setDays] = useState<number>(30);
   const projects = useQuery(templateProjectsQuery(templateId, days));
   const data = projects.data;
@@ -114,8 +114,8 @@ export function TemplateProjects({ templateId, fixedOn }: { templateId: string; 
     kickback: p.kickback ?? null,
   }));
   const first = rows[0];
-  // The fix's day, if the range holds it.
-  const fixAt = fixedOn ? Date.parse(`${fixedOn}T00:00:00Z`) : null;
+  // When the fix went out, or its day when the time isn't known, if the range holds it.
+  const fixAt = fixedAt ? Date.parse(fixedAt) : fixedOn ? Date.parse(`${fixedOn}T00:00:00Z`) : null;
   const mark = fixAt != null && first && fixAt > first.t && fixAt <= rows[rows.length - 1].t ? fixAt : null;
   const panels = METRICS.flatMap((metric) => {
     if (metric.key === "recentProjects" && rows.every((r) => r.recentProjects === r.projects)) return [];

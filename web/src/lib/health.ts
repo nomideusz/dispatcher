@@ -45,9 +45,10 @@ export type HealthRead = {
    * for steps across a gap in sampling. */
   changeWithNew: number;
   changeWithout: number;
-  /** The recorded fix: new projects since the day before it and the health
-   * it stood at then; both null when it predates the series. */
-  fix: { on: string; newSince: number | null; healthThen: number | null } | null;
+  /** The recorded fix: new projects since it went out (since the end of its
+   * day when the time isn't known) and the health just before it; both null
+   * when no sample predates it. */
+  fix: { on: string; at: string | null; newSince: number | null; healthThen: number | null } | null;
   state: HealthState;
   /** Health day by day over the whole series, for the row's sparkline. */
   days: string[];
@@ -88,21 +89,11 @@ export function readHealth(t: TimelineTemplate, series: HealthSeries): HealthRea
   const changeWithNew = sumAfter(s.changeWithNew);
   const changeWithout = sumAfter(s.changeWithout);
 
-  let fix: HealthRead["fix"] = null;
-  if (t.fixedOn) {
-    // The day before the fix is the baseline; -1 when the fix predates the series.
-    let before = -1;
-    series.days.forEach((d, i) => {
-      if (d < t.fixedOn) before = i;
-    });
-    const base = before < 0 ? null : lastUpTo(s.projects, before);
-    const nowProjects = lastUpTo(s.projects, last);
-    fix = {
-      on: t.fixedOn,
-      newSince: base != null && nowProjects != null ? Math.max(0, nowProjects - base) : null,
-      healthThen: before < 0 ? null : lastUpTo(s.health, before),
-    };
-  }
+  // Counted server-side from the hourly samples: a day's series can't tell
+  // the deploys before a fix that morning from the ones after it.
+  const fix: HealthRead["fix"] = t.fixedOn
+    ? { on: t.fixedOn, at: t.fixedAt, newSince: t.fixNewProjects, healthThen: t.fixHealthThen }
+    : null;
 
   const falling = change != null && change <= -HEALTH_FALL;
   const low = t.health < HEALTH_FLOOR;

@@ -158,7 +158,9 @@ export function HealthDetail({
     const t = Date.parse(`${day}T00:00:00Z`);
     return t > min && t <= max ? t : null;
   };
-  const fixAt = inRange(selected.fixedOn);
+  const fixAt = selected.fixedAt
+    ? ((t) => (t > min && t <= max ? t : null))(Date.parse(selected.fixedAt))
+    : inRange(selected.fixedOn);
   const upgradeAt = inRange(upgradedOn);
   const fast = read != null && isFast(read);
   const sorted = [...templates].sort((a, b) => shortName(a.name).localeCompare(shortName(b.name)));
@@ -200,7 +202,11 @@ export function HealthDetail({
           {read?.newProjects != null && <p><Fig>{fmtNum(read.newProjects)}</Fig> new, <Fig>{fmtNum(read.redeploys ?? 0)}</Fig> redeploys in {WATCH_DAYS} days</p>}
         </DocketCell>
         <DocketCell small label="Fix and upgrade" value={selected.fixedOn ? fmtDay(selected.fixedOn) : "—"}>
-          <p>{selected.fixedOn ? `fix pushed${read?.fix?.newSince != null ? `, ${plural(read.fix.newSince, "new project")} since` : ""}` : "no fix recorded"}</p>
+          <p>
+            {selected.fixedOn
+              ? `fix pushed${selected.fixedAt ? ` at ${selected.fixedAt.slice(11, 16)} UTC` : ""}${read?.fix?.newSince != null ? `, ${plural(read.fix.newSince, "new project")} since` : ""}`
+              : "no fix recorded"}
+          </p>
           <p>{upgradedOn ? <>pins last moved <Fig>{fmtDay(upgradedOn)}</Fig></> : "no upgrade recorded"}</p>
         </DocketCell>
         <DocketCell small label="Search" value={stake == null ? null : stake[0] ? `#${stake[0].position}` : "—"}>

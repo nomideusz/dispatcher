@@ -194,7 +194,7 @@ func parseCommand(args []string, stderr io.Writer) (command, error) {
 				return command{}, fmt.Errorf("upgraded requires a template id and the date an upgrade was pushed (YYYY-MM-DD, or \"\" to clear)")
 			}
 			if args[0] == "fixed" {
-				return command{}, fmt.Errorf("fixed requires a template id and the date a fix was pushed (YYYY-MM-DD, or \"\" to clear)")
+				return command{}, fmt.Errorf("fixed requires a template id and when a fix was pushed (YYYY-MM-DD, an RFC 3339 time, or \"\" to clear)")
 			}
 			if args[0] == "origin" {
 				return command{}, fmt.Errorf("origin requires a template id and an origin (original, competitive, or \"\" to unmark)")
@@ -323,8 +323,9 @@ Other commands:
   origin TEMPLATE_ID ORIGIN
                            Set a template's origin: original or competitive
                            ("" leaves it unmarked)
-  fixed TEMPLATE_ID DATE   Record the day a health fix was pushed (YYYY-MM-DD,
-                           "" clears it)
+  fixed TEMPLATE_ID DATE   Record when a health fix was pushed: YYYY-MM-DD (today
+                           records the time too), or the moment it went out as
+                           RFC 3339 (2026-11-17T07:40:00Z); "" clears it
   upgraded TEMPLATE_ID DATE
                            Record the day an upgrade was pushed (YYYY-MM-DD,
                            "" clears it; the daily check also sets it when a

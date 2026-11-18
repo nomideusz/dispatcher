@@ -428,7 +428,7 @@ function TemplateRow({
           <TableCell colSpan={COLUMNS} className="p-0">
             <div className="sticky left-0 w-[calc(100vw-4rem)] max-w-[86rem] space-y-3 px-5 pt-2 pb-6">
               <Facts r={r} />
-              <TemplateProjects templateId={r.templateId} fixedOn={r.fixedOn || undefined} />
+              <TemplateProjects templateId={r.templateId} fixedOn={r.fixedOn || undefined} fixedAt={r.fixedAt ?? undefined} />
             </div>
           </TableCell>
         </TableRow>

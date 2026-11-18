@@ -51,6 +51,14 @@ export interface TimelineTemplate {
    * dispatcherctl fixed; "" when none was. Health lags a fix until deployers
    * take the update. */
   fixedOn: string;
+  /** When the fix went out (ISO, UTC), if known: recorded on its own day or
+   * given as a time; null when only the day is. */
+  fixedAt: string | null;
+  /** Projects made since the fix went out (since the end of its day when the
+   * time isn't known), and health on the last sample before it; null when no
+   * sample predates it. */
+  fixNewProjects: number | null;
+  fixHealthThen: number | null;
   /** Railway's Template.createdAt; the API has no separate publish date. */
   publishedAt: string | null;
   firstSeenAt: string;

@@ -1,5 +1,5 @@
 import { type ReactNode, useMemo } from "react";
-import { CartesianGrid, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
+import { CartesianGrid, Line, LineChart, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import { cursor, GROUPS, groupOf, Key, shareTop, Tip, tick } from "~/components/chart-kit";
 import { DOCKET, DocketCell, Fig, Section } from "~/components/page";
 import { ChartContainer } from "~/components/ui/chart";
@@ -62,20 +62,26 @@ export function PaidBySize({ data }: { data: TimelineResponse }) {
   }, [data]);
   const last = curve.length ? (curve[curve.length - 1].day as number) : 0;
   const reach = (g: number) => [...curve].reverse().find((r) => r[`g${g}`] != null);
+  // Each line runs as far as its own size has 15 templates that old, so the
+  // key reads every size at the furthest day all of them reach: read at its
+  // own last day, an older size would look better for being older.
+  const ends = GROUPS.map((_, g) => reach(g)?.day as number | undefined).filter((d): d is number => d != null);
+  const checkpoint = ends.length ? Math.min(...ends) : null;
+  const at = checkpoint == null ? undefined : curve.find((r) => r.day === checkpoint);
   return (
     <section className="min-w-0 space-y-2">
       <h3 className="text-base font-semibold">How soon a new one pays, by size</h3>
       <Key
         items={GROUPS.map((g, i) => {
-          const r = reach(i);
+          const v = at?.[`g${i}`];
           return {
             label: g.label,
             color: g.color,
             line: true,
-            value: r ? (
+            value: v != null ? (
               <>
-                {pct(r[`g${i}`]!)}
-                <span className="font-sans font-normal text-muted-foreground"> by day {r.day}</span>
+                {pct(v)}
+                <span className="font-sans font-normal text-muted-foreground"> by day {checkpoint}</span>
               </>
             ) : undefined,
           };
@@ -105,6 +111,7 @@ export function PaidBySize({ data }: { data: TimelineResponse }) {
               />
             )}
           />
+          {checkpoint != null && checkpoint < last && <ReferenceLine x={checkpoint} stroke="var(--border)" strokeDasharray="3 3" />}
           {GROUPS.map((g, i) => (
             <Line key={g.label} name={g.label} type="stepAfter" dataKey={`g${i}`} stroke={g.color} strokeWidth={2} dot={false} isAnimationActive={false} />
           ))}
@@ -112,7 +119,13 @@ export function PaidBySize({ data }: { data: TimelineResponse }) {
       </ChartContainer>
       <p className="text-xs text-muted-foreground">
         Share of templates that have paid anything, by days since publishing. Young templates count for the days they&apos;ve been live;
-        a line stops where fewer than {MIN_SIZE} are that old, and the key reads its last day. Where it flattens, waiting longer doesn&apos;t help.
+        a line stops where fewer than {MIN_SIZE} of its size are that old, so sizes with more old templates run further.
+        {checkpoint != null && (
+          <>
+            {" "}The key reads day <Fig>{checkpoint}</Fig>, the furthest every line reaches, so the sizes compare at the same age.
+          </>
+        )}
+        {" "}Where a line flattens, waiting longer doesn&apos;t help.
       </p>
     </section>
   );

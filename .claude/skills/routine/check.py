@@ -292,10 +292,12 @@ def low_note(t):
         note += f"  fix pushed {t['fixedOn']}"
         if since is not None:
             note += f", {since} new since"
-            if since >= FIX_TEST_DEPLOYS:
-                note += " (didn't hold)"
-            elif slow:
+            # Pace first: a slow template's score follows instances already running
+            # (trials ending, mostly), so new projects since the fix can't judge it.
+            if slow:
                 note += " (slow: verify with a held canary, not the score)"
+            elif since >= FIX_TEST_DEPLOYS:
+                note += " (didn't hold)"
             else:
                 note += " (too few to judge)"
         floor = t.get("floorAtFix")
@@ -556,6 +558,10 @@ def report(f, last):
 
 
 def main():
+    # A Windows console defaults to cp1252, which can't print the arrows and
+    # ellipses in the report and stops the check before it saves.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     section = None
     if "--only" in sys.argv:
         at = sys.argv.index("--only") + 1

@@ -27,7 +27,7 @@ WATCH_DAYS = 14  # the stretch pace and falls are read over
 SLOW_FILL_DAYS = 30
 HEALTH_FALL = 5  # points lost over the stretch that count as falling
 FEW_DEPLOYS = 2  # new projects in the stretch at or under which a fall is running instances
-FIX_FIRST = 10  # earning templates under the floor before publishing pauses
+FIX_FIRST = 10  # earning templates under the floor with no fix in hand before publishing pauses
 PLUMBING = {"Storage", "Starters", "Queues"}  # databases, boilerplates and queues: not apps we build
 SECTIONS = ("health", "catalog", "upgrades", "search", "candidates", "verdict", "payouts")
 VOID = {"FAILED", "CANCELLED", "CANCELED", "REJECTED"}  # withdrawals where no money moved
@@ -239,6 +239,8 @@ def figures(timeline, upgrades, search, candidates, verdicts, health=None):
                 "name": t["name"],
                 "health": round(t["health"]),
                 "earned30d": t.get("earned30d") or 0,
+                "fixedOn": t.get("fixedOn") or "",
+                "newSinceFix": t.get("fixNewProjects"),
                 **paces[t["templateId"]],
             }
             for t in fixable
@@ -283,6 +285,22 @@ def delta(now, before, key):
     return f" ({'+' if d > 0 else ''}{d})" if d else " (=)"
 
 
+def needs_fix(t):
+    """An under-70 line with no fix in hand: none pushed, or one that didn't hold.
+
+    A pushed fix that is still waiting on its evidence (too few new projects, or a
+    slow template's held canary) isn't open work, so it doesn't block publishing.
+    """
+    if not t.get("fixedOn"):
+        return True
+    slow = t.get("fill") is None or t["fill"] > SLOW_FILL_DAYS
+    since = t.get("newSinceFix")
+    if not slow and since is not None and since >= FIX_TEST_DEPLOYS:
+        return True
+    floor = t.get("floorAtFix")
+    return floor is not None and t["health"] < floor and not since
+
+
 def low_note(t):
     """The pace and fix notes for one under-70 line."""
     slow = t.get("fill") is None or t["fill"] > SLOW_FILL_DAYS
@@ -311,13 +329,26 @@ def low_note(t):
     return note
 
 
+def fixable_fix_note(t):
+    """A fast template's fix is judged by the projects that came after it."""
+    if not t.get("fixedOn"):
+        return ""
+    since = t.get("newSinceFix")
+    note = f"  [fix pushed {t['fixedOn']}"
+    if since is not None:
+        note += f", {since} new since: " + ("didn't hold, look again" if since >= FIX_TEST_DEPLOYS and t["health"] < 100
+                                             else "too few to judge, wait")
+    return note + "]"
+
+
 def show_health(f, last, detail=False):
     fixable = f.get("fixable", [])
     print(f"STILL FIXABLE: {len(fixable)} short of 100 that still get {SCORED_DEPLOYS} new projects "
           f"within {SLOW_FILL_DAYS} days (a fix shows in days)")
     for t in fixable:
         print(f"  {t['health']:>3}%  ${t['earned30d']:>7.2f}/30d  {t['name']}  "
-              f"{t['newProjects']} new in {WATCH_DAYS}d, to 25: {fmt_fill(t['fill'])}  -> {fast_reading(t)}")
+              f"{t['newProjects']} new in {WATCH_DAYS}d, to 25: {fmt_fill(t['fill'])}  -> {fast_reading(t)}"
+              + fixable_fix_note(t))
     if last and "fixable" in last:
         was = {t["name"] for t in last["fixable"]}
         gone = sorted(was - {t["name"] for t in fixable})
@@ -328,8 +359,13 @@ def show_health(f, last, detail=False):
             print(f"  gone since last (back at 100, or slowed past {SLOW_FILL_DAYS} days): {', '.join(gone)}")
     print(f"HEALTH: {len(f['low'])} live templates under {HEALTH_FLOOR}%, {f['lowEarning']} of them earning" + delta(
         {"n": f["lowEarning"]}, last and {"n": last["lowEarning"]}, "n"))
-    if f["lowEarning"] > FIX_FIRST:
-        print(f"  over {FIX_FIRST} earning: fix before you publish")
+    open_ = [t for t in f["low"] if (t.get("earnedCents") or 0) > 0 and needs_fix(t)]
+    print(f"  {len(open_)} earning with no fix in hand (none pushed, or it didn't hold)"
+          + (f": {', '.join(t['name'] for t in open_)}" if open_ else ""))
+    if len(open_) > FIX_FIRST:
+        print(f"  over {FIX_FIRST}: fix before you publish")
+    else:
+        print(f"  publishing open: the rest have a fix pushed and are waiting on new deploys or a held canary")
     for t in f["low"] if detail else f["low"][:10]:
         up = f"  upgrades pending: {', '.join(t['upgrades'])}" if t["upgrades"] else ""
         print(f"  {t['health']:>3}%  ${t['earnedCents'] / 100:>7.2f}/30d  {t['name']}{low_note(t)}{up}")

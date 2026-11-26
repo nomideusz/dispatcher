@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Candidates } from "~/components/candidates";
+import { Candidates, Rivals } from "~/components/candidates";
 import { PageHeader } from "~/components/page";
 import { Proposals } from "~/components/proposals";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -29,6 +29,7 @@ export default function CandidatesPage() {
       )}
       {timeline.isSuccess && <Candidates templates={timeline.data?.templates ?? []} />}
       <Proposals />
+      <Rivals />
     </main>
   );
 }

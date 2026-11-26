@@ -49,10 +49,34 @@ export interface MarketCopy {
   createdAt: string;
 }
 
+/** One of a rival's new templates of an app we publish. */
+export interface RivalListing {
+  name: string;
+  code: string;
+  /** The key of our group it competes in. */
+  ours: string;
+  active: number;
+  health: number | null;
+  createdAt: string;
+}
+
+/** A creator who published at least two templates of apps we publish in the
+ * 14 days before the market read. */
+export interface MarketRival {
+  creator: string;
+  /** All their templates created in those 14 days, ours or not. */
+  new: number;
+  /** The most they created on one UTC day, and that day. */
+  busiest: number;
+  busiestDay: string;
+  listings: RivalListing[];
+}
+
 export interface Candidates {
   fetchedAt: string | null;
   groups: CandidateGroup[];
   copies: MarketCopy[];
+  rivals: MarketRival[];
 }
 
 export const candidatesQuery = queryOptions({

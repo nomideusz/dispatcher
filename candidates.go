@@ -347,6 +347,90 @@ type candidatesResponse struct {
 	FetchedAt *time.Time        `json:"fetchedAt"`
 	Groups    []*candidateGroup `json:"groups"`
 	Copies    []marketCopy      `json:"copies"`
+	Rivals    []marketRival     `json:"rivals"`
+}
+
+// rivalWindow is how far back Rivals looks for new templates.
+const rivalWindow = 14 * 24 * time.Hour
+
+// rivalListing is one of a rival's new templates of an app we publish.
+type rivalListing struct {
+	Name      string    `json:"name"`
+	Code      string    `json:"code"`
+	Ours      string    `json:"ours"` // the key of our group it competes in
+	Active    int64     `json:"active"`
+	Health    *float64  `json:"health"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// marketRival is a creator who published templates of apps we publish within
+// rivalWindow: someone working our keywords, often in bursts.
+type marketRival struct {
+	Creator string `json:"creator"`
+	// New counts all their templates created in the window, ours or not.
+	New int `json:"new"`
+	// Busiest is the most they created on one UTC day in the window.
+	Busiest    int            `json:"busiest"`
+	BusiestDay string         `json:"busiestDay"`
+	Listings   []rivalListing `json:"listings"`
+}
+
+// maxRivals bounds the list; past it, creators have one or two listings on our apps.
+const maxRivals = 12
+
+// marketRivals lists the creators with at least two new templates, within
+// rivalWindow of the market read, in groups we publish in (or that look like one of ours).
+func marketRivals(rows []MarketTemplate, groups []*candidateGroup, ours map[string]bool, at time.Time) []marketRival {
+	ourKey := map[string]string{}
+	for _, g := range groups {
+		switch {
+		case len(g.Ours) > 0:
+			ourKey[g.Key] = g.Key
+		case g.Similar != "":
+			ourKey[g.Key] = g.Similar
+		}
+	}
+	since := at.Add(-rivalWindow)
+	by := map[string]*marketRival{}
+	days := map[string]map[string]int{}
+	for _, t := range rows {
+		if ours[t.ID] || t.Creator == "" || t.CreatedAt.Before(since) {
+			continue
+		}
+		r := by[t.Creator]
+		if r == nil {
+			r = &marketRival{Creator: t.Creator, Listings: []rivalListing{}}
+			by[t.Creator] = r
+			days[t.Creator] = map[string]int{}
+		}
+		r.New++
+		day := t.CreatedAt.UTC().Format("2006-01-02")
+		days[t.Creator][day]++
+		if n := days[t.Creator][day]; n > r.Busiest || (n == r.Busiest && day > r.BusiestDay) {
+			r.Busiest, r.BusiestDay = n, day
+		}
+		if k, ok := ourKey[marketKey(t.Name)]; ok {
+			r.Listings = append(r.Listings, rivalListing{Name: t.Name, Code: t.Code, Ours: k, Active: t.ActiveProjects, Health: t.Health, CreatedAt: t.CreatedAt})
+		}
+	}
+	out := []marketRival{}
+	for _, r := range by {
+		if len(r.Listings) < 2 {
+			continue
+		}
+		sort.Slice(r.Listings, func(i, j int) bool { return r.Listings[i].CreatedAt.After(r.Listings[j].CreatedAt) })
+		out = append(out, *r)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if len(out[i].Listings) != len(out[j].Listings) {
+			return len(out[i].Listings) > len(out[j].Listings)
+		}
+		return out[i].New > out[j].New
+	})
+	if len(out) > maxRivals {
+		out = out[:maxRivals]
+	}
+	return out
 }
 
 // maxCandidates bounds the market list: past it, groups have a handful of
@@ -391,7 +475,7 @@ func handleCandidates(db *gorm.DB) http.HandlerFunc {
 			marked[m.Key] = m
 		}
 
-		resp := candidatesResponse{Groups: []*candidateGroup{}, Copies: []marketCopy{}}
+		resp := candidatesResponse{Groups: []*candidateGroup{}, Copies: []marketCopy{}, Rivals: []marketRival{}}
 		if len(rows) > 0 {
 			resp.FetchedAt = &rows[0].FetchedAt
 		}
@@ -402,7 +486,11 @@ func handleCandidates(db *gorm.DB) http.HandlerFunc {
 			}
 		}
 		sort.Slice(resp.Copies, func(i, j int) bool { return resp.Copies[i].CreatedAt.After(resp.Copies[j].CreatedAt) })
-		for i, g := range addCatalog(groupMarket(rows, ours), catalog) {
+		groups := addCatalog(groupMarket(rows, ours), catalog)
+		if resp.FetchedAt != nil {
+			resp.Rivals = marketRivals(rows, groups, ours, *resp.FetchedAt)
+		}
+		for i, g := range groups {
 			m, ok := marked[g.Key]
 			if i >= maxCandidates && !ok && len(g.Ours) == 0 {
 				continue

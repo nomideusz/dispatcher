@@ -131,3 +131,36 @@ func TestAlike(t *testing.T) {
 		}
 	}
 }
+
+func TestMarketRivals(t *testing.T) {
+	at := time.Date(2026, 11, 26, 6, 0, 0, 0, time.UTC)
+	day := func(d int) time.Time { return at.Add(-time.Duration(d) * 24 * time.Hour) }
+	rows := []MarketTemplate{
+		{ID: "o1", Name: "FileBrowser", Creator: "Two Workspaces", CreatedAt: day(30)},
+		{ID: "o2", Name: "Docker Registry", Creator: "Two Workspaces", CreatedAt: day(30)},
+		{ID: "o3", Name: "Microsoft Edge", Creator: "Two Workspaces", CreatedAt: day(30)},
+		// Burst: three of ours (one through a look-alike group) and one other app, two on one day.
+		{ID: "a1", Name: "FileBrowser (Quantum)", Creator: "Burst", CreatedAt: day(2)},
+		{ID: "a2", Name: "Docker Registry 3", Creator: "Burst", CreatedAt: day(2)},
+		{ID: "a3", Name: "Edge", Creator: "Burst", CreatedAt: day(5)},
+		{ID: "a4", Name: "Gitea", Creator: "Burst", CreatedAt: day(2)},
+		// One listing on our apps only: not a rival yet.
+		{ID: "b1", Name: "FileBrowser", Creator: "Single", CreatedAt: day(1)},
+		{ID: "b2", Name: "Gitea", Creator: "Single", CreatedAt: day(1)},
+		// Too old to count.
+		{ID: "c1", Name: "FileBrowser", Creator: "Old", CreatedAt: day(20)},
+		{ID: "c2", Name: "Docker Registry", Creator: "Old", CreatedAt: day(20)},
+	}
+	ours := map[string]bool{"o1": true, "o2": true, "o3": true}
+	got := marketRivals(rows, groupMarket(rows, ours), ours, at)
+	if len(got) != 1 || got[0].Creator != "Burst" {
+		t.Fatalf("rivals = %+v, want only Burst", got)
+	}
+	r := got[0]
+	if r.New != 4 || len(r.Listings) != 3 || r.Busiest != 3 || r.BusiestDay != "2026-11-24" {
+		t.Errorf("Burst = new %d, listings %d, busiest %d on %s; want 4, 3, 3 on 2026-11-24", r.New, len(r.Listings), r.Busiest, r.BusiestDay)
+	}
+	if r.Listings[len(r.Listings)-1].Ours != "microsoft edge" {
+		t.Errorf("Edge listing competes in %q, want microsoft edge", r.Listings[len(r.Listings)-1].Ours)
+	}
+}

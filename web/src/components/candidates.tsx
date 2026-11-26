@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableMeter, TableR
 import { fmtAgo, fmtDay, fmtNum, fmtUsd, shortNames } from "~/lib/format";
 import { cn } from "~/lib/utils";
 import type { TimelineTemplate } from "~/queries/analytics";
-import { type CandidateGroup, candidatesQuery, type MarketCopy, useMarkCandidate } from "~/queries/candidates";
+import { type CandidateGroup, candidatesQuery, type MarketCopy, type MarketRival, useMarkCandidate } from "~/queries/candidates";
 
 /** Databases, boilerplates and queues top the marketplace and are not apps
  * anyone pays kickback on for long. */
@@ -395,5 +395,60 @@ export function Copies({ copies }: { copies: MarketCopy[] }) {
         ))}
       </ul>
     </div>
+  );
+}
+
+/** Listings of a rival shown before "+N more". */
+const RIVAL_SHOWN = 8;
+
+/** Creators publishing apps we publish, from the last 14 days of the market
+ * read: a burst on our keywords shows here the morning after. */
+export function Rivals() {
+  const { data } = useQuery(candidatesQuery);
+  const rivals: MarketRival[] = data?.rivals ?? [];
+  return (
+    <Section
+      id="rivals"
+      title="Rivals"
+      text="Creators who published two or more templates of apps we publish in the 14 days before the market read, most overlap first."
+    >
+      {rivals.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No creator published two or more of our apps in those 14 days.</p>
+      ) : (
+        <ul className="space-y-4">
+          {rivals.map((r) => (
+            <li key={r.creator} className="space-y-1">
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <span className="font-medium">{r.creator}</span>
+                <span className="text-xs text-muted-foreground">
+                  {fmtNum(r.listings.length)} of our apps · {fmtNum(r.new)} new templates in all · most in a day{" "}
+                  <span className={cn(r.busiest > 3 && "font-medium text-(--viz-caution)")}>
+                    {fmtNum(r.busiest)} on {fmtDay(r.busiestDay)}
+                  </span>
+                </span>
+              </div>
+              <p className="text-sm">
+                {r.listings.slice(0, RIVAL_SHOWN).map((l, i) => (
+                  <span key={l.code}>
+                    {i > 0 && " · "}
+                    <a href={`https://railway.com/deploy/${l.code}`} target="_blank" rel="noreferrer" className="hover:underline">
+                      {l.name}
+                    </a>
+                    <span className="text-xs text-muted-foreground">
+                      {" "}
+                      ({l.ours}, {fmtDay(l.createdAt)}
+                      {l.health != null ? `, health ${Math.round(l.health)}` : ""})
+                    </span>
+                  </span>
+                ))}
+                {r.listings.length > RIVAL_SHOWN && (
+                  <span className="text-xs text-muted-foreground"> · +{fmtNum(r.listings.length - RIVAL_SHOWN)} more</span>
+                )}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Section>
   );
 }

@@ -32,6 +32,10 @@ PLUMBING = {"Storage", "Starters", "Queues"}  # databases, boilerplates and queu
 SECTIONS = ("health", "catalog", "upgrades", "search", "candidates", "verdict", "payouts")
 VOID = {"FAILED", "CANCELLED", "CANCELED", "REJECTED"}  # withdrawals where no money moved
 UPGRADE_EVERY = 7  # days between upgrade pushes before the section is due
+# Railway allows 3 first publishes per workspace per rolling 24 h (docs: templates/publish-and-share#publishing-limits).
+# ~/dev/railway-templates/publish.py logs each one; the folder is synced between machines.
+TEMPLATES_DIR = os.environ.get("RAILWAY_TEMPLATES") or os.path.expanduser("~/dev/railway-templates")
+DAILY_NEW = 3
 TIERS = ("exact name, or slug + words in name", "name starts with it", "name has the words", "slug/description only")
 
 
@@ -535,6 +539,45 @@ def candidates_detail(candidates, n=15):
     print("  ours, but others take most of the deploys (a listing to fix is cheaper than a build):")
     for g in behind[:5]:
         print(f"    {g['key']}  we get {g['ourRecent']:,} of {g['recent'] + g['similarRecent']:,} in 90d")
+    rivals = candidates.get("rivals") or []
+    if rivals:
+        print("  rivals publishing our apps in the last 14 days (Candidates page, Rivals):")
+        for r in rivals[:5]:
+            apps = ", ".join(dict.fromkeys(l["ours"] for l in r["listings"]))
+            print(f"    {r['creator']}  {len(r['listings'])} of ours of {r['new']} new, most {r['busiest']} on {r['busiestDay']}: {apps[:110]}")
+
+
+def show_publish_slots():
+    """Free publish slots and the built drafts waiting for one, from publish.py's log."""
+    log = os.path.join(TEMPLATES_DIR, "publish-log.jsonl")
+    if not os.path.exists(log):
+        print(f"PUBLISH SLOTS: no {log} on this machine (set RAILWAY_TEMPLATES); Railway allows {DAILY_NEW} new templates a day")
+        return
+    now = datetime.now(timezone.utc)
+    used = []
+    for line in open(log, encoding="utf-8"):
+        if line.strip():
+            e = json.loads(line)
+            at = datetime.fromisoformat(e["at"])
+            if now - at < timedelta(hours=24):
+                used.append((at, e.get("code") or e.get("dir")))
+    used.sort()
+    free = max(0, DAILY_NEW - len(used))
+    frees = f"; next frees {(used[0][0] + timedelta(hours=24)):%m-%d %H:%M} UTC" if used else ""
+    print(f"PUBLISH SLOTS: {free} of {DAILY_NEW} free in the last 24 h"
+          + (f" (used by {', '.join(c for _, c in used)}{frees})" if used else ""))
+    waiting = []
+    for d in sorted(os.listdir(TEMPLATES_DIR)):
+        f = os.path.join(TEMPLATES_DIR, d, "template-meta.json")
+        if os.path.exists(f):
+            try:
+                m = json.load(open(f, encoding="utf-8"))
+            except ValueError:
+                continue
+            if m.get("id") and not m.get("published"):
+                waiting.append(d)
+    print(f"  built drafts waiting for a slot: {', '.join(waiting) or 'none'}"
+          + ("; publish these before building more" if waiting else ""))
 
 
 def show_payouts(days=14):
@@ -566,6 +609,8 @@ def only(section, f, last, data):
         search_why(data["search"], data["timeline"])
         search_detail(data["search"])
     elif section == "candidates":
+        show_publish_slots()
+        print()
         candidates_detail(data["candidates"])
         print()
         show_proposals()
@@ -587,6 +632,8 @@ def report(f, last):
     show_search(f, last)
     if f["shortlist"] < 3:
         print(f"  shortlist has {f['shortlist']}: fill it (candidates skill, steps 4-6)")
+    print()
+    show_publish_slots()
     print()
     show_verdict(f)
     print()

@@ -6,7 +6,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/vogo/duckdb/v2 v2.0.1
-	golang.org/x/sync v0.19.0
+	golang.org/x/sync v0.25.0
 	gorm.io/gorm v1.31.2
 )
 

@@ -14,7 +14,7 @@ import { type PositionShare, type SearchKeyword, searchQuery, useAddKeyword, use
 const PLUMBING = new Set(["Storage", "Starters", "Queues"]);
 
 type View = "names" | "added" | "gaps" | "all";
-type SortKey = "query" | "best" | "demand" | "worth" | "first";
+type SortKey = "query" | "best" | "move" | "demand" | "worth" | "first";
 type Value = (k: SearchKeyword, key: SortKey) => string | number | null;
 
 /** What reaching #1 adds, in 90-day projects: the keyword's demand times the
@@ -34,7 +34,15 @@ function worthOf(curve: PositionShare[]) {
   };
 }
 
-/** Blanks (not ranked, no results) stay last whichever way it's sorted. */
+/** Places our best position moved since a week ago: positive is up, and off
+ * the list counts as position 21. Null when it held still or the keyword
+ * wasn't searched then, so sorting by it leaves only the movers on top. */
+function moveOf(k: SearchKeyword): number | null {
+  if (!k.searchedBefore || k.best === k.prevBest) return null;
+  return (k.prevBest ?? 21) - (k.best ?? 21);
+}
+
+/** Blanks (not ranked, no move, no results) stay last whichever way it's sorted. */
 function compare(a: SearchKeyword, b: SearchKeyword, key: SortKey, desc: boolean, sortValue: Value): number {
   const x = sortValue(a, key);
   const y = sortValue(b, key);
@@ -80,7 +88,8 @@ export function MarketSearch() {
 
   const all = q.data.keywords;
   const worth = worthOf(q.data.curve);
-  const value: Value = (k, key) => (key === "worth" ? worth(k) : key === "first" ? (k.top[0]?.recent ?? null) : k[key]);
+  const value: Value = (k, key) =>
+    key === "worth" ? worth(k) : key === "move" ? moveOf(k) : key === "first" ? (k.top[0]?.recent ?? null) : k[key];
   const own = all.filter((k) => k.source === "ours");
   const n = needle.trim().toLowerCase().replace(/\s+/g, " ");
   const rows = all
@@ -176,7 +185,8 @@ export function MarketSearch() {
           <TableHeader>
             <TableRow>
               {header("query", "Keyword", undefined, false)}
-              {header("best", "We rank", "Our best position now, and the change from a week ago")}
+              {header("best", "We rank", "Our best position now")}
+              {header("move", "Week", "Places our best position moved since a week ago, off the list counting as #21. Sort it for the biggest rises first, again for the biggest falls")}
               {header("demand", "Demand, 90 days", "Projects in 90 days of everything the search finds, so broad keywords count big templates more than once", false)}
               {header("worth", "Worth at #1", "Projects in 90 days that reaching #1 would add, at most: demand less its biggest template, times what #1 holds over our spot (see What a position holds)")}
               {header("first", "First result", "Sorted by the first result's projects in 90 days", false, "max-sm:hidden")}
@@ -188,7 +198,7 @@ export function MarketSearch() {
                 <KeywordRow k={k} worth={worth(k)} maxDemand={maxDemand} open={open === k.query} onToggle={() => setOpen(open === k.query ? null : k.query)} />
                 {open === k.query && (
                   <TableRow data-panel>
-                    <TableCell colSpan={5} className="pb-4">
+                    <TableCell colSpan={6} className="pb-4">
                       <TopResults k={k} />
                     </TableCell>
                   </TableRow>
@@ -197,7 +207,7 @@ export function MarketSearch() {
             ))}
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
                   No keywords match.
                   {elsewhere && (
                     <>
@@ -244,8 +254,9 @@ function KeywordRow({
           {k.category && k.category !== "Other" ? ` · ${k.category}` : ""}
         </div>
       </TableRowHead>
+      <TableCell numeric>{k.best == null ? <span className="text-muted-foreground">—</span> : <span className="font-medium">#{k.best}</span>}</TableCell>
       <TableCell numeric>
-        <Rank k={k} />
+        <Move k={k} />
       </TableCell>
       <TableCell>
         <div className="flex items-center gap-2">
@@ -276,21 +287,18 @@ function KeywordRow({
   );
 }
 
-/** Our best position, with its move since a week ago: a lower number is up. */
-function Rank({ k }: { k: SearchKeyword }) {
-  const now = k.best == null ? <span className="text-muted-foreground">—</span> : <span className="font-medium">#{k.best}</span>;
-  if (!k.searchedBefore || k.best === k.prevBest) return now;
-  // Off the list counts as position 21 for the arrow.
-  const before = k.prevBest ?? 21;
-  const after = k.best ?? 21;
-  const up = after < before;
+/** The move of our best position since a week ago: a lower number is up. */
+function Move({ k }: { k: SearchKeyword }) {
+  const move = moveOf(k);
+  if (move == null) return <span className="text-muted-foreground">{k.searchedBefore ? "—" : ""}</span>;
+  const up = move > 0;
   return (
-    <span className="inline-flex items-center justify-end gap-1">
-      {now}
-      <span className={cn("flex items-center text-xs", up ? "text-(--viz-up)" : "text-(--viz-down)")} title={`was ${k.prevBest == null ? "not listed" : `#${k.prevBest}`}`}>
-        {up ? <ArrowUpRight className="size-3.5" /> : <ArrowDownRight className="size-3.5" />}
-        {k.prevBest == null ? "new" : k.best == null ? "out" : Math.abs(before - after)}
-      </span>
+    <span
+      className={cn("inline-flex items-center justify-end text-xs", up ? "text-(--viz-up)" : "text-(--viz-down)")}
+      title={`was ${k.prevBest == null ? "not listed" : `#${k.prevBest}`}`}
+    >
+      {up ? <ArrowUpRight className="size-3.5" /> : <ArrowDownRight className="size-3.5" />}
+      {k.prevBest == null ? "new" : k.best == null ? "out" : Math.abs(move)}
     </span>
   );
 }

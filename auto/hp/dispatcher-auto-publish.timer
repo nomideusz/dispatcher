@@ -1,0 +1,10 @@
+[Unit]
+Description=Dispatcher automation: publish (approved drafts, when a slot is free)
+
+[Timer]
+OnCalendar=*-*-* 00/2:40:00
+Persistent=false
+Unit=dispatcher-auto@publish.service
+
+[Install]
+WantedBy=timers.target

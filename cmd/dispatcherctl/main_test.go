@@ -309,6 +309,13 @@ func TestParseCommandKind(t *testing.T) {
 	if err != nil || cmd.method != http.MethodDelete || cmd.path != "/api/search/keywords/media%20downloader" {
 		t.Fatalf("untrack command = %+v, %v", cmd, err)
 	}
+	cmd, err = parseCommand([]string{"propose", "https://github.com/example/app", "Scout: GitHub trending"}, &bytes.Buffer{})
+	if err != nil || cmd.method != http.MethodPost || cmd.path != "/api/proposals" || cmd.body != `{"note":"Scout: GitHub trending","text":"https://github.com/example/app"}` {
+		t.Fatalf("propose command = %+v, %v", cmd, err)
+	}
+	if _, err = parseCommand([]string{"propose", "example/app"}, &bytes.Buffer{}); err == nil {
+		t.Fatal("propose accepted something that is not a URL")
+	}
 	cmd, err = parseCommand([]string{"candidate", "open webui", "shortlist", "Exact name free at 100"}, &bytes.Buffer{})
 	if err != nil || cmd.method != http.MethodPut || cmd.path != "/api/candidates/open%20webui" || cmd.body != `{"note":"Exact name free at 100","status":"shortlist"}` {
 		t.Fatalf("candidate command = %+v, %v", cmd, err)

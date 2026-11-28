@@ -1,0 +1,10 @@
+[Unit]
+Description=Dispatcher automation: scout (daily new apps from discovery sources into proposals)
+
+[Timer]
+OnCalendar=*-*-* 06:00:00
+Persistent=true
+Unit=dispatcher-auto@scout.service
+
+[Install]
+WantedBy=timers.target

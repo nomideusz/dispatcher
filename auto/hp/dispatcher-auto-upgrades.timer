@@ -1,0 +1,10 @@
+[Unit]
+Description=Dispatcher automation: upgrades (weekly upgrade queue, report only)
+
+[Timer]
+OnCalendar=Mon *-*-* 09:30:00
+Persistent=true
+Unit=dispatcher-auto@upgrades.service
+
+[Install]
+WantedBy=timers.target

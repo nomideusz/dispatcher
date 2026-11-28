@@ -1,0 +1,11 @@
+#!/bin/bash
+# auto/approve DIR...   approve tested drafts for the next free publish slot
+# auto/approve          show what is approved and what is waiting
+cd "$HOME/dev/railway-templates" || exit 1
+for d in "$@"; do
+  d="${d%/}"
+  [ -f "$d/template-meta.json" ] || { echo "$d: no such template directory"; continue; }
+  grep -qxF "$d" publish-approved.txt 2>/dev/null || echo "$d" >> publish-approved.txt
+done
+python3 -I "$HOME/dev/apps/dispatcher/auto/approved.py"
+python3 publish.py --slots | tail -n +1

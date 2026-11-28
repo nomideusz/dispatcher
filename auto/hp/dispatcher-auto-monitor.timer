@@ -1,0 +1,10 @@
+[Unit]
+Description=Dispatcher automation: monitor (daily routine check, read-only)
+
+[Timer]
+OnCalendar=*-*-* 06:30:00
+Persistent=true
+Unit=dispatcher-auto@monitor.service
+
+[Install]
+WantedBy=timers.target

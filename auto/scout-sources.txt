@@ -1,0 +1,5 @@
+# Extra pages for the scout, one URL per line. Every GitHub repo linked from a page counts
+# as a find, so use pages that list apps (a "new this week" post, a directory, an RSS feed).
+# Built-in sources need no line here: GitHub trending, new self-hosted repos on GitHub,
+# selfh.st (weekly and directory), Show HN, Trendshift, awesome-selfhosted, and the app
+# stores of Coolify, Dokploy, Umbrel and Runtipi.

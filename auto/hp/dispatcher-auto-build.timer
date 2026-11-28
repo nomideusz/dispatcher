@@ -1,0 +1,10 @@
+[Unit]
+Description=Dispatcher automation: build (daily tested drafts, never published)
+
+[Timer]
+OnCalendar=*-*-* 07:15:00
+Persistent=false
+Unit=dispatcher-auto@build.service
+
+[Install]
+WantedBy=timers.target

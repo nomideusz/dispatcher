@@ -1,0 +1,8 @@
+[Unit]
+Description=Dispatcher automation: %i on pop-os
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/dispatcher-auto %i
+TimeoutStartSec=7h

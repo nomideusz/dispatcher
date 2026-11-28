@@ -1,0 +1,74 @@
+#!/bin/bash
+# Runs on hp (always on), started by the dispatcher-auto-*.timer units: makes sure pop-os is
+# up, waking it over the direct cable if it is off, then starts one job there. The key it
+# uses can only run auto/run.sh on pop-os. If hp had to wake the machine, it is powered off
+# again with the existing pc_power key once the jobs are through, unless someone logged in.
+set -u
+JOB="${1:?usage: dispatcher-auto scout|monitor|build|publish|upgrades|doctor|status}"
+# POP (address of pop-os), MAC (of its wake-on-LAN port) and BROADCAST (of the network the
+# magic packet goes out on) are this network's own and live in ~/.config/dispatcher-auto.conf.
+POP="" MAC="" BROADCAST=""
+KEY="$HOME/.ssh/dispatcher_auto"
+OFFKEY="$HOME/.ssh/pc_power"
+POWEROFF_AFTER=1
+MARK="$HOME/.local/state/dispatcher-auto-woke" # exists while pop-os is on because hp woke it
+[ -f "$HOME/.config/dispatcher-auto.conf" ] && . "$HOME/.config/dispatcher-auto.conf"
+[ -n "$POP" ] && [ -n "$MAC" ] && [ -n "$BROADCAST" ] || { echo "set POP, MAC and BROADCAST in ~/.config/dispatcher-auto.conf"; exit 2; }
+
+log() { echo "$(date '+%F %T') $*"; }
+pop() {
+  ssh -i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=6 -o ControlMaster=no \
+      -o ControlPath=none -o ServerAliveInterval=30 -o ServerAliveCountMax=6 \
+      -o StrictHostKeyChecking=accept-new "nom@$POP" "$@"
+}
+up() { [ "$(pop ping 2>/dev/null)" = ok ]; }
+next_job_soon() { # a job that would wake the machine again within 45 minutes
+  local now t s
+  now=$(date +%s)
+  for t in scout monitor build upgrades; do
+    s=$(systemctl --user show "dispatcher-auto-$t.timer" -p NextElapseUSecRealtime --value 2>/dev/null)
+    [ -n "$s" ] && s=$(date -d "$s" +%s 2>/dev/null) || continue
+    [ $((s - now)) -ge 0 ] && [ $((s - now)) -le 2700 ] && return 0
+  done
+  return 1
+}
+
+if ! up; then
+  # hp has the synced approved list: don't wake the machine to publish nothing.
+  if [ "$JOB" = publish ] && ! grep -qs '^[^#[:space:]]' "$HOME/dev/railway-templates/publish-approved.txt"; then
+    log "publish: nothing approved, pop-os left off"; exit 0
+  fi
+  log "pop-os is not answering; sending wake-on-LAN to $MAC"
+  for _ in $(seq 1 72); do
+    wakeonlan -i "$BROADCAST" "$MAC" >/dev/null 2>&1
+    sleep 5
+    up && break
+  done
+  if ! up; then log "pop-os did not come up within 6 minutes; $JOB not run"; exit 1; fi
+  log "pop-os is up"
+  [ "$POWEROFF_AFTER" = 1 ] && date > "$MARK"
+  sleep 30 # network, time sync and user services
+fi
+
+pop "$JOB"
+rc=$?
+log "$JOB ended with $rc"
+
+# The mark outlives this run, so when jobs overlap the last one to finish powers off.
+if [ -e "$MARK" ]; then
+  state=$(pop idle 2>/dev/null)
+  case "$state" in
+    idle)
+      if next_job_soon; then
+        log "another job is due within 45 minutes; leaving pop-os on for it"
+      else
+        log "nobody logged in since the wake-up; powering pop-os off"
+        rm -f "$MARK"
+        ssh -i "$OFFKEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=6 -o ControlMaster=no \
+            -o ControlPath=none "nom@$POP" true >/dev/null 2>&1
+      fi ;;
+    "busy: someone is logged in"*) rm -f "$MARK"; log "someone logged in: pop-os stays on and is theirs to switch off" ;;
+    *) log "leaving pop-os on for now (${state:-no answer})" ;;
+  esac
+fi
+exit $rc

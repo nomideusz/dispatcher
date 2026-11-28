@@ -237,6 +237,19 @@ func parseCommand(args []string, stderr io.Writer) (command, error) {
 		}
 		body, _ := json.Marshal(map[string]string{"url": args[1], "status": args[2], "reply": reply})
 		return command{method: http.MethodPut, path: "/api/proposals", requiresAuth: true, body: string(body)}, nil
+	case "propose":
+		if len(args) != 2 && len(args) != 3 {
+			return command{}, fmt.Errorf("propose requires a URL and an optional note")
+		}
+		if !strings.HasPrefix(args[1], "https://") && !strings.HasPrefix(args[1], "http://") {
+			return command{}, fmt.Errorf("propose requires a URL starting with https://")
+		}
+		note := ""
+		if len(args) == 3 {
+			note = args[2]
+		}
+		body, _ := json.Marshal(map[string]string{"text": args[1], "note": note})
+		return command{method: http.MethodPost, path: "/api/proposals", requiresAuth: true, body: string(body)}, nil
 	case "get":
 		if len(args) != 2 {
 			return command{}, fmt.Errorf("get requires exactly one API path")
@@ -334,6 +347,8 @@ Other commands:
                            Put a template's upgrade first: a security fix or a
                            fix for what we break on ("" clears; the daily
                            check clears it once the template is current)
+  propose URL [NOTE]       Add an app to the proposals inbox, with a note saying
+                           where it was found (one already there is left as is)
   proposal URL STATUS [REPLY]
                            Answer a proposal: building, published or skipped
                            ("" puts it back to new), with a reply the owner reads
